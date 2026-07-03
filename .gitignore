@@ -1,0 +1,6 @@
+.build/
+*.xcodeproj/
+config.local.json
+probe_*.py
+/tmp/
+DerivedData/

@@ -1,0 +1,46 @@
+name: MeetingCaptions
+options:
+  bundleIdPrefix: com.plus.meetingcaptions
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+targets:
+  MeetingCaptions:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources
+        excludes:
+          - "MeetingCaptions.entitlements"
+    entitlements:
+      path: Sources/MeetingCaptions.entitlements
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleName: MeetingCaptions
+        CFBundleDisplayName: Meeting Captions
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "26.0"
+        # Menu-bar only app: no Dock icon, no main window at launch
+        LSUIElement: true
+        NSAudioCaptureUsageDescription: "MeetingCaptions taps the audio of your meeting app to transcribe and translate it on-device."
+        NSMicrophoneUsageDescription: "Used only if you choose to caption your own microphone."
+        NSSpeechRecognitionUsageDescription: "MeetingCaptions uses on-device speech recognition to transcribe meeting audio."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.plus.meetingcaptions
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        CODE_SIGN_STYLE: Automatic
+        # Local dev signing; process taps run fine with a dev signature.
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: YES
+        # Non-sandboxed for the MVP so Core Audio process taps + model download are unhindered.
+        ENABLE_APP_SANDBOX: NO
+        SWIFT_STRICT_CONCURRENCY: minimal
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
