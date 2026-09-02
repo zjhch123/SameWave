@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 # Stable signing identity (has a Team ID → TCC pins to identifier+anchor, not cdhash).
 SIGN_ID="Apple Development: Jiahao Zhang (NWJTN3DP9L)"
 BUNDLE_ID="com.plus.meetingcaptions"
-ENTITLEMENTS="$(pwd)/Sources/MeetingCaptions.entitlements"
+ENTITLEMENTS="$(pwd)/Sources/Resources/MeetingCaptions.entitlements"
 
 echo "▶︎ Building…"
 xcodebuild -project MeetingCaptions.xcodeproj \
@@ -18,7 +18,7 @@ xcodebuild -project MeetingCaptions.xcodeproj \
   CODE_SIGNING_ALLOWED=NO \
   2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
 
-APP=".build/Build/Products/Debug/MeetingCaptions.app"
+APP=".build/Build/Products/Debug/同频.app"
 if [ ! -d "$APP" ]; then
   echo "✗ Build failed — app not found."; exit 1
 fi
@@ -33,11 +33,11 @@ codesign --force --deep --options runtime \
 echo "▶︎ Designated requirement:"
 codesign -d -r- "$APP" 2>&1 | grep -E "designated" || true
 
-echo "▶︎ Installing to ~/Desktop/MeetingCaptions.app"
-pkill -f "Desktop/MeetingCaptions.app" 2>/dev/null || true
+echo "▶︎ Installing to ~/Desktop/同频.app"
+pkill -f "Desktop/同频.app" 2>/dev/null || true
 sleep 1
-rm -rf ~/Desktop/MeetingCaptions.app
-cp -R "$APP" ~/Desktop/MeetingCaptions.app
+rm -rf ~/Desktop/同频.app
+cp -R "$APP" ~/Desktop/同频.app
 
 # Make the local cloud credentials available at a stable runtime path.
 if [ -f "$(pwd)/config.local.json" ]; then
@@ -46,5 +46,5 @@ if [ -f "$(pwd)/config.local.json" ]; then
 fi
 
 echo "▶︎ Launching…"
-open ~/Desktop/MeetingCaptions.app
+open ~/Desktop/同频.app
 echo "✅ Running. Look for the 💬 icon in the menu bar."

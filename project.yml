@@ -13,25 +13,42 @@ targets:
     sources:
       - path: Sources
         excludes:
-          - "MeetingCaptions.entitlements"
+          - "Resources/MeetingCaptions.entitlements"
     entitlements:
-      path: Sources/MeetingCaptions.entitlements
-    info:
-      path: Sources/Info.plist
+      path: Sources/Resources/MeetingCaptions.entitlements
       properties:
-        CFBundleName: MeetingCaptions
-        CFBundleDisplayName: Meeting Captions
+        # Hardened Runtime is on (ENABLE_HARDENED_RUNTIME below). Microphone access
+        # via AVFoundation REQUIRES this entitlement — without it the system denies
+        # requestAccess silently (no prompt). Declared here so xcodegen regenerates
+        # it into the entitlements file every time (a bare path would wipe it).
+        com.apple.security.device.audio-input: true
+    info:
+      path: Sources/Resources/Info.plist
+      properties:
+        CFBundleName: 同频
+        CFBundleDisplayName: 同频
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "26.0"
-        # Menu-bar only app: no Dock icon, no main window at launch
-        LSUIElement: true
-        NSAudioCaptureUsageDescription: "MeetingCaptions taps the audio of your meeting app to transcribe and translate it on-device."
+        # Regular app: shows a Dock icon and a main window.
+        LSUIElement: false
+        CFBundleIconName: AppIcon
+        NSAudioCaptureUsageDescription: "同频 taps the audio of your meeting app to transcribe and translate it on-device."
         NSMicrophoneUsageDescription: "Used only if you choose to caption your own microphone."
-        NSSpeechRecognitionUsageDescription: "MeetingCaptions uses on-device speech recognition to transcribe meeting audio."
+        NSSpeechRecognitionUsageDescription: "同频 uses on-device speech recognition to transcribe meeting audio."
+        # App Transport Security: allow cleartext HTTP ONLY to local/loopback hosts
+        # (127.0.0.1, localhost, *.local, private IPs) so a user can point the insight
+        # provider at a self-hosted OpenAI-compatible server. External domains still
+        # require HTTPS — this is the minimal exception, not a blanket NSAllowsArbitraryLoads.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.plus.meetingcaptions
+        # The built app is named 同频.app / the process shows as 同频. The Xcode target
+        # and scheme stay ASCII "MeetingCaptions" (safe for build tooling); only the
+        # user-visible product name is Chinese.
+        PRODUCT_NAME: "同频"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
@@ -44,3 +61,4 @@ targets:
         ENABLE_APP_SANDBOX: NO
         SWIFT_STRICT_CONCURRENCY: minimal
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

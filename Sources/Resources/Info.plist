@@ -5,15 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Meeting Captions</string>
+	<string>同频</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>MeetingCaptions</string>
+	<string>同频</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -23,12 +25,17 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>MeetingCaptions taps the audio of your meeting app to transcribe and translate it on-device.</string>
+	<string>同频 taps the audio of your meeting app to transcribe and translate it on-device.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Used only if you choose to caption your own microphone.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>MeetingCaptions uses on-device speech recognition to transcribe meeting audio.</string>
+	<string>同频 uses on-device speech recognition to transcribe meeting audio.</string>
 </dict>
 </plist>

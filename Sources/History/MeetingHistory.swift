@@ -1,0 +1,263 @@
+import Foundation
+import SwiftData
+
+/// A persisted meeting session. Stored via SwiftData (native, on-device, backed by
+/// SQLite in Application Support — no third-party dependency, ASCII path). Its lines
+/// carry per-utterance spoken-time stamps.
+///
+/// A record is written INCREMENTALLY, not once at stop: `status` tracks its
+/// lifecycle ("recording" → "paused" → "ended"), and the coordinator autosaves the
+/// live transcript every few seconds. So a meeting survives a pause, an app quit, or
+/// a crash — on next launch any non-"ended" record is recovered as a paused session
+/// the user can resume (losing at most the last few unsynced seconds).
+@Model
+final class MeetingRecord {
+    /// Stable id (also used to select in the UI).
+    @Attribute(.unique) var id: UUID
+    var startedAt: Date
+    var endedAt: Date
+    /// Meeting language raw value ("english" / "chinese").
+    var language: String
+    /// Cached count so the list doesn't have to fault every line just to show it.
+    var lineCount: Int
+    /// Lifecycle: "recording" (live), "paused" (interrupted — resumable), or "ended"
+    /// (finished, shown in history). Defaults to "ended" so any record created before
+    /// this field existed migrates as a normal finished meeting.
+    var status: String
+
+    /// Cached AI insight for this meeting, as encoded `InsightResult` JSON (nil = never
+    /// generated). Generated on demand from the history detail view; a new optional field
+    /// so SwiftData lightweight-migrates existing records losslessly (as with `status`).
+    var insightJSON: String?
+
+    /// When the transcript was last LLM-refined (source cleaned + translation redone),
+    /// or nil if never. Drives the "优化译文/重新优化" button label and whether the
+    /// 原始/优化 toggle appears. The refined text itself lives per-line (additive, never
+    /// overwriting the originals) — see `TranscriptLine.refinedSource/refinedTarget`.
+    var refinedAt: Date?
+    /// Cached glossary (term → suggested Chinese / keep-original) from the last refine,
+    /// as JSON. Fed back into the next refine so terminology stays consistent.
+    var glossaryJSON: String?
+
+    /// The transcript lines, ordered by `orderIndex`. Deleting the record deletes them.
+    @Relationship(deleteRule: .cascade, inverse: \TranscriptLine.record)
+    var lines: [TranscriptLine]
+
+    init(id: UUID = UUID(), startedAt: Date, endedAt: Date, language: String,
+         lineCount: Int, status: String = "ended", insightJSON: String? = nil,
+         refinedAt: Date? = nil, glossaryJSON: String? = nil,
+         lines: [TranscriptLine] = []) {
+        self.id = id
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.language = language
+        self.lineCount = lineCount
+        self.status = status
+        self.insightJSON = insightJSON
+        self.refinedAt = refinedAt
+        self.glossaryJSON = glossaryJSON
+        self.lines = lines
+    }
+
+    var durationSec: Int { max(0, Int(endedAt.timeIntervalSince(startedAt))) }
+
+    /// "2026年7月7日 18:27" — the row/header title.
+    var displayDate: String { DateFormat.dayTime.string(from: startedAt) }
+
+    var durationText: String {
+        let s = durationSec, m = s / 60, r = s % 60
+        return m > 0 ? "\(m) 分 \(r) 秒" : "\(r) 秒"
+    }
+
+    /// "N 段 · 时长" — the one-line summary shown in the sidebar row and stage header.
+    var metaText: String { "\(lineCount) 段 · \(durationText)" }
+
+    /// Whether this meeting's lines should render/export the source text as a secondary
+    /// echo under the primary line. TRUE only for a translated meeting (English→中), where
+    /// the primary is the Chinese translation and the source is the distinct English
+    /// original. FALSE for a Chinese meeting, where the recognized text IS the caption and
+    /// source == target, so an echo would just duplicate the primary. Derived from the one
+    /// source of truth — the persisted language's `needsTranslation` — so display, export,
+    /// and the live view all agree. Unknown/legacy language defaults to TRUE (conservative:
+    /// never hide a genuine foreign-language original).
+    var showsSourceEcho: Bool {
+        CaptureCoordinator.MeetingLanguage(rawValue: language)?.needsTranslation ?? true
+    }
+
+    /// The decoded cached insight, or nil if none was generated (or it's unreadable).
+    var insight: InsightResult? { InsightResult.decode(from: insightJSON) }
+
+    /// Whether this meeting has an LLM-refined version (source cleaned + translation
+    /// redone). Gates the 原始/优化 toggle and picks refined text for export.
+    var hasRefinement: Bool { refinedAt != nil }
+
+    /// The meeting language as the enum, for feeding the right prompt to the insight
+    /// engine when generating from history. Defaults to English for legacy rows.
+    var meetingLanguage: CaptureCoordinator.MeetingLanguage {
+        CaptureCoordinator.MeetingLanguage(rawValue: language) ?? .english
+    }
+}
+
+/// One transcript line (== one Section at save time): who spoke, the source text,
+/// its Chinese translation, and WHEN it was spoken. `sectionId` ties the line back
+/// to its live Section so incremental autosaves can UPSERT (update-in-place) rather
+/// than wipe-and-rewrite every few seconds.
+@Model
+final class TranscriptLine {
+    /// "me" or "remote".
+    var speaker: String
+    var sourceText: String
+    var targetText: String
+    /// Wall-clock time this line was spoken (the section's start).
+    var spokenAt: Date
+    /// Ordering within the meeting (== section id order == chronological).
+    var orderIndex: Int
+    /// The live Section id this line came from — the upsert key for incremental
+    /// autosave. Defaults to `orderIndex`-agnostic 0 for pre-migration rows.
+    var sectionId: Int
+
+    /// LLM-refined variants, ADDITIVE — the originals (`sourceText`/`targetText`) are
+    /// never overwritten, so the user can always switch back and verify what was actually
+    /// said. nil until this line has been refined. `refinedSource` = conservatively
+    /// cleaned original (filler words removed, no rewriting); `refinedTarget` = translation
+    /// redone with full context + glossary.
+    var refinedSource: String?
+    var refinedTarget: String?
+
+    var record: MeetingRecord?
+
+    init(speaker: String, sourceText: String, targetText: String, spokenAt: Date,
+         orderIndex: Int, sectionId: Int = 0,
+         refinedSource: String? = nil, refinedTarget: String? = nil) {
+        self.speaker = speaker
+        self.sourceText = sourceText
+        self.targetText = targetText
+        self.spokenAt = spokenAt
+        self.orderIndex = orderIndex
+        self.sectionId = sectionId
+        self.refinedSource = refinedSource
+        self.refinedTarget = refinedTarget
+    }
+
+    var isMine: Bool { speaker == "me" }
+    /// Chinese primary; falls back to source if untranslated.
+    var displayText: String {
+        let zh = targetText.trimmed
+        return zh.isEmpty ? sourceText : zh
+    }
+    /// "18:27" — the per-line spoken time.
+    var timeText: String { DateFormat.clock.string(from: spokenAt) }
+
+    /// Source to display given the 原始/优化 toggle: the refined original when asked and
+    /// available, else the raw original. Falling back to the original means a page-wide
+    /// "优化" toggle still shows every line (even ones the LLM happened to skip).
+    func displaySource(refined: Bool) -> String {
+        if refined, let r = refinedSource?.trimmed, !r.isEmpty { return r }
+        return sourceText
+    }
+    /// Translation to display given the toggle, same fallback rule as `displaySource`.
+    func displayTarget(refined: Bool) -> String {
+        if refined, let r = refinedTarget?.trimmed, !r.isEmpty { return r }
+        return targetText
+    }
+}
+
+/// Owns the shared SwiftData container and provides incremental save/recover/delete.
+/// A single container is created at launch and shared by the coordinator (writes) and
+/// the sidebar (`@Query` reads).
+@MainActor
+final class MeetingHistoryStore {
+    let container: ModelContainer
+
+    init() {
+        do {
+            container = try ModelContainer(for: MeetingRecord.self, TranscriptLine.self)
+        } catch {
+            // Fatal only in the truest sense — without a store, history can't work.
+            // Fall back to an in-memory container so the app still runs.
+            let cfg = ModelConfiguration(isStoredInMemoryOnly: true)
+            container = try! ModelContainer(for: MeetingRecord.self, TranscriptLine.self, configurations: cfg)
+        }
+    }
+
+    var context: ModelContext { container.mainContext }
+
+    /// Open a new live record (status "recording") the moment a meeting starts, so it
+    /// exists on disk before a single word is spoken. Returned so the coordinator can
+    /// keep syncing into it.
+    func beginRecord(startedAt: Date, language: String) -> MeetingRecord {
+        let r = MeetingRecord(startedAt: startedAt, endedAt: startedAt,
+                              language: language, lineCount: 0, status: "recording")
+        context.insert(r)
+        try? context.save()
+        return r
+    }
+
+    /// Incrementally sync the live transcript into `record`: UPSERT each meaningful
+    /// section by its `sectionId` (update in place, or insert), drop lines whose
+    /// section was pruned, and refresh count + endedAt. Cheap enough to call every few
+    /// seconds and on every state change.
+    func sync(record: MeetingRecord, sections: [Section], endedAt: Date) {
+        let meaningful = sections.filter { $0.sourceText.hasSpokenContent || $0.targetText.hasSpokenContent }
+        var existing: [Int: TranscriptLine] = [:]
+        for l in record.lines { existing[l.sectionId] = l }
+
+        var keptIds = Set<Int>()
+        for (i, s) in meaningful.enumerated() {
+            keptIds.insert(s.id)
+            let who = s.speaker == .mine ? "me" : "remote"
+            if let line = existing[s.id] {
+                line.speaker = who
+                line.sourceText = s.sourceText
+                line.targetText = s.targetText
+                line.spokenAt = s.startedAt
+                line.orderIndex = i
+            } else {
+                let line = TranscriptLine(speaker: who, sourceText: s.sourceText,
+                                          targetText: s.targetText, spokenAt: s.startedAt,
+                                          orderIndex: i, sectionId: s.id)
+                line.record = record
+                context.insert(line)
+            }
+        }
+        // A section can be pruned (empty onset from echo) after a line existed for it.
+        let stale = record.lines.filter { !keptIds.contains($0.sectionId) }
+        for l in stale { context.delete(l) }
+
+        record.lineCount = meaningful.count
+        record.endedAt = endedAt
+        try? context.save()
+    }
+
+    /// Mark a record's lifecycle status (e.g. "paused" on pause, "recording" on resume).
+    func setStatus(_ record: MeetingRecord, _ status: String) {
+        record.status = status
+        try? context.save()
+    }
+
+    /// Finalize a meeting: one last sync, then mark "ended" so it enters history. An
+    /// empty meeting (nothing was said) is deleted rather than left as a blank row.
+    func finish(_ record: MeetingRecord, sections: [Section], endedAt: Date) {
+        sync(record: record, sections: sections, endedAt: endedAt)
+        if record.lineCount == 0 {
+            context.delete(record)
+        } else {
+            record.status = "ended"
+        }
+        try? context.save()
+    }
+
+    /// All records that never reached "ended" (interrupted by quit/crash/pause),
+    /// newest first — candidates for recovery on launch.
+    func unfinishedRecords() -> [MeetingRecord] {
+        let d = FetchDescriptor<MeetingRecord>(
+            predicate: #Predicate { $0.status != "ended" },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        return (try? context.fetch(d)) ?? []
+    }
+
+    func delete(_ record: MeetingRecord) {
+        context.delete(record)
+        try? context.save()
+    }
+}

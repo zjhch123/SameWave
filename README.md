@@ -1,82 +1,86 @@
-# MeetingCaptions — 本地实时会议翻译字幕
+# 同频（MeetingCaptions）
 
-把会议软件（Zoom / Teams / Google Meet 等）的语音，**在本机**实时识别并（按需）翻译成中文，
-显示在一个置顶悬浮字幕窗里。全程不联网、零成本、隐私安全。
+“同频”是一款面向一对一会议的 macOS 实时字幕应用。它将系统音频视为“对方”、麦克风视为“我”，在本机完成双路语音识别和英译中，并按发言顺序生成可恢复、可导出的会议记录。
 
-## 技术栈（全部本地）
+## 主要能力
 
-- **音频捕获**：macOS 14.4+ Core Audio *Process Taps* —— 复制指定进程的输出音频，
-  同时系统照常把声音播给你的耳机（`.unmuted`）。无需虚拟声卡。切换输出设备自动重建。
-- **语音识别（两种引擎可选）**：
-  - **英文**：[WhisperKit](https://github.com/argmaxinc/WhisperKit) `base.en`（默认）
-    或 Apple 原生 `SpeechAnalyzer`（macOS 26，流式、系统共享模型、无需下载）。
-  - **中文**：Apple 原生 `SpeechAnalyzer`（Whisper 多语言小模型对中文太弱）。
-- **翻译**：Apple `Translation` 框架，本地英→简中（`zh-Hans`），带 6 句上下文窗口整块精修。
-  中文会议直接显示识别结果，不翻译。
-- **UI**：主控制窗口 + 精简菜单栏图标 + 置顶不抢焦点的 `NSPanel` 悬浮字幕窗。
-- **会议纪要**：停止时可导出中英对照 markdown。
+- 通过 ScreenCaptureKit 捕获系统输出，通过 AVFoundation 捕获麦克风。
+- 两路音频分别使用 Apple `SpeechAnalyzer` 进行本地流式识别。
+- 英文会议使用 Apple Translation 本地翻译为简体中文；中文会议直接显示原文。
+- 以 Section 组织双方发言，中文译文为主、英文原文为辅。
+- 会议从开始起增量保存到 SwiftData，支持暂停、恢复、崩溃恢复、历史查看和 Markdown 导出。
+- 可选配置 OpenAI 兼容服务，生成实时洞察、历史洞察和会后优化稿。
 
-## 会议语言 / 引擎选择
+## 系统要求
 
-主窗口顶部：
-- **会议语言**：英文（译中）/ 中文（不翻译）
-- **英文识别引擎**（仅英文模式）：Whisper / Apple 原生 —— 可 A/B 对比，
-  实测 Apple 在印度英语上分句和标点略优、且省 145MB 模型。
+- macOS 26.0 或更高版本。
+- Xcode 26+ 与 macOS 26 SDK。
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)。
+- 使用 [`build.sh`](build.sh) 安装运行时，需要将脚本中的签名身份改为本机可用的 Apple Development 证书。
 
-首次用 Apple 引擎会弹「语音识别」授权框，点允许（一次性）。
+## 开始使用
 
-## 首次运行
+1. 在仓库根目录生成 Xcode 工程：
 
-1. 构建并拷到稳定位置（TCC 授权绑定签名身份，别每次从 DerivedData 直接跑）：
+   ```sh
+   xcodegen generate
+   ```
+
+2. 进行无签名编译检查：
+
+   ```sh
+   xcodebuild -project MeetingCaptions.xcodeproj \
+     -scheme MeetingCaptions \
+     -configuration Debug \
+     -derivedDataPath .build \
+     CODE_SIGNING_ALLOWED=NO \
+     build
+   ```
+
+3. 本机开发签名配置完成后，可构建、安装并启动固定路径下的应用：
+
    ```sh
    ./build.sh
    ```
-   会生成 `~/Desktop/MeetingCaptions.app` 并启动。
 
-2. 首次会**下载两个模型**（需要联网一次，之后全离线）：
-   - WhisperKit `base.en`（约 145MB，第一次识别时自动下载）
-   - Apple 简体中文翻译模型（第一次翻译时系统弹窗询问下载）
+   脚本会停止已运行的桌面版应用，覆盖 `~/Desktop/同频.app` 后重新启动。
 
-3. **授权**：第一次开始捕获时，系统会弹「系统音频录制」授权，点允许。
-   （菜单栏图标旁会出现紫色圆点，表示正在录制系统音频——不是麦克风。）
+4. 首次运行时按系统提示允许语音识别、麦克风和屏幕录制权限，并准备识别与翻译所需的系统语言资源。
 
-## 使用
+## 基本操作
 
-1. 点菜单栏的 💬 图标。
-2. 先让会议软件**正在播放声音**（有声音的进程才会出现在列表里）。
-3. 点「🔄 刷新应用列表」，然后点你要翻译的应用（Zoom / Teams / Chrome…）。
-4. 悬浮窗开始显示：**中文（大字）+ 英文原文（小字）**。
-5. 拖动悬浮窗背景可移动；「鼠标点击穿透」让你能点到窗口下面的东西。
+1. 在主窗口中选择“英→中”或“中文”。
+2. 按需开启“我的麦克风”，然后开始会议。系统音频会被统一记为“对方”。
+3. 会议中可暂停或恢复；结束后记录自动进入左侧历史。
+4. 历史记录可导出为 Markdown。配置 AI 服务后，还可生成洞察或优化稿。
 
-## 已知限制（MVP）
+## 数据与隐私
 
-- **Chrome / Meet / Teams 走 helper 进程**：代码已自动把同一 app 的所有 helper 进程一起 tap，
-  但如果没声音请先播放音频再刷新。
-- **延迟**：识别按窗口滚动（~每 0.25s 拉一次，Whisper 每次跑一段），
-  中文翻译在一句话「定稿」后出现（检测到停顿）。这是准确率与延迟的折中。
-- **口音**：`base.en` 对印度口音尚可；若不够准，改 `TranscriptionEngine.load(model:)`
-  为 `openai_whisper-small.en`（更准但更慢）。
-- **切换输出设备**：如果开着字幕时换耳机/扬声器，需要停止再重新开始
-  （聚合设备绑定的是启动时的默认输出）。
-- 未做：说话人区分、历史记录导出、自定义术语。
+音频捕获、语音识别、Apple Translation 和会议历史均在本机处理，应用不保存音频。AI 能力不属于离线主链路：当用户配置并触发服务后，会议文字会发送给所选第三方 OpenAI 兼容接口，音频不会由该链路上传。
 
-## 文件结构
+## 仓库结构
 
-| 文件 | 职责 |
-|---|---|
-| `MeetingCaptionsApp.swift` | App 入口、菜单栏、进程选择 |
-| `CaptureCoordinator.swift` | 顶层协调：捕获→识别→翻译→字幕 |
-| `AudioProcessEnumerator.swift` | 枚举/解析正在出声的会议进程 |
-| `ProcessTapCapture.swift` | Core Audio 进程 tap + 私有聚合设备 + 重采样到 16k |
-| `FloatRingBuffer.swift` | 实时线程↔消费线程的无锁环形缓冲 |
-| `TranscriptionEngine.swift` | WhisperKit 滚动窗口识别 + 停顿定稿 |
-| `TranslationBridge.swift` / `TranslationPump.swift` | Apple 翻译框架逐行英→中 |
-| `CaptionStore.swift` / `CaptionsView.swift` | 字幕数据模型 + 悬浮窗视图 |
-| `OverlayController.swift` | 悬浮 `NSPanel` 生命周期 |
-
-## 重新构建
-
-```sh
-xcodegen generate      # 改了 project.yml 后
-./build.sh             # 构建 + 拷到桌面 + 启动
+```text
+.
+├── Sources/
+│   ├── App/          # 应用入口、主窗口与 macOS 窗口装配
+│   ├── Capture/      # 系统音频、麦克风与 Apple Speech I/O
+│   ├── Meeting/      # 实时会话、Section 状态与翻译
+│   ├── History/      # SwiftData 历史、详情与导出
+│   ├── Insights/     # AI 洞察、服务商、设置与卡片
+│   ├── Shared/       # 跨领域共享的小型基础能力
+│   └── Resources/    # Asset Catalog、Info.plist 与 entitlements
+├── doc/          # 架构、流水线、数据、AI、决策和开发指南
+├── AGENTS.md     # 仓库内协作与验证约束
+├── project.yml  # XcodeGen 工程声明，是构建配置的事实来源
+└── build.sh     # 本机签名、安装与启动脚本
 ```
+
+`MeetingCaptions.xcodeproj` 由 XcodeGen 生成且不纳入版本控制。源码级架构、状态机、数据模型和验证方式见 [项目文档索引](doc/README.md)。
+
+## 当前边界
+
+- 一对一场景通过双物理通道区分“我/对方”；多个远端参与者不会被进一步分离。
+- ScreenCaptureKit 捕获除本应用外的全部系统输出，不提供按会议应用筛选。
+- 只支持英文译简体中文与中文直显。
+- 当前没有自动化测试 target；核心状态机与持久化改动需要补建测试。

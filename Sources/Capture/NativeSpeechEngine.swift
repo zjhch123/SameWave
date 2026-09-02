@@ -83,13 +83,24 @@ final class NativeSpeechEngine: @unchecked Sendable {
         let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputBuilder = inputBuilder
 
-        // Drain results: volatile → interim, finalized → commit.
+        startResultsDrain()
+
+        do {
+            try await analyzer.start(inputSequence: inputSequence)
+            onStatus("模型就绪")
+        } catch {
+            onStatus("识别启动失败: \(error.localizedDescription)")
+        }
+    }
+
+    /// Drain the transcriber's result stream: volatile → onInterim, finalized →
+    /// onCommit. Runs until the input stream ends or the task is cancelled (stop()).
+    private func startResultsDrain() {
         resultsTask = Task { [weak self] in
             guard let self, let transcriber = self.transcriber else { return }
             do {
                 for try await result in transcriber.results {
-                    let text = String(result.text.characters)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let text = String(result.text.characters).trimmed
                     guard !text.isEmpty else { continue }
                     if result.isFinal {
                         self.onCommit(text)
@@ -100,13 +111,6 @@ final class NativeSpeechEngine: @unchecked Sendable {
             } catch {
                 self.onStatus("识别错误: \(error.localizedDescription)")
             }
-        }
-
-        do {
-            try await analyzer.start(inputSequence: inputSequence)
-            onStatus("模型就绪")
-        } catch {
-            onStatus("识别启动失败: \(error.localizedDescription)")
         }
     }
 
@@ -145,7 +149,10 @@ final class NativeSpeechEngine: @unchecked Sendable {
         inputBuilder.yield(AnalyzerInput(buffer: out))
     }
 
-    func flush() {
+    /// Stop the engine: finish the input stream, finalize any pending audio, cancel
+    /// the results task, and release the analyzer/transcriber. The engine is dead
+    /// afterward — a fresh instance is built for the next session.
+    func stop() {
         inputBuilder?.finish()
         let a = self.analyzer
         Task { try? await a?.finalizeAndFinishThroughEndOfInput() }
