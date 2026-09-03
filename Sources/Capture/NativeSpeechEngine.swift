@@ -9,50 +9,6 @@ import Synchronization
 /// and SpeechAnalyzer state on one executor without unsafe Sendable declarations.
 @available(macOS 26.0, *)
 actor NativeSpeechEngine {
-    private static let experimentalContextualStrings = [
-        "claude code",
-        "Bestla",
-        "ODB",
-        "FileItem",
-        "bootstrap",
-        "Arbutus",
-        "XPay",
-        "Wallet",
-        "Copilot",
-        "M365 Copilot",
-        "One Copilot",
-        "OneCopilotMobile",
-        "OCM",
-        "Unified Copilot",
-        "Unified App Experience",
-        "ExP",
-        "Scorecard",
-        "ECS",
-        "ADO",
-        "Kusto",
-        "Intune",
-        "Entra",
-        "GlobalProtect",
-        "PR",
-        "SKU",
-        "AAD",
-        "MSAL",
-        "OBO",
-        "UPN",
-        "1JS",
-        "SSR",
-        "SSE",
-        "SAW",
-        "RAI",
-        "CELA",
-        "MSAI",
-        "Yujie Liu",
-        "Shixin Cai",
-        "Jessica Zhang",
-        "Baogui Yan",
-        "Lei Bian",
-    ]
-
     private struct AudioChunk: Sendable {
         let samples: [Float]
         let sampleRate: Double
@@ -82,6 +38,7 @@ actor NativeSpeechEngine {
     }
 
     private let localeID: String
+    private let contextualStrings: [String]
     private let onInterim: @Sendable (String) async -> Void
     private let onCommit: @Sendable (String) async -> Void
     private let onStatus: @Sendable (String) async -> Void
@@ -102,6 +59,7 @@ actor NativeSpeechEngine {
     private let audioContinuation: AsyncStream<AudioChunk>.Continuation
 
     init(localeID: String,
+         contextualStrings: [String],
          onInterim: @escaping @Sendable (String) async -> Void,
          onCommit: @escaping @Sendable (String) async -> Void,
          onStatus: @escaping @Sendable (String) async -> Void) {
@@ -113,6 +71,7 @@ actor NativeSpeechEngine {
             pair.continuation.yield(AudioChunk(samples: samples, sampleRate: sampleRate))
         }
         self.localeID = localeID
+        self.contextualStrings = contextualStrings
         self.onInterim = onInterim
         self.onCommit = onCommit
         self.onStatus = onStatus
@@ -126,21 +85,23 @@ actor NativeSpeechEngine {
         let locale = Locale(identifier: localeID)
         let modules: [any SpeechModule]
         if localeID == "en-US" {
-            await onStatus("准备词表模型…")
-            let modelConfiguration: SFSpeechLanguageModel.Configuration
-            do {
-                modelConfiguration = try await CustomSpeechLanguageModel.shared.configuration(
-                    locale: locale,
-                    phrases: Self.experimentalContextualStrings
+            var preset = DictationTranscriber.Preset.progressiveLongDictation
+            if !contextualStrings.isEmpty {
+                await onStatus("准备词表模型…")
+                let modelConfiguration: SFSpeechLanguageModel.Configuration
+                do {
+                    modelConfiguration = try await CustomSpeechLanguageModel.shared.configuration(
+                        locale: locale,
+                        phrases: contextualStrings
+                    )
+                } catch {
+                    throw EngineError.customLanguageModel(error)
+                }
+                preset.contentHints.insert(
+                    .customizedLanguage(modelConfiguration: modelConfiguration)
                 )
-            } catch {
-                throw EngineError.customLanguageModel(error)
             }
 
-            var preset = DictationTranscriber.Preset.progressiveLongDictation
-            preset.contentHints.insert(
-                .customizedLanguage(modelConfiguration: modelConfiguration)
-            )
             let transcriber = DictationTranscriber(
                 locale: locale,
                 contentHints: preset.contentHints,
@@ -178,7 +139,9 @@ actor NativeSpeechEngine {
         analyzerFormat = format
 
         let analysisContext = AnalysisContext()
-        analysisContext.contextualStrings[.general] = Self.experimentalContextualStrings
+        if localeID == "en-US" {
+            analysisContext.contextualStrings[.general] = contextualStrings
+        }
 
         let analyzer = SpeechAnalyzer(modules: modules)
         self.analyzer = analyzer

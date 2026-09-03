@@ -1,12 +1,28 @@
 import SwiftUI
 
-/// The app's settings window (⌘,). Configures the AI insight provider: pick a vendor,
-/// paste an API key, optionally test the connection, then **保存** to apply. Edits are
-/// held as a local draft and only committed to `InsightSettings` (and the Keychain) on
-/// Save — nothing takes effect while typing, and 取消 reverts to the last saved values.
-/// Captions/translation are fully local and need no configuration; only insights (an
-/// opt-in cloud feature) live here, which the privacy note makes explicit.
 struct SettingsView: View {
+    let insightSettings: InsightSettings
+    let speechVocabularySettings: SpeechVocabularySettings
+
+    var body: some View {
+        TabView {
+            InsightSettingsPane(settings: insightSettings)
+                .tabItem {
+                    Label("智能洞察", systemImage: "sparkles")
+                }
+
+            SpeechVocabularySettingsView(settings: speechVocabularySettings)
+                .tabItem {
+                    Label("词表", systemImage: "text.book.closed")
+                }
+        }
+        .frame(width: 560, height: 460)
+    }
+}
+
+/// Insight-provider settings use a draft that only reaches UserDefaults and Keychain
+/// after Save. The vocabulary tab follows the same Save/Cancel interaction.
+private struct InsightSettingsPane: View {
     let settings: InsightSettings
 
     // Local draft — seeded from the saved settings, edited freely, applied on Save.
@@ -118,8 +134,6 @@ struct SettingsView: View {
             }
             .padding(12)
         }
-        .frame(width: 480)
-        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var testStatus: some View {

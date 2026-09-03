@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Speech
 
@@ -5,14 +6,16 @@ import Speech
 actor CustomSpeechLanguageModel {
     static let shared = CustomSpeechLanguageModel()
 
-    private static let modelVersion = "1"
-    private var preparedConfiguration: SFSpeechLanguageModel.Configuration?
+    private var preparedConfigurations: [String: SFSpeechLanguageModel.Configuration] = [:]
 
     func configuration(
         locale: Locale,
         phrases: [String]
     ) async throws -> SFSpeechLanguageModel.Configuration {
-        if let preparedConfiguration { return preparedConfiguration }
+        let fingerprint = Self.fingerprint(locale: locale, phrases: phrases)
+        if let configuration = preparedConfigurations[fingerprint] {
+            return configuration
+        }
 
         let fileManager = FileManager.default
         let applicationSupport = try fileManager.url(
@@ -22,7 +25,7 @@ actor CustomSpeechLanguageModel {
             create: true
         )
         let modelDirectory = applicationSupport
-            .appending(path: "MeetingCaptions/SpeechLanguageModel/\(Self.modelVersion)",
+            .appending(path: "MeetingCaptions/SpeechLanguageModel/\(fingerprint)",
                        directoryHint: .isDirectory)
         try fileManager.createDirectory(
             at: modelDirectory,
@@ -37,7 +40,7 @@ actor CustomSpeechLanguageModel {
             let trainingData = SFCustomLanguageModelData(
                 locale: locale,
                 identifier: "com.plus.meetingcaptions.terms",
-                version: Self.modelVersion
+                version: fingerprint
             )
             for phrase in phrases {
                 trainingData.insert(
@@ -56,7 +59,14 @@ actor CustomSpeechLanguageModel {
             configuration: configuration,
             ignoresCache: false
         )
-        preparedConfiguration = configuration
+        preparedConfigurations[fingerprint] = configuration
         return configuration
+    }
+
+    private static func fingerprint(locale: Locale, phrases: [String]) -> String {
+        let source = ([locale.identifier(.bcp47)] + phrases).joined(separator: "\u{0}")
+        return SHA256.hash(data: Data(source.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
