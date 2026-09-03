@@ -7,7 +7,8 @@ import Observation
 @MainActor
 @Observable
 final class CaptureCoordinator {
-    var meetingLanguage: MeetingLanguage = .english
+    var sourceLanguage: MeetingLanguage = .english
+    var targetLanguage: MeetingLanguage = .simplifiedChinese
     private(set) var captionMyMic = true
     private(set) var sessionState: MeetingSessionState = .idle
     private(set) var statusMessage = ""
@@ -39,6 +40,9 @@ final class CaptureCoordinator {
     private var activeRecord: MeetingRecord?
     private var autosaveTask: Task<Void, Never>?
     var activeRecordID: UUID? { activeRecord?.id }
+    var languagePair: MeetingLanguagePair {
+        MeetingLanguagePair(source: sourceLanguage, target: targetLanguage)
+    }
 
     private var systemCapture: SystemAudioCaptureSCK?
     private var systemSpeech: NativeSpeechEngine?
@@ -81,7 +85,7 @@ final class CaptureCoordinator {
         do {
             activeRecord = try history.beginRecord(
                 startedAt: meetingStartedAt ?? Date(),
-                language: meetingLanguage
+                languagePair: languagePair
             )
             try await startSystemPipeline(sessionID: expectedSessionID)
         } catch {
@@ -142,7 +146,7 @@ final class CaptureCoordinator {
 
     func resume() async {
         guard sessionState == .paused, let activeRecord else { return }
-        activeVocabulary = speechVocabularySettings.phrases
+        activeVocabulary = sourceLanguage == .english ? speechVocabularySettings.phrases : []
         sessionState = .starting
         sessionStartedAt = Date()
         statusMessage = "启动中…"
@@ -380,7 +384,7 @@ final class CaptureCoordinator {
 
     private func makeSpeechEngine(for speaker: Speaker, sessionID expectedSessionID: UUID) -> NativeSpeechEngine {
         NativeSpeechEngine(
-            localeID: meetingLanguage.localeID,
+            localeID: sourceLanguage.localeID,
             contextualStrings: activeVocabulary,
             onInterim: { [weak self] text in
                 await self?.receiveInterim(text, speaker: speaker, sessionID: expectedSessionID)
@@ -436,7 +440,7 @@ final class CaptureCoordinator {
         if let sealedID { scheduleTranslation(id: sealedID, final: true) }
         guard let sectionID else { return }
 
-        if meetingLanguage.needsTranslation {
+        if languagePair.needsTranslation {
             guard lastProvisionalText[speaker] != text else { return }
             lastProvisionalText[speaker] = text
             scheduleTranslation(id: sectionID, final: false)
@@ -453,7 +457,7 @@ final class CaptureCoordinator {
         if let sealedID { scheduleTranslation(id: sealedID, final: true) }
         lastProvisionalText[speaker] = nil
 
-        if meetingLanguage.needsTranslation {
+        if languagePair.needsTranslation {
             scheduleTranslation(id: sectionID, final: false)
         } else {
             store.setNativeCaption(id: sectionID)
@@ -476,7 +480,7 @@ final class CaptureCoordinator {
     }
 
     private func scheduleTranslation(id: Int, final: Bool) {
-        guard meetingLanguage.needsTranslation else { return }
+        guard languagePair.needsTranslation else { return }
         guard let section = store.section(id: id), !section.sourceText.isEmpty else {
             if final { translation.cancel(sectionId: id) }
             return
@@ -502,7 +506,7 @@ final class CaptureCoordinator {
     private func beginFreshSession() {
         translation.cancelPending()
         sessionID = UUID()
-        activeVocabulary = speechVocabularySettings.phrases
+        activeVocabulary = sourceLanguage == .english ? speechVocabularySettings.phrases : []
         store.clear()
         lastProvisionalText.removeAll()
         insights?.reset()
@@ -592,7 +596,8 @@ final class CaptureCoordinator {
             )
         })
         sessionID = UUID()
-        meetingLanguage = record.meetingLanguage
+        sourceLanguage = record.languagePair.source
+        targetLanguage = record.languagePair.target
         meetingStartedAt = record.startedAt
         pausedElapsed = max(0, record.endedAt.timeIntervalSince(record.startedAt))
         sessionStartedAt = nil

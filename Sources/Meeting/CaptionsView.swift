@@ -6,8 +6,8 @@ import SwiftUI
 /// the non-active stream cannot reorder the transcript.
 ///
 /// Each section shows a speaker label (mine → "你" in accent blue; remote → "发言人"
-/// in meta gray), the Chinese translation as the large primary line, and the source
-/// text as a small muted secondary line. A still-translating section shows a subtle
+/// in meta gray), the selected target language as the large primary line, and the
+/// source text as a small muted secondary line. A still-translating section shows a subtle
 /// "翻译中" indicator (spec Rule B — translation state affects only the UI hint).
 struct CaptionsView: View {
     let store: CaptionStore
@@ -15,8 +15,8 @@ struct CaptionsView: View {
     /// A status / error line (permission prompt, model download, capture failure) shown
     /// in the empty state. MeetingStage also keeps it visible above populated captions.
     var statusMessage: String = ""
-    /// True for a Chinese meeting, where the recognized text IS the caption and there is
-    /// no translation. The large primary line already shows that Chinese, so the muted
+    /// True when source and target languages match, so the recognized text IS the caption
+    /// and there is no translation. The large primary line already shows that source, so the muted
     /// "source" echo underneath would be a verbatim duplicate — suppress it entirely.
     /// (Equality alone can't be relied on: an OPEN section's growing interim briefly
     /// diverges from the last native-caption snapshot, flashing the echo.)
@@ -160,7 +160,7 @@ struct CaptionsView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Source text = small muted secondary line. Never shown in Chinese mode
+            // Source text = small muted secondary line. Never shown in same-language mode
             // (it would duplicate the primary), nor when it's identical to the target.
             if !failed && !hideSourceEcho && !source.isEmpty && source != target {
                 Text(source)

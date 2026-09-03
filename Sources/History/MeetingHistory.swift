@@ -16,7 +16,7 @@ final class MeetingRecord {
     @Attribute(.unique) var id: UUID
     var startedAt: Date
     var endedAt: Date
-    /// Meeting language raw value ("english" / "chinese").
+    /// Persisted raw value of `MeetingLanguagePair`.
     var language: String
     /// Cached count so the list doesn't have to fault every line just to show it.
     var lineCount: Int
@@ -39,14 +39,15 @@ final class MeetingRecord {
     @Relationship(deleteRule: .cascade, inverse: \TranscriptLine.record)
     var lines: [TranscriptLine]
 
-    init(id: UUID = UUID(), startedAt: Date, endedAt: Date, language: MeetingLanguage,
+    init(id: UUID = UUID(), startedAt: Date, endedAt: Date,
+         languagePair: MeetingLanguagePair,
          lineCount: Int, status: MeetingStatus, insightJSON: String? = nil,
          refinedAt: Date? = nil, glossaryJSON: String? = nil,
          lines: [TranscriptLine] = []) {
         self.id = id
         self.startedAt = startedAt
         self.endedAt = endedAt
-        self.language = language.rawValue
+        self.language = languagePair.rawValue
         self.lineCount = lineCount
         self.status = status.rawValue
         self.insightJSON = insightJSON
@@ -69,13 +70,10 @@ final class MeetingRecord {
     var metaText: String { "\(lineCount) 段 · \(durationText)" }
 
     /// Whether this meeting's lines should render/export the source text as a secondary
-    /// echo under the primary line. TRUE only for a translated meeting (English→中), where
-    /// the primary is the Chinese translation and the source is the distinct English
-    /// original. FALSE for a Chinese meeting, where the recognized text IS the caption and
-    /// source == target, so an echo would just duplicate the primary. Derived from the one
-    /// source of truth — the persisted language's `needsTranslation` — so display, export,
-    /// and the live view all agree.
-    var showsSourceEcho: Bool { meetingLanguage.needsTranslation }
+    /// echo under the primary line. The target is primary only when source and target
+    /// languages differ. Same-language meetings store the recognized source as the target,
+    /// so repeating it would duplicate the caption.
+    var showsSourceEcho: Bool { languagePair.needsTranslation }
 
     /// The decoded cached insight, or nil if none was generated (or it's unreadable).
     var insight: InsightResult? { InsightResult.decode(from: insightJSON) }
@@ -84,11 +82,11 @@ final class MeetingRecord {
     /// redone). Gates the 原始/优化 toggle and picks refined text for export.
     var hasRefinement: Bool { refinedAt != nil }
 
-    /// The meeting language as the enum, for feeding the right prompt to the insight
-    /// engine when generating from history.
-    var meetingLanguage: MeetingLanguage {
-        guard let value = MeetingLanguage(rawValue: language) else {
-            preconditionFailure("Invalid persisted meeting language: \(language)")
+    /// The persisted source/target pair used by recognition, translation, refinement,
+    /// display, and export.
+    var languagePair: MeetingLanguagePair {
+        guard let value = MeetingLanguagePair(rawValue: language) else {
+            preconditionFailure("Invalid persisted meeting language pair: \(language)")
         }
         return value
     }
@@ -102,7 +100,7 @@ final class MeetingRecord {
 }
 
 /// One transcript line (== one Section at save time): who spoke, the source text,
-/// its Chinese translation, and WHEN it was spoken. `sectionId` ties the line back
+/// its target-language translation, and WHEN it was spoken. `sectionId` ties the line back
 /// to its live Section so incremental autosaves can UPSERT (update-in-place) rather
 /// than wipe-and-rewrite every few seconds.
 @Model
@@ -189,11 +187,12 @@ final class MeetingHistoryStore {
     /// Open a new live record (status "recording") the moment a meeting starts, so it
     /// exists on disk before a single word is spoken. Returned so the coordinator can
     /// keep syncing into it.
-    func beginRecord(startedAt: Date, language: MeetingLanguage) throws -> MeetingRecord {
+    func beginRecord(startedAt: Date,
+                     languagePair: MeetingLanguagePair) throws -> MeetingRecord {
         let r = MeetingRecord(
             startedAt: startedAt,
             endedAt: startedAt,
-            language: language,
+            languagePair: languagePair,
             lineCount: 0,
             status: .recording
         )

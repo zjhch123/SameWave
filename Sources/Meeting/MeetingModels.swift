@@ -16,39 +16,62 @@ enum Speaker: String, Codable, Hashable, Sendable {
 
 enum MeetingLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
     case english
-    case chinese
+    case simplifiedChinese
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .english: "英文（译中）"
-        case .chinese: "中文（不翻译）"
-        }
-    }
-
-    var shortLabel: String {
-        switch self {
-        case .english: "英→中"
-        case .chinese: "中文"
+        case .english: "英语"
+        case .simplifiedChinese: "简体中文"
         }
     }
 
     var localeID: String {
         switch self {
         case .english: "en-US"
-        case .chinese: "zh-CN"
+        case .simplifiedChinese: "zh-CN"
         }
     }
 
-    var translationSource: String? {
+    var translationIdentifier: String {
         switch self {
         case .english: "en"
-        case .chinese: nil
+        case .simplifiedChinese: "zh-Hans"
+        }
+    }
+}
+
+enum MeetingLanguagePair: String, Codable, Sendable {
+    case englishToEnglish
+    case englishToSimplifiedChinese = "english"
+    case simplifiedChineseToEnglish
+    case simplifiedChineseToSimplifiedChinese = "chinese"
+
+    init(source: MeetingLanguage, target: MeetingLanguage) {
+        self = switch (source, target) {
+        case (.english, .english): .englishToEnglish
+        case (.english, .simplifiedChinese): .englishToSimplifiedChinese
+        case (.simplifiedChinese, .english): .simplifiedChineseToEnglish
+        case (.simplifiedChinese, .simplifiedChinese): .simplifiedChineseToSimplifiedChinese
         }
     }
 
-    var needsTranslation: Bool { translationSource != nil }
+    var source: MeetingLanguage {
+        switch self {
+        case .englishToEnglish, .englishToSimplifiedChinese: .english
+        case .simplifiedChineseToEnglish, .simplifiedChineseToSimplifiedChinese: .simplifiedChinese
+        }
+    }
+
+    var target: MeetingLanguage {
+        switch self {
+        case .englishToEnglish, .simplifiedChineseToEnglish: .english
+        case .englishToSimplifiedChinese, .simplifiedChineseToSimplifiedChinese: .simplifiedChinese
+        }
+    }
+
+    var needsTranslation: Bool { source != target }
 }
 
 enum MeetingStatus: String, Codable, Sendable {

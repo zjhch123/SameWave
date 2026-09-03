@@ -29,7 +29,7 @@ struct MeetingStage: View {
                     store: coordinator.store,
                     isListening: coordinator.isRunning,
                     statusMessage: coordinator.statusMessage,
-                    hideSourceEcho: !coordinator.meetingLanguage.needsTranslation
+                    hideSourceEcho: !coordinator.languagePair.needsTranslation
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -97,7 +97,7 @@ private struct StageHeader: View {
                 iconButton("square.and.arrow.up", help: "导出全文") {
                     TranscriptExporter.exportWithPanel(
                         store: coordinator.store,
-                        showsSourceEcho: coordinator.meetingLanguage.needsTranslation
+                        showsSourceEcho: coordinator.languagePair.needsTranslation
                     )
                 }
                 .disabled(!coordinator.store.hasContent)
@@ -166,7 +166,10 @@ private struct StageHeader: View {
         let label: String = switch state {
         case .refining(let done, let total): "优化中 \(done)/\(total)"
         case .error: "优化失败，重试"
-        case .idle: configured ? (record.hasRefinement ? "重新优化" : "优化译文") : "去设置"
+        case .idle:
+            if !configured { "去设置" }
+            else if record.hasRefinement { "重新优化" }
+            else { record.languagePair.needsTranslation ? "优化译文" : "优化原文" }
         }
 
         return Button {
@@ -191,14 +194,14 @@ private struct StageHeader: View {
         guard let refiner = coordinator.refiner else { return }
         cancelRefinement()
         let lines = record.lines
-        let language = record.meetingLanguage
+        let languagePair = record.languagePair
         let token = UUID()
         refinementToken = token
         refinementTask = Task { @MainActor in
             do {
                 let outcome = try await refiner.refine(
                     lines: lines,
-                    language: language,
+                    languagePair: languagePair,
                     priorGlossaryJSON: record.glossaryJSON
                 )
                 guard !Task.isCancelled,
@@ -208,7 +211,7 @@ private struct StageHeader: View {
                     guard let refined = outcome.byIndex[line.orderIndex] else { continue }
                     if let source = refined.source?.trimmed, !source.isEmpty {
                         line.refinedSource = source
-                        if !language.needsTranslation { line.refinedTarget = source }
+                        if !languagePair.needsTranslation { line.refinedTarget = source }
                     }
                     if let target = refined.target?.trimmed, !target.isEmpty {
                         line.refinedTarget = target
@@ -330,23 +333,60 @@ private struct LanguagePicker: View {
     let coordinator: CaptureCoordinator
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(MeetingLanguage.allCases) { language in
-                let isSelected = coordinator.meetingLanguage == language
-                Button { coordinator.meetingLanguage = language } label: {
-                    Text(language.shortLabel)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? CaptionsView.fg : CaptionsView.muted)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(isSelected ? CaptionsView.bg : .clear))
-                }
-                .buttonStyle(.plain)
-            }
+        HStack(spacing: 5) {
+            languageMenu(
+                selection: coordinator.sourceLanguage,
+                accessibilityLabel: "源语言"
+            ) { coordinator.sourceLanguage = $0 }
+
+            Image(systemName: "arrow.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(CaptionsView.meta)
+
+            languageMenu(
+                selection: coordinator.targetLanguage,
+                accessibilityLabel: "目标语言"
+            ) { coordinator.targetLanguage = $0 }
         }
-        .padding(4)
-        .background(Capsule().fill(Color.black.opacity(0.04)))
         .fixedSize()
+    }
+
+    private func languageMenu(
+        selection: MeetingLanguage,
+        accessibilityLabel: String,
+        onSelect: @escaping (MeetingLanguage) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(MeetingLanguage.allCases) { language in
+                Button { onSelect(language) } label: {
+                    HStack {
+                        Text(language.label)
+                        if selection == language {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(selection.label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(CaptionsView.fg)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(CaptionsView.meta)
+            }
+            .padding(.horizontal, 7)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("\(accessibilityLabel)：\(selection.label)")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(selection.label)
     }
 }
 

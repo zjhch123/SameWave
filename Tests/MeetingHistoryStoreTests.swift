@@ -7,7 +7,10 @@ final class MeetingHistoryStoreTests: XCTestCase {
     func testSyncUpsertsBySectionIDAndDeletesPrunedLines() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(startedAt: .now, language: .english)
+        let record = try history.beginRecord(
+            startedAt: .now,
+            languagePair: .englishToSimplifiedChinese
+        )
 
         var first = Section(id: 10, speaker: .remote)
         first.committedSource = ["Hello"]
@@ -27,7 +30,10 @@ final class MeetingHistoryStoreTests: XCTestCase {
     func testFinishDeletesEmptyMeeting() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(startedAt: .now, language: .chinese)
+        let record = try history.beginRecord(
+            startedAt: .now,
+            languagePair: .simplifiedChineseToSimplifiedChinese
+        )
 
         try history.finish(record, sections: [], endedAt: .now)
 
@@ -38,13 +44,17 @@ final class MeetingHistoryStoreTests: XCTestCase {
     func testFinishPersistsTranscriptAndEndedStatusTogether() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(startedAt: .now, language: .english)
+        let record = try history.beginRecord(
+            startedAt: .now,
+            languagePair: .simplifiedChineseToEnglish
+        )
         var section = Section(id: 7, speaker: .remote)
         section.committedSource = ["Finished"]
 
         try history.finish(record, sections: [section], endedAt: .now)
 
         XCTAssertEqual(record.meetingStatus, .ended)
+        XCTAssertEqual(record.languagePair, .simplifiedChineseToEnglish)
         XCTAssertEqual(record.lineCount, 1)
         XCTAssertEqual(record.lines.first?.sectionId, 7)
     }

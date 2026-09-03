@@ -32,7 +32,7 @@ struct MainView: View {
         .modifier(
             TranslationPump(
                 bridge: coordinator.translation,
-                sourceLanguage: coordinator.meetingLanguage.translationSource ?? "en"
+                languagePair: coordinator.languagePair
             )
         )
         .onChange(of: coordinator.isRunning) { _, isRunning in

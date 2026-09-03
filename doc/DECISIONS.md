@@ -14,6 +14,45 @@
 
 ---
 
+## DEC-20260903-004：独立选择源语言和目标语言，同语言直接旁路翻译
+
+- **日期**：2026-09-03
+- **状态**：Accepted
+- **范围**：语言选择、实时识别与翻译、历史数据、会后优化
+
+### 背景
+
+原语言模式把“英文译中”和“中文直显”绑定成两个预设，界面一侧像可选项、另一侧像静态结果，无法表达中文译英或英语直显。识别 locale、Translation session、历史恢复和会后优化也都依赖这个单一模式，不能只改控件文案。
+
+### 决定
+
+- 源语言和目标语言分别使用一个可点击菜单，两个菜单都只提供固定名称“英语”和“简体中文”。会话开始后同时锁定，避免运行中改变识别和翻译方向。
+- 语言对包含四种组合。源语言决定双路 ASR locale；源语言与目标语言不同时按所选方向创建 Apple Translation session，相同时不创建 session 或翻译请求，直接把识别结果作为目标文字。
+- `MeetingRecord.language` 保存完整语言对，恢复、字幕、导出和会后优化都从同一语言对派生行为。四种组合使用互不重复的持久化值，不增加兼容解析、迁移分支或 fallback。
+
+### 未采用方案
+
+- **继续保留“英译中 / 中文直显”预设**：无法满足两个方向独立选择，也继续让目标语言看起来不可操作。
+- **同语言仍调用 Translation**：没有语义收益，会增加资源准备、延迟和失败面。
+- **只在 UI 层交换标签**：识别 locale、持久化恢复和 AI 优化仍会使用错误方向。
+
+### 理由与权衡
+
+一个固定语言枚举加一个完整语言对，是覆盖当前四种行为的最小领域模型。翻译是否需要可由 `source != target` 唯一推导，避免额外开关产生矛盾状态。代价是当前只支持两种语言；增加新语言时必须同时验证 Speech 与 Translation 的平台能力。
+
+### 影响
+
+- 英文识别词表仅在源语言为英语时进入识别器。
+- 不同语言的字幕和导出保留目标主文与源文；同语言不显示重复 source echo。
+- 会后优化在不同语言时按保存方向重译，在同语言时只校对原文。
+
+### 验证与相关文件
+
+- XCTest 覆盖固定语言名称、四种组合、同语言旁路、持久化值和优化 prompt；已签名应用用于核对两个语言菜单的可点击视觉。
+- 相关文件：[`Sources/Meeting/MeetingModels.swift`](../Sources/Meeting/MeetingModels.swift)、[`Sources/Meeting/CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift)、[`Sources/Meeting/TranslationPump.swift`](../Sources/Meeting/TranslationPump.swift)、[`Sources/App/MeetingStage.swift`](../Sources/App/MeetingStage.swift)、[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Tests/MeetingLanguageTests.swift`](../Tests/MeetingLanguageTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)。
+
+---
+
 ## DEC-20260903-003：英文识别词表由用户显式保存并按录制阶段冻结
 
 - **日期**：2026-09-03
