@@ -3,42 +3,48 @@ import SwiftUI
 
 /// A view modifier that hosts a single, long-lived Translation session and
 /// translates the current context BLOCK as a whole (for maximum context), then
-/// publishes the whole-block Chinese back to the store.
+/// publishes the translated target block back to the store.
 ///
-/// `sourceLanguage` (e.g. "en", "ja") drives the session's source; when it
-/// changes SwiftUI tears down and rebuilds the `translationTask` with the new
-/// language pair, so switching meeting language re-points the translator.
+/// SwiftUI tears down and rebuilds the `translationTask` when either side of the
+/// language pair changes. Equal source and target languages do not host a translation
+/// session at all; the coordinator writes the recognized source directly to captions.
 struct TranslationPump: ViewModifier {
     let bridge: TranslationBridge
-    let sourceLanguage: String
+    let languagePair: MeetingLanguagePair
 
     private var config: TranslationSession.Configuration {
         TranslationSession.Configuration(
-            source: Locale.Language(identifier: sourceLanguage),
-            target: Locale.Language(identifier: "zh-Hans"))
+            source: Locale.Language(identifier: languagePair.source.translationIdentifier),
+            target: Locale.Language(identifier: languagePair.target.translationIdentifier)
+        )
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content
-            .translationTask(config) { session in
-                do {
-                    try await session.prepareTranslation()
+        if languagePair.needsTranslation {
+            content
+                .translationTask(config) { session in
+                    do {
+                        try await session.prepareTranslation()
 
-                    // Pull the next request, translate it, repeat. The bridge coalesces
-                    // per section so the pump never falls behind under dense speech.
-                    while let req = await bridge.next() {
-                        do {
-                            let translated = try await Self.translate(req, session: session)
-                            bridge.onTranslated?(req, translated)
-                        } catch {
-                            if !Task.isCancelled { bridge.onFailed?(req) }
+                        // Pull the next request, translate it, repeat. The bridge coalesces
+                        // per section so the pump never falls behind under dense speech.
+                        while let req = await bridge.next() {
+                            do {
+                                let translated = try await Self.translate(req, session: session)
+                                bridge.onTranslated?(req, translated)
+                            } catch {
+                                if !Task.isCancelled { bridge.onFailed?(req) }
+                            }
+                            bridge.complete(req)
                         }
-                        bridge.complete(req)
+                    } catch {
+                        bridge.failPending()
                     }
-                } catch {
-                    bridge.failPending()
                 }
-            }
+        } else {
+            content
+        }
     }
 
     /// Translate one request. When it carries leading context (`context ||| target`),
@@ -55,9 +61,9 @@ struct TranslationPump: ViewModifier {
 
     /// Recover the target-side translation from a combined `context ||| target` result
     /// by taking the text after the LAST delimiter occurrence. The candidate list
-    /// covers how Apple Translation reformats the marker for zh output — collapsed
-    /// spacing, fullwidth pipes, or a line break — and searching backwards means a pipe
-    /// inside the context can't fool it. Returns nil if no delimiter survived.
+    /// covers how Apple Translation may reformat the marker — collapsed spacing,
+    /// fullwidth pipes, or a line break — and searching backwards means a pipe inside
+    /// the context can't fool it. Returns nil if no delimiter survived.
     private static func extractTarget(from full: String) -> String? {
         for sep in [" ||| ", "|||", " ｜｜｜ ", "｜｜｜", " | ", "| ", "｜", "\n"] {
             if let r = full.range(of: sep, options: .backwards) {

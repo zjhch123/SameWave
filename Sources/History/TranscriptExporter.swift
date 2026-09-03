@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Exports the captured captions as a Markdown transcript (Chinese + source text).
+/// Exports the captured captions as a Markdown transcript (target + source text).
 @MainActor
 enum TranscriptExporter {
 
@@ -10,8 +10,8 @@ enum TranscriptExporter {
     // MARK: - Markdown
 
     /// Build the Markdown from the live store's sections, in id (speech-onset) order.
-    /// `showsSourceEcho` is the meeting's mode flag (English→中 = true, Chinese = false);
-    /// a Chinese meeting's source equals its caption, so its echo is suppressed.
+    /// `showsSourceEcho` is true only when source and target languages differ;
+    /// a same-language meeting's source equals its caption, so its echo is suppressed.
     static func markdown(store: CaptionStore, showsSourceEcho: Bool) -> String {
         let entries = store.sections
         var md = header
@@ -91,7 +91,7 @@ enum TranscriptExporter {
     // MARK: - Save panel
 
     /// Export the live transcript. `showsSourceEcho` is the current meeting's mode flag
-    /// (`meetingLanguage.needsTranslation`).
+    /// (`languagePair.needsTranslation`).
     static func exportWithPanel(store: CaptionStore, showsSourceEcho: Bool) {
         presentSavePanel(markdown: markdown(store: store, showsSourceEcho: showsSourceEcho))
     }

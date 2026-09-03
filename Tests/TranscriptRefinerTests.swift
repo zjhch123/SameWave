@@ -30,6 +30,26 @@ final class TranscriptRefinerTests: XCTestCase {
         XCTAssertEqual(batches.map(\.count), [1, 1])
     }
 
+    func testTranslationPromptUsesSelectedDirection() {
+        let prompt = TranscriptRefiner.prompt(
+            languagePair: .simplifiedChineseToEnglish,
+            glossary: []
+        )
+
+        XCTAssertTrue(prompt.contains("源语言是简体中文，目标语言是英语"))
+        XCTAssertTrue(prompt.contains("\"target\":\"英语译文\""))
+    }
+
+    func testSameLanguagePromptExplicitlyDisablesTranslation() {
+        let prompt = TranscriptRefiner.prompt(
+            languagePair: .englishToEnglish,
+            glossary: []
+        )
+
+        XCTAssertTrue(prompt.contains("源语言和目标语言相同，不要翻译"))
+        XCTAssertFalse(prompt.contains("重新翻译"))
+    }
+
     private func makeLine(index: Int, text: String) -> TranscriptLine {
         TranscriptLine(
             speaker: .remote,

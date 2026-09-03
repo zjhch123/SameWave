@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 /// Read-only view of a saved meeting from history — the same centered transcript
-/// style as the live view, each line tagged with its speaker, spoken time, Chinese
+/// style as the live view, each line tagged with its speaker, spoken time, target-language
 /// translation, and source text. The meeting's title/meta and its export action live
 /// in the stage's top bar (StageHeader); its AI insight lives in the right Inspector
 /// (the single home for insights) — this view is PURE transcript, no duplicate panel.
@@ -56,8 +56,8 @@ struct HistoryDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             // Source echo: only for a TRANSLATED meeting (record.showsSourceEcho), and
             // only when the primary line is the translation (target non-empty) and the
-            // source genuinely differs. A Chinese meeting stores source == target (the
-            // recognized text IS the caption), so mode-gating suppresses the near-duplicate
+            // source genuinely differs. A same-language meeting stores source == target (the
+            // recognized text IS the caption), so pair-gating suppresses the near-duplicate
             // that pure equality misses when the two were snapshotted a beat apart.
             if record.showsSourceEcho && !target.isEmpty && !source.isEmpty && source != target {
                 Text(source)

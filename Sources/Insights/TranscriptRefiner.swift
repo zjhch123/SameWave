@@ -18,7 +18,7 @@ final class TranscriptRefiner {
 
     struct GlossaryTerm: Codable, Equatable {
         let term: String
-        let zh: String
+        let target: String
     }
 
     struct Outcome {
@@ -46,7 +46,7 @@ final class TranscriptRefiner {
         state = .idle
     }
 
-    func refine(lines rawLines: [TranscriptLine], language: MeetingLanguage,
+    func refine(lines rawLines: [TranscriptLine], languagePair: MeetingLanguagePair,
                 priorGlossaryJSON: String?) async throws -> Outcome {
         let expectedRunID = UUID()
         runID = expectedRunID
@@ -77,7 +77,7 @@ final class TranscriptRefiner {
             let context = index > 0 ? Array(batches[index - 1].suffix(2)) : []
             do {
                 let raw = try await provider.complete(
-                    system: Self.prompt(language: language, glossary: glossary),
+                    system: Self.prompt(languagePair: languagePair, glossary: glossary),
                     user: Self.input(batch: batch, context: context)
                 )
                 try Task.checkCancellation()
@@ -156,29 +156,32 @@ final class TranscriptRefiner {
         return value
     }
 
-    private static func prompt(language: MeetingLanguage, glossary: [GlossaryTerm]) -> String {
+    static func prompt(languagePair: MeetingLanguagePair,
+                       glossary: [GlossaryTerm]) -> String {
         let glossaryText = glossary.isEmpty
             ? "（暂无术语表）"
-            : glossary.map { "- \($0.term) → \($0.zh)" }.joined(separator: "\n")
-        if language.needsTranslation {
+            : glossary.map { "- \($0.term) → \($0.target)" }.joined(separator: "\n")
+        let source = languagePair.source.label
+        let target = languagePair.target.label
+        if languagePair.needsTranslation {
             return """
-            你是会议记录校对助手。请逐行保守清理原文并重新翻译成简体中文，只返回 JSON：
-            {"glossary":[{"term":"原词","zh":"建议中文或保留原词"}],"lines":[{"i":0,"source":"校对后原文","target":"中文译文"}]}
+            你是会议记录校对与翻译助手。源语言是\(source)，目标语言是\(target)。请逐行保守清理原文并重新翻译，只返回 JSON：
+            {"glossary":[{"term":"原词","target":"目标语言中的规范译法或保留原词"}],"lines":[{"i":0,"source":"校对后原文","target":"\(target)译文"}]}
 
             术语表：
             \(glossaryText)
 
-            每行都必须返回，i 与输入序号一致，不得合并或改序。source 只删口水词、修正明显识别错误和补标点；不增删事实，不改写含义。target 必须忠实原文和术语表。
+            每行都必须返回，i 与输入序号一致，不得合并或改序。source 必须保持\(source)，只删口水词、修正明显识别错误和补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表。
             """
         }
         return """
-        你是中文会议记录整理编辑。请逐行补标点、删口水词和明显重复，将有证据的音译乱码还原为正确英文，只返回 JSON：
-        {"glossary":[{"term":"识别乱码","zh":"正确写法"}],"lines":[{"i":0,"source":"整理后中文"}]}
+        你是\(source)会议记录整理编辑。源语言和目标语言相同，不要翻译。请逐行补标点、删口水词和明显重复，只返回 JSON：
+        {"glossary":[{"term":"识别结果","target":"规范写法"}],"lines":[{"i":0,"source":"整理后的\(source)原文"}]}
 
         术语表：
         \(glossaryText)
 
-        每行都必须返回，i 与输入序号一致，不得合并或改序。不确定的内容保留原样；不得虚构事实、观点、数字或人名。
+        每行都必须返回，i 与输入序号一致，不得合并或改序。source 必须保持\(source)；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
         """
     }
 
