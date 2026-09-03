@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Foundation
 import Speech
+import Synchronization
 
 /// Actor-isolated Apple Speech pipeline shared by the system-audio and microphone
 /// paths. Audio callbacks write to a bounded AsyncStream, keeping AVAudioConverter
@@ -16,6 +17,7 @@ actor NativeSpeechEngine {
     enum EngineError: LocalizedError {
         case notAuthorized
         case assetInstallation(Error)
+        case customLanguageModel(Error)
         case noCompatibleAudioFormat
         case analyzerStart(Error)
 
@@ -25,6 +27,8 @@ actor NativeSpeechEngine {
                 "需要在「系统设置 › 隐私与安全性 › 语音识别」中允许同频"
             case .assetInstallation(let error):
                 "语音模型准备失败：\(error.localizedDescription)"
+            case .customLanguageModel(let error):
+                "词表模型准备失败：\(error.localizedDescription)"
             case .noCompatibleAudioFormat:
                 "语音识别器没有可用的音频格式"
             case .analyzerStart(let error):
@@ -34,11 +38,13 @@ actor NativeSpeechEngine {
     }
 
     private let localeID: String
+    private let contextualStrings: [String]
     private let onInterim: @Sendable (String) async -> Void
     private let onCommit: @Sendable (String) async -> Void
     private let onStatus: @Sendable (String) async -> Void
 
-    private var transcriber: SpeechTranscriber?
+    private var speechTranscriber: SpeechTranscriber?
+    private var dictationTranscriber: DictationTranscriber?
     private var analyzer: SpeechAnalyzer?
     private var analyzerInput: AsyncStream<AnalyzerInput>.Continuation?
     private var analyzerFormat: AVAudioFormat?
@@ -53,6 +59,7 @@ actor NativeSpeechEngine {
     private let audioContinuation: AsyncStream<AudioChunk>.Continuation
 
     init(localeID: String,
+         contextualStrings: [String],
          onInterim: @escaping @Sendable (String) async -> Void,
          onCommit: @escaping @Sendable (String) async -> Void,
          onStatus: @escaping @Sendable (String) async -> Void) {
@@ -64,6 +71,7 @@ actor NativeSpeechEngine {
             pair.continuation.yield(AudioChunk(samples: samples, sampleRate: sampleRate))
         }
         self.localeID = localeID
+        self.contextualStrings = contextualStrings
         self.onInterim = onInterim
         self.onCommit = onCommit
         self.onStatus = onStatus
@@ -75,41 +83,79 @@ actor NativeSpeechEngine {
         guard await Self.requestAuthorization() else { throw EngineError.notAuthorized }
 
         let locale = Locale(identifier: localeID)
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-        self.transcriber = transcriber
+        let modules: [any SpeechModule]
+        if localeID == "en-US" {
+            var preset = DictationTranscriber.Preset.progressiveLongDictation
+            if !contextualStrings.isEmpty {
+                await onStatus("准备词表模型…")
+                let modelConfiguration: SFSpeechLanguageModel.Configuration
+                do {
+                    modelConfiguration = try await CustomSpeechLanguageModel.shared.configuration(
+                        locale: locale,
+                        phrases: contextualStrings
+                    )
+                } catch {
+                    throw EngineError.customLanguageModel(error)
+                }
+                preset.contentHints.insert(
+                    .customizedLanguage(modelConfiguration: modelConfiguration)
+                )
+            }
+
+            let transcriber = DictationTranscriber(
+                locale: locale,
+                contentHints: preset.contentHints,
+                transcriptionOptions: preset.transcriptionOptions,
+                reportingOptions: preset.reportingOptions,
+                attributeOptions: preset.attributeOptions
+            )
+            dictationTranscriber = transcriber
+            modules = [transcriber]
+        } else {
+            let transcriber = SpeechTranscriber(
+                locale: locale,
+                preset: .progressiveTranscription
+            )
+            speechTranscriber = transcriber
+            modules = [transcriber]
+        }
 
         do {
-            let installed = await SpeechTranscriber.installedLocales
-            let available = installed.contains {
-                $0.identifier(.bcp47) == locale.identifier(.bcp47)
-            }
-            if !available {
+            if let request = try await AssetInventory.assetInstallationRequest(
+                supporting: modules
+            ) {
                 await onStatus("首次使用，下载语音模型…")
-                if let request = try await AssetInventory.assetInstallationRequest(
-                    supporting: [transcriber]
-                ) {
-                    try await request.downloadAndInstall()
-                }
+                try await request.downloadAndInstall()
             }
         } catch {
             throw EngineError.assetInstallation(error)
         }
 
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
-            compatibleWith: [transcriber]
+            compatibleWith: modules
         ) else {
             throw EngineError.noCompatibleAudioFormat
         }
         analyzerFormat = format
 
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analysisContext = AnalysisContext()
+        if localeID == "en-US" {
+            analysisContext.contextualStrings[.general] = contextualStrings
+        }
+
+        let analyzer = SpeechAnalyzer(modules: modules)
         self.analyzer = analyzer
         let inputPair = AsyncStream<AnalyzerInput>.makeStream()
         analyzerInput = inputPair.continuation
-        startResultsDrain(transcriber: transcriber)
+        if let dictationTranscriber {
+            startResultsDrain(transcriber: dictationTranscriber)
+        } else if let speechTranscriber {
+            startResultsDrain(transcriber: speechTranscriber)
+        }
         startAudioDrain()
 
         do {
+            try await analyzer.setContext(analysisContext)
             try await analyzer.start(inputSequence: inputPair.stream)
             await onStatus("模型就绪")
         } catch {
@@ -138,7 +184,8 @@ actor NativeSpeechEngine {
         resultsTask = nil
 
         analyzer = nil
-        transcriber = nil
+        speechTranscriber = nil
+        dictationTranscriber = nil
         analyzerInput = nil
         analyzerFormat = nil
         sourceFormat = nil
@@ -168,15 +215,38 @@ actor NativeSpeechEngine {
         }
     }
 
-    private func startAudioDrain() {
-        audioTask = Task {
-            for await chunk in audioSamples {
-                convertAndYield(chunk)
+    private func startResultsDrain(transcriber: DictationTranscriber) {
+        let onInterim = onInterim
+        let onCommit = onCommit
+        let onStatus = onStatus
+        resultsTask = Task {
+            do {
+                for try await result in transcriber.results {
+                    let text = String(result.text.characters).trimmed
+                    guard !text.isEmpty else { continue }
+                    if result.isFinal {
+                        await onCommit(text)
+                    } else {
+                        await onInterim(text)
+                    }
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                await onStatus("识别错误：\(error.localizedDescription)")
             }
         }
     }
 
-    private func convertAndYield(_ chunk: AudioChunk) {
+    private func startAudioDrain() {
+        audioTask = Task {
+            for await chunk in audioSamples {
+                await convertAndYield(chunk)
+            }
+        }
+    }
+
+    private func convertAndYield(_ chunk: AudioChunk) async {
         let samples = chunk.samples
         let inputSampleRate = chunk.sampleRate
         guard let analyzerFormat, let analyzerInput, !samples.isEmpty else { return }
@@ -212,9 +282,22 @@ actor NativeSpeechEngine {
             frameCapacity: capacity
         ) else { return }
 
-        do {
-            try converter.convert(to: outputBuffer, from: inputBuffer)
-        } catch {
+        let pendingInput = Mutex<AVAudioPCMBuffer?>(inputBuffer)
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+            pendingInput.withLock { inputBuffer in
+                guard let buffer = inputBuffer else {
+                    inputStatus.pointee = .noDataNow
+                    return nil
+                }
+                inputBuffer = nil
+                inputStatus.pointee = .haveData
+                return buffer
+            }
+        }
+        if status == .error {
+            let detail = conversionError?.localizedDescription ?? "未知错误"
+            await onStatus("音频格式转换失败：\(detail)")
             return
         }
         guard outputBuffer.frameLength > 0 else { return }

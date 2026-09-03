@@ -24,10 +24,13 @@ struct MeetingCaptionsApp: App {
         }
         .windowStyle(.hiddenTitleBar)
 
-        // Insight-provider configuration (⌘,). SwiftUI wires this to the standard
-        // "同频 ▸ 设置…" menu item automatically.
+        // Insight and speech-vocabulary configuration (⌘,). SwiftUI wires this
+        // to the standard "同频 ▸ 设置…" menu item automatically.
         Settings {
-            SettingsView(settings: delegate.insightSettings)
+            SettingsView(
+                insightSettings: delegate.insightSettings,
+                speechVocabularySettings: delegate.speechVocabularySettings
+            )
         }
 
         // Lightweight menu-bar icon for quick access / quit.
@@ -43,14 +46,23 @@ struct MeetingCaptionsApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let coordinator = CaptureCoordinator()
+    let coordinator: CaptureCoordinator
     /// Shared persistent history store; also feeds the sidebar's @Query.
     let history: MeetingHistoryStore?
     let storageError: String?
     /// User configuration for AI insights (provider + Keychain-stored key).
-    let insightSettings = InsightSettings()
+    let insightSettings: InsightSettings
+    /// User-managed local vocabulary for English speech recognition.
+    let speechVocabularySettings: SpeechVocabularySettings
 
     override init() {
+        let insightSettings = InsightSettings()
+        self.insightSettings = insightSettings
+        let speechVocabularySettings = SpeechVocabularySettings()
+        self.speechVocabularySettings = speechVocabularySettings
+        coordinator = CaptureCoordinator(
+            speechVocabularySettings: speechVocabularySettings
+        )
         do {
             history = try MeetingHistoryStore()
             storageError = nil

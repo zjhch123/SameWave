@@ -54,9 +54,10 @@ final class MicrophoneCapture {
         input.removeTap(onBus: 0)
         let audioSink = onAudio
         let sampleRate = format.sampleRate
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+        let tap: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void = { buffer, _ in
             audioSink?(Self.monoSamples(from: buffer), sampleRate)
         }
+        input.installTap(onBus: 0, bufferSize: 4096, format: format, block: tap)
 
         engine.prepare()
         do {

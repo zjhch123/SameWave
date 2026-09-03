@@ -14,6 +14,46 @@
 
 ---
 
+## DEC-20260903-003：英文识别词表由用户显式保存并按录制阶段冻结
+
+- **日期**：2026-09-03
+- **状态**：Accepted
+- **范围**：本地语音识别、设置持久化、双路会话一致性
+
+### 背景
+
+英文识别原先使用源码中固定的 41 个产品名、缩写和人名。实际会议术语会变化，继续依赖发版修改无法让用户及时维护词表；如果运行中的两路识别器直接观察可变设置，又可能在同一阶段使用不同版本。
+
+### 决定
+
+- 设置窗口增加独立“词表”Tab，以每行一个词或短语的形式编辑；只有点击保存才写入 UserDefaults。
+- 首次运行保留原 41 个默认词条。保存时去空行、去首尾空白并按大小写不敏感去重；空词表是有效配置。
+- 开始或恢复会议时冻结词表快照，系统音频和麦克风使用同一份快照。运行中保存的改动到下一次开始或恢复英文会议时生效。
+- 同一词表同时传给 `AnalysisContext.contextualStrings` 和本地 `SFCustomLanguageModelData`。不添加自定义读音、权重或识别结果字符串替换；模型缓存按 locale 与词表内容指纹隔离。
+
+### 未采用方案
+
+- **编辑时立即更新运行中的识别器**：需要重建双路 Speech 生命周期，并会造成当前段落识别上下文突变。
+- **仅使用 `contextualStrings`**：会放弃已经验证过的自定义语言模型提示路径。
+- **对最终文本做词表纠错**：属于确定性字符串改写，不是用户要求的模型侧偏置，且容易误改语义。
+
+### 理由与权衡
+
+显式保存与阶段快照使配置行为可预期，也保证两路音频的一致性。内容指纹允许复用相同模型，同时确保更新后的词表不命中旧缓存。代价是保存后不会在正在录制的阶段立即生效，首次使用新词表时仍需要等待本地模型准备。
+
+### 影响
+
+- 词表配置和 Apple 自定义模型完全留在本机，与可选云端洞察设置隔离。
+- 英文识别器在词表为空时跳过自定义模型；中文识别行为不变。
+- 后续修改词表格式、生效时机或模型提示策略时，必须同时检查双路快照和缓存身份。
+
+### 验证与相关文件
+
+- XCTest 覆盖默认值、规范化和空词表持久化；无签名 Debug 构建验证 Speech API 与 Swift 6 并发边界。
+- 相关文件：[`Sources/Capture/SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Capture/NativeSpeechEngine.swift`](../Sources/Capture/NativeSpeechEngine.swift)、[`Sources/Capture/CustomSpeechLanguageModel.swift`](../Sources/Capture/CustomSpeechLanguageModel.swift)、[`Sources/Meeting/CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift)、[`Tests/SpeechVocabularySettingsTests.swift`](../Tests/SpeechVocabularySettingsTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)。
+
+---
+
 ## DEC-20260903-002：洞察与会后优化分离，实时 AI 只使用有界最新上下文
 
 - **日期**：2026-09-03

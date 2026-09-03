@@ -30,6 +30,8 @@ final class CaptureCoordinator {
     let store = CaptionStore()
     let translation = TranslationBridge()
 
+    private let speechVocabularySettings: SpeechVocabularySettings
+    private var activeVocabulary: [String] = []
     var history: MeetingHistoryStore?
     var insights: InsightEngine?
     var refiner: TranscriptRefiner?
@@ -45,7 +47,8 @@ final class CaptureCoordinator {
     private var isChangingMicrophone = false
     private var lastProvisionalText: [Speaker: String] = [:]
 
-    init() {
+    init(speechVocabularySettings: SpeechVocabularySettings) {
+        self.speechVocabularySettings = speechVocabularySettings
         translation.onTranslated = { [weak self] request, translated in
             guard let self, request.sessionID == self.sessionID else { return }
             self.store.applyTranslation(
@@ -139,6 +142,7 @@ final class CaptureCoordinator {
 
     func resume() async {
         guard sessionState == .paused, let activeRecord else { return }
+        activeVocabulary = speechVocabularySettings.phrases
         sessionState = .starting
         sessionStartedAt = Date()
         statusMessage = "启动中…"
@@ -377,6 +381,7 @@ final class CaptureCoordinator {
     private func makeSpeechEngine(for speaker: Speaker, sessionID expectedSessionID: UUID) -> NativeSpeechEngine {
         NativeSpeechEngine(
             localeID: meetingLanguage.localeID,
+            contextualStrings: activeVocabulary,
             onInterim: { [weak self] text in
                 await self?.receiveInterim(text, speaker: speaker, sessionID: expectedSessionID)
             },
@@ -497,6 +502,7 @@ final class CaptureCoordinator {
     private func beginFreshSession() {
         translation.cancelPending()
         sessionID = UUID()
+        activeVocabulary = speechVocabularySettings.phrases
         store.clear()
         lastProvisionalText.removeAll()
         insights?.reset()
