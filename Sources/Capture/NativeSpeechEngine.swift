@@ -2,12 +2,57 @@ import AppKit
 import AVFoundation
 import Foundation
 import Speech
+import Synchronization
 
 /// Actor-isolated Apple Speech pipeline shared by the system-audio and microphone
 /// paths. Audio callbacks write to a bounded AsyncStream, keeping AVAudioConverter
 /// and SpeechAnalyzer state on one executor without unsafe Sendable declarations.
 @available(macOS 26.0, *)
 actor NativeSpeechEngine {
+    private static let experimentalContextualStrings = [
+        "claude code",
+        "Bestla",
+        "ODB",
+        "FileItem",
+        "bootstrap",
+        "Arbutus",
+        "XPay",
+        "Wallet",
+        "Copilot",
+        "M365 Copilot",
+        "One Copilot",
+        "OneCopilotMobile",
+        "OCM",
+        "Unified Copilot",
+        "Unified App Experience",
+        "ExP",
+        "Scorecard",
+        "ECS",
+        "ADO",
+        "Kusto",
+        "Intune",
+        "Entra",
+        "GlobalProtect",
+        "PR",
+        "SKU",
+        "AAD",
+        "MSAL",
+        "OBO",
+        "UPN",
+        "1JS",
+        "SSR",
+        "SSE",
+        "SAW",
+        "RAI",
+        "CELA",
+        "MSAI",
+        "Yujie Liu",
+        "Shixin Cai",
+        "Jessica Zhang",
+        "Baogui Yan",
+        "Lei Bian",
+    ]
+
     private struct AudioChunk: Sendable {
         let samples: [Float]
         let sampleRate: Double
@@ -102,6 +147,9 @@ actor NativeSpeechEngine {
         }
         analyzerFormat = format
 
+        let analysisContext = AnalysisContext()
+        analysisContext.contextualStrings[.general] = Self.experimentalContextualStrings
+
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
         let inputPair = AsyncStream<AnalyzerInput>.makeStream()
@@ -110,6 +158,7 @@ actor NativeSpeechEngine {
         startAudioDrain()
 
         do {
+            try await analyzer.setContext(analysisContext)
             try await analyzer.start(inputSequence: inputPair.stream)
             await onStatus("模型就绪")
         } catch {
@@ -171,12 +220,12 @@ actor NativeSpeechEngine {
     private func startAudioDrain() {
         audioTask = Task {
             for await chunk in audioSamples {
-                convertAndYield(chunk)
+                await convertAndYield(chunk)
             }
         }
     }
 
-    private func convertAndYield(_ chunk: AudioChunk) {
+    private func convertAndYield(_ chunk: AudioChunk) async {
         let samples = chunk.samples
         let inputSampleRate = chunk.sampleRate
         guard let analyzerFormat, let analyzerInput, !samples.isEmpty else { return }
@@ -212,9 +261,22 @@ actor NativeSpeechEngine {
             frameCapacity: capacity
         ) else { return }
 
-        do {
-            try converter.convert(to: outputBuffer, from: inputBuffer)
-        } catch {
+        let pendingInput = Mutex<AVAudioPCMBuffer?>(inputBuffer)
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+            pendingInput.withLock { inputBuffer in
+                guard let buffer = inputBuffer else {
+                    inputStatus.pointee = .noDataNow
+                    return nil
+                }
+                inputBuffer = nil
+                inputStatus.pointee = .haveData
+                return buffer
+            }
+        }
+        if status == .error {
+            let detail = conversionError?.localizedDescription ?? "未知错误"
+            await onStatus("音频格式转换失败：\(detail)")
             return
         }
         guard outputBuffer.frameLength > 0 else { return }
