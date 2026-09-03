@@ -11,13 +11,16 @@ struct MeetingCaptionsApp: App {
         // Single integrated main window. Hidden title bar → the traffic-light buttons
         // float over our own 48pt header (TrafficLightConfigurator centers them there).
         Window("同频", id: "control") {
-            MainView(coordinator: delegate.coordinator)
-                .frame(minWidth: 940, minHeight: 480)
-                .ignoresSafeArea(.container, edges: .top)
-                // Center the traffic lights in the 48pt header (see MainView headers).
-                .background(TrafficLightConfigurator(headerHeight: 48))
-                // Share the history store's SwiftData container so the sidebar @Query reads it.
-                .modelContainer(delegate.history.container)
+            if let history = delegate.history {
+                MainView(coordinator: delegate.coordinator)
+                    .frame(minWidth: 940, minHeight: 480)
+                    .ignoresSafeArea(.container, edges: .top)
+                    .background(TrafficLightConfigurator(headerHeight: 48))
+                    .modelContainer(history.container)
+            } else {
+                StorageFailureView(message: delegate.storageError ?? "未知错误")
+                    .frame(minWidth: 640, minHeight: 360)
+            }
         }
         .windowStyle(.hiddenTitleBar)
 
@@ -42,16 +45,25 @@ struct MeetingCaptionsApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let coordinator = CaptureCoordinator()
     /// Shared persistent history store; also feeds the sidebar's @Query.
-    let history = MeetingHistoryStore()
+    let history: MeetingHistoryStore?
+    let storageError: String?
     /// User configuration for AI insights (provider + Keychain-stored key).
     let insightSettings = InsightSettings()
 
     override init() {
+        do {
+            history = try MeetingHistoryStore()
+            storageError = nil
+        } catch {
+            history = nil
+            storageError = error.localizedDescription
+        }
         super.init()
         coordinator.history = history
         // Wire the insight engine with the user's settings so live captions can be
         // summarized (and history meetings generated on demand).
         coordinator.insights = InsightEngine(settings: insightSettings)
+        coordinator.refiner = TranscriptRefiner(settings: insightSettings)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -92,5 +104,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @available(macOS 26.0, *)
     nonisolated static func preflightSpeechAuth() {
         SFSpeechRecognizer.requestAuthorization { _ in }
+    }
+}
+
+private struct StorageFailureView: View {
+    let message: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("无法打开会议数据", systemImage: "externaldrive.badge.exclamationmark")
+        } description: {
+            Text(message)
+        }
+        .padding(40)
     }
 }

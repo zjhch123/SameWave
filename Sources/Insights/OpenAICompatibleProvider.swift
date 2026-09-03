@@ -69,6 +69,7 @@ struct OpenAICompatibleProvider: InsightProvider {
         do {
             (data, response) = try await URLSession.shared.data(for: req)
         } catch {
+            if Task.isCancelled { throw CancellationError() }
             throw LLMError.network(error.localizedDescription)
         }
 

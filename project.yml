@@ -59,6 +59,36 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         # Non-sandboxed for the MVP so Core Audio process taps + model download are unhindered.
         ENABLE_APP_SANDBOX: NO
-        SWIFT_STRICT_CONCURRENCY: minimal
+        SWIFT_STRICT_CONCURRENCY: complete
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  MeetingCaptionsTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: MeetingCaptions
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.plus.meetingcaptions.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/同频.app/Contents/MacOS/同频"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: complete
+
+schemes:
+  MeetingCaptions:
+    build:
+      targets:
+        MeetingCaptions: all
+        MeetingCaptionsTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - MeetingCaptionsTests

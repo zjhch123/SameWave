@@ -3,172 +3,228 @@ import AVFoundation
 import Foundation
 import Speech
 
-/// On-device speech recognition using Apple's native SpeechAnalyzer (macOS 26+).
-///
-/// Used for both Chinese and English. The model is Apple's system-shared asset —
-/// no app-bundled model, no size cost; the locale's asset is fetched once from
-/// Apple on first use then runs fully offline.
-///
-/// We feed the tap's mono Float samples (at the input sample rate) and convert to
-/// the analyzer's preferred format. Results stream as volatile (interim) and
-/// finalized (commit) via the onInterim / onCommit / onStatus callbacks.
+/// Actor-isolated Apple Speech pipeline shared by the system-audio and microphone
+/// paths. Audio callbacks write to a bounded AsyncStream, keeping AVAudioConverter
+/// and SpeechAnalyzer state on one executor without unsafe Sendable declarations.
 @available(macOS 26.0, *)
-final class NativeSpeechEngine: @unchecked Sendable {
+actor NativeSpeechEngine {
+    private struct AudioChunk: Sendable {
+        let samples: [Float]
+        let sampleRate: Double
+    }
+
+    enum EngineError: LocalizedError {
+        case notAuthorized
+        case assetInstallation(Error)
+        case noCompatibleAudioFormat
+        case analyzerStart(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .notAuthorized:
+                "需要在「系统设置 › 隐私与安全性 › 语音识别」中允许同频"
+            case .assetInstallation(let error):
+                "语音模型准备失败：\(error.localizedDescription)"
+            case .noCompatibleAudioFormat:
+                "语音识别器没有可用的音频格式"
+            case .analyzerStart(let error):
+                "语音识别启动失败：\(error.localizedDescription)"
+            }
+        }
+    }
 
     private let localeID: String
-    private let onInterim: @Sendable (String) -> Void
-    private let onCommit: @Sendable (String) -> Void
-    private let onStatus: @Sendable (String) -> Void
+    private let onInterim: @Sendable (String) async -> Void
+    private let onCommit: @Sendable (String) async -> Void
+    private let onStatus: @Sendable (String) async -> Void
 
     private var transcriber: SpeechTranscriber?
     private var analyzer: SpeechAnalyzer?
-    private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
+    private var analyzerInput: AsyncStream<AnalyzerInput>.Continuation?
     private var analyzerFormat: AVAudioFormat?
     private var resultsTask: Task<Void, Never>?
+    private var audioTask: Task<Void, Never>?
 
-    /// Source format of samples we're fed (mono Float32 at the tap rate).
-    private nonisolated(unsafe) var inputSampleRate = 48_000.0
-    func setInputSampleRate(_ sr: Double) { inputSampleRate = sr }
     private var sourceFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
 
+    nonisolated let feed: @Sendable ([Float], Double) -> Void
+    private let audioSamples: AsyncStream<AudioChunk>
+    private let audioContinuation: AsyncStream<AudioChunk>.Continuation
+
     init(localeID: String,
-         onInterim: @escaping @Sendable (String) -> Void,
-         onCommit: @escaping @Sendable (String) -> Void,
-         onStatus: @escaping @Sendable (String) -> Void) {
+         onInterim: @escaping @Sendable (String) async -> Void,
+         onCommit: @escaping @Sendable (String) async -> Void,
+         onStatus: @escaping @Sendable (String) async -> Void) {
+        let pair = AsyncStream<AudioChunk>.makeStream(bufferingPolicy: .bufferingNewest(64))
+        audioSamples = pair.stream
+        audioContinuation = pair.continuation
+        feed = { samples, sampleRate in
+            guard !samples.isEmpty, sampleRate > 0 else { return }
+            pair.continuation.yield(AudioChunk(samples: samples, sampleRate: sampleRate))
+        }
         self.localeID = localeID
         self.onInterim = onInterim
         self.onCommit = onCommit
         self.onStatus = onStatus
     }
 
-    /// Request permission, ensure the locale asset is installed, and start.
-    func load() async {
-        onStatus("请求语音识别权限…")
-        // Bring the app forward so the system permission prompt is visible.
+    func load() async throws {
+        await onStatus("请求语音识别权限…")
         await MainActor.run { NSApp.activate(ignoringOtherApps: true) }
-        let authorized = await Self.requestAuthorization()
-        guard authorized else {
-            onStatus("需要在「系统设置 › 隐私与安全性 › 语音识别」中允许 MeetingCaptions")
-            return
-        }
+        guard await Self.requestAuthorization() else { throw EngineError.notAuthorized }
 
         let locale = Locale(identifier: localeID)
-        // .progressiveTranscription is Apple's live-caption preset: streaming
-        // volatile (partial) + finalized results, auto punctuation.
         let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
         self.transcriber = transcriber
 
-        // Ensure the system model asset for this locale is installed.
         do {
             let installed = await SpeechTranscriber.installedLocales
-            let have = installed.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
-            if !have {
-                onStatus("首次使用，下载语音模型…")
-                if let req = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                    try await req.downloadAndInstall()
+            let available = installed.contains {
+                $0.identifier(.bcp47) == locale.identifier(.bcp47)
+            }
+            if !available {
+                await onStatus("首次使用，下载语音模型…")
+                if let request = try await AssetInventory.assetInstallationRequest(
+                    supporting: [transcriber]
+                ) {
+                    try await request.downloadAndInstall()
                 }
             }
         } catch {
-            onStatus("语音模型下载失败: \(error.localizedDescription)")
-            return
+            throw EngineError.assetInstallation(error)
         }
 
-        // Query the analyzer's preferred audio format (only valid after install).
-        analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: [transcriber]
+        ) else {
+            throw EngineError.noCompatibleAudioFormat
+        }
+        analyzerFormat = format
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
-
-        let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
-        self.inputBuilder = inputBuilder
-
-        startResultsDrain()
+        let inputPair = AsyncStream<AnalyzerInput>.makeStream()
+        analyzerInput = inputPair.continuation
+        startResultsDrain(transcriber: transcriber)
+        startAudioDrain()
 
         do {
-            try await analyzer.start(inputSequence: inputSequence)
-            onStatus("模型就绪")
+            try await analyzer.start(inputSequence: inputPair.stream)
+            await onStatus("模型就绪")
         } catch {
-            onStatus("识别启动失败: \(error.localizedDescription)")
+            throw EngineError.analyzerStart(error)
         }
     }
 
-    /// Drain the transcriber's result stream: volatile → onInterim, finalized →
-    /// onCommit. Runs until the input stream ends or the task is cancelled (stop()).
-    private func startResultsDrain() {
-        resultsTask = Task { [weak self] in
-            guard let self, let transcriber = self.transcriber else { return }
+    /// Stops accepting audio, converts every sample already queued, then asks Speech
+    /// to finalize before waiting for the result stream. This preserves the last final
+    /// utterance instead of cancelling the consumer while finalization is still running.
+    func stop() async {
+        audioContinuation.finish()
+        await audioTask?.value
+        audioTask = nil
+
+        analyzerInput?.finish()
+        if let analyzer {
+            do {
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } catch {
+                resultsTask?.cancel()
+                await onStatus("识别收尾失败：\(error.localizedDescription)")
+            }
+        }
+        await resultsTask?.value
+        resultsTask = nil
+
+        analyzer = nil
+        transcriber = nil
+        analyzerInput = nil
+        analyzerFormat = nil
+        sourceFormat = nil
+        converter = nil
+    }
+
+    private func startResultsDrain(transcriber: SpeechTranscriber) {
+        let onInterim = onInterim
+        let onCommit = onCommit
+        let onStatus = onStatus
+        resultsTask = Task {
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters).trimmed
                     guard !text.isEmpty else { continue }
                     if result.isFinal {
-                        self.onCommit(text)
+                        await onCommit(text)
                     } else {
-                        self.onInterim(text)
+                        await onInterim(text)
                     }
                 }
+            } catch is CancellationError {
+                return
             } catch {
-                self.onStatus("识别错误: \(error.localizedDescription)")
+                await onStatus("识别错误：\(error.localizedDescription)")
             }
         }
     }
 
-    /// Feed mono Float32 samples at the tap's input rate. Safe from any thread.
-    func feed(_ samples: [Float]) {
-        guard let analyzerFormat, let inputBuilder, !samples.isEmpty else { return }
+    private func startAudioDrain() {
+        audioTask = Task {
+            for await chunk in audioSamples {
+                convertAndYield(chunk)
+            }
+        }
+    }
 
-        // Build a source buffer at the input rate.
-        if sourceFormat == nil {
-            sourceFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                         sampleRate: inputSampleRate,
-                                         channels: 1, interleaved: false)
-            if let sf = sourceFormat {
-                converter = AVAudioConverter(from: sf, to: analyzerFormat)
+    private func convertAndYield(_ chunk: AudioChunk) {
+        let samples = chunk.samples
+        let inputSampleRate = chunk.sampleRate
+        guard let analyzerFormat, let analyzerInput, !samples.isEmpty else { return }
+
+        if sourceFormat?.sampleRate != inputSampleRate {
+            sourceFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: inputSampleRate,
+                channels: 1,
+                interleaved: false
+            )
+            if let sourceFormat {
+                converter = AVAudioConverter(from: sourceFormat, to: analyzerFormat)
             }
         }
         guard let sourceFormat, let converter,
-              let inBuf = AVAudioPCMBuffer(pcmFormat: sourceFormat,
-                                           frameCapacity: AVAudioFrameCount(samples.count)) else { return }
-        inBuf.frameLength = AVAudioFrameCount(samples.count)
-        samples.withUnsafeBufferPointer { src in
-            inBuf.floatChannelData![0].update(from: src.baseAddress!, count: samples.count)
+              let inputBuffer = AVAudioPCMBuffer(
+                pcmFormat: sourceFormat,
+                frameCapacity: AVAudioFrameCount(samples.count)
+              ) else { return }
+
+        inputBuffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source in
+            guard let baseAddress = source.baseAddress,
+                  let channel = inputBuffer.floatChannelData?[0] else { return }
+            channel.update(from: baseAddress, count: samples.count)
         }
 
         let ratio = analyzerFormat.sampleRate / inputSampleRate
-        let cap = AVAudioFrameCount(Double(samples.count) * ratio) + 1024
-        guard let out = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: cap) else { return }
+        let capacity = AVAudioFrameCount(Double(samples.count) * ratio) + 1_024
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: analyzerFormat,
+            frameCapacity: capacity
+        ) else { return }
 
-        var supplied = false
-        var err: NSError?
-        converter.convert(to: out, error: &err) { _, status in
-            if supplied { status.pointee = .noDataNow; return nil }
-            supplied = true; status.pointee = .haveData; return inBuf
+        do {
+            try converter.convert(to: outputBuffer, from: inputBuffer)
+        } catch {
+            return
         }
-        guard err == nil, out.frameLength > 0 else { return }
-        inputBuilder.yield(AnalyzerInput(buffer: out))
+        guard outputBuffer.frameLength > 0 else { return }
+        analyzerInput.yield(AnalyzerInput(buffer: outputBuffer))
     }
 
-    /// Stop the engine: finish the input stream, finalize any pending audio, cancel
-    /// the results task, and release the analyzer/transcriber. The engine is dead
-    /// afterward — a fresh instance is built for the next session.
-    func stop() {
-        inputBuilder?.finish()
-        let a = self.analyzer
-        Task { try? await a?.finalizeAndFinishThroughEndOfInput() }
-        resultsTask?.cancel()
-        resultsTask = nil
-        self.analyzer = nil
-        self.transcriber = nil
-        inputBuilder = nil
-    }
-
-    // MARK: - Authorization
-
-    static func requestAuthorization() async -> Bool {
-        await withCheckedContinuation { cont in
+    nonisolated static func requestAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
-                cont.resume(returning: status == .authorized)
+                continuation.resume(returning: status == .authorized)
             }
         }
     }

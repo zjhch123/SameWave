@@ -112,7 +112,7 @@ enum TranscriptExporter {
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             do {
-                try md.data(using: .utf8)?.write(to: url)
+                try md.write(to: url, atomically: true, encoding: .utf8)
             } catch {
                 let alert = NSAlert()
                 alert.messageText = "导出失败"

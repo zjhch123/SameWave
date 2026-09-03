@@ -25,16 +25,18 @@ struct TranslationPump: ViewModifier {
                     try await session.prepareTranslation()
 
                     // Pull the next request, translate it, repeat. The bridge coalesces
-                    // per section so the pump never falls behind under dense speech —
-                    // stale snapshots are skipped and the newest text is always what
-                    // gets translated. An empty result signals a failed translation.
+                    // per section so the pump never falls behind under dense speech.
                     while let req = await bridge.next() {
-                        let zh = await Self.translate(req, session: session)
-                        bridge.onTranslated?(req, zh)
+                        do {
+                            let translated = try await Self.translate(req, session: session)
+                            bridge.onTranslated?(req, translated)
+                        } catch {
+                            if !Task.isCancelled { bridge.onFailed?(req) }
+                        }
+                        bridge.complete(req)
                     }
                 } catch {
-                    // Session setup failed (e.g. the language pair isn't downloaded yet);
-                    // the task simply ends. SwiftUI rebuilds it when `config` changes.
+                    bridge.failPending()
                 }
             }
     }
@@ -42,18 +44,13 @@ struct TranslationPump: ViewModifier {
     /// Translate one request. When it carries leading context (`context ||| target`),
     /// translate the whole thing for discourse quality then split the output back to
     /// just the target portion; if the delimiter is lost in translation, fall back to
-    /// translating the plain target alone. Returns "" on error (the failure contract).
+    /// translating the plain target alone.
     private static func translate(_ req: TranslationBridge.Request,
-                                  session: TranslationSession) async -> String {
-        do {
-            let full = try await session.translate(req.source).targetText
-            guard req.hasContext else { return full }
-            if let target = extractTarget(from: full) { return target }
-            // Delimiter lost → translate the target alone (context-free fallback).
-            return try await session.translate(req.target).targetText
-        } catch {
-            return ""
-        }
+                                  session: TranslationSession) async throws -> String {
+        let full = try await session.translate(req.source).targetText
+        guard req.hasContext else { return full }
+        if let target = extractTarget(from: full) { return target }
+        return try await session.translate(req.target).targetText
     }
 
     /// Recover the target-side translation from a combined `context ||| target` result

@@ -10,6 +10,7 @@
 - 以 Section 组织双方发言，中文译文为主、英文原文为辅。
 - 会议从开始起增量保存到 SwiftData，支持暂停、恢复、崩溃恢复、历史查看和 Markdown 导出。
 - 可选配置 OpenAI 兼容服务，生成实时洞察、历史洞察和会后优化稿。
+- 录制、暂停和结束由显式状态机管理；结束时先排空音频、ASR 和翻译，再完成最终保存。
 
 ## 系统要求
 
@@ -37,7 +38,18 @@
      build
    ```
 
-3. 本机开发签名配置完成后，可构建、安装并启动固定路径下的应用：
+3. 运行单元测试：
+
+   ```sh
+   xcodebuild test -project MeetingCaptions.xcodeproj \
+     -scheme MeetingCaptions \
+     -configuration Debug \
+     -derivedDataPath .build \
+     CODE_SIGNING_ALLOWED=NO \
+     -destination 'platform=macOS'
+   ```
+
+4. 本机开发签名配置完成后，可构建、安装并启动固定路径下的应用：
 
    ```sh
    ./build.sh
@@ -45,7 +57,7 @@
 
    脚本会停止已运行的桌面版应用，覆盖 `~/Desktop/同频.app` 后重新启动。
 
-4. 首次运行时按系统提示允许语音识别、麦克风和屏幕录制权限，并准备识别与翻译所需的系统语言资源。
+5. 首次运行时按系统提示允许语音识别、麦克风和屏幕录制权限，并准备识别与翻译所需的系统语言资源。
 
 ## 基本操作
 
@@ -57,6 +69,8 @@
 ## 数据与隐私
 
 音频捕获、语音识别、Apple Translation 和会议历史均在本机处理，应用不保存音频。AI 能力不属于离线主链路：当用户配置并触发服务后，会议文字会发送给所选第三方 OpenAI 兼容接口，音频不会由该链路上传。
+
+如果本地 SwiftData 容器无法打开，应用会明确阻止新会议并显示错误，不会静默改用内存存储制造“已保存”假象。
 
 ## 仓库结构
 
@@ -70,6 +84,7 @@
 │   ├── Insights/     # AI 洞察、服务商、设置与卡片
 │   ├── Shared/       # 跨领域共享的小型基础能力
 │   └── Resources/    # Asset Catalog、Info.plist 与 entitlements
+├── Tests/        # 状态机、翻译调度、持久化与 AI 纯逻辑测试
 ├── doc/          # 架构、流水线、数据、AI、决策和开发指南
 ├── AGENTS.md     # 仓库内协作与验证约束
 ├── project.yml  # XcodeGen 工程声明，是构建配置的事实来源
@@ -83,4 +98,4 @@
 - 一对一场景通过双物理通道区分“我/对方”；多个远端参与者不会被进一步分离。
 - ScreenCaptureKit 捕获除本应用外的全部系统输出，不提供按会议应用筛选。
 - 只支持英文译简体中文与中文直显。
-- 当前没有自动化测试 target；核心状态机与持久化改动需要补建测试。
+- 单元测试覆盖可确定执行的领域逻辑；真实音频、权限、Speech 和 Translation 仍需在已签名应用中做人工 smoke test。

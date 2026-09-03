@@ -1,55 +1,6 @@
 import Foundation
 import Observation
 
-/// Which side of the conversation a section belongs to. The mic stream (my voice)
-/// and the system-audio tap (everyone else) are physically separate, so "who spoke"
-/// is known for free — no diarization needed. The model is speaker-AGNOSTIC (spec
-/// §四.1): section 0 belongs to whoever spoke first; every rule below is symmetric.
-enum Speaker: Sendable, Hashable {
-    case remote   // the other participant (system audio)
-    case mine     // me (microphone)
-}
-
-/// Whether a section still accepts NEW source text (spec §5.1). Orthogonal to
-/// translation state — sealing never blocks translation.
-enum ContentState: Sendable { case open, sealed }
-
-/// The async translation lifecycle of a section (spec §5.1), independent of
-/// `ContentState`. Only drives whether the UI shows a "翻译中" indicator.
-enum TranslationState: Sendable { case pending, translating, done }
-
-/// A **Section (段)** — one continuous run of a single speaker (spec §一). Carries
-/// the source text and its asynchronously-filled translation. Sections render
-/// strictly in `id` order, and because ids are allocated when a speaker TAKES THE
-/// FLOOR (their first content after someone else held it), id order == the order
-/// content was produced — the chronological reading order the user expects.
-struct Section: Identifiable, Equatable {
-    let id: Int
-    let speaker: Speaker
-    var contentState: ContentState = .open
-    var translationState: TranslationState = .pending
-
-    var committedSource: [String] = []
-    var interimSource: String = ""
-    var targetText: String = ""
-    var generation: Int = 0
-    /// Wall-clock time this turn began (the moment the section was opened), so each
-    /// line can show when it was spoken (e.g. "14:32").
-    var startedAt: Date = Date()
-    /// A snapshot of the speaker's few preceding sentences, frozen when this section
-    /// was OPENED. Fed to the translator as leading context (never displayed) so the
-    /// section's first sentence still translates in-context — the sliding context
-    /// window is sentence-scoped and crosses section boundaries, independent of where
-    /// the 6-sentence display cap happens to split bubbles.
-    var priorContext: [String] = []
-
-    var sourceText: String {
-        (committedSource + (interimSource.isEmpty ? [] : [interimSource]))
-            .joined(separator: " ")
-            .trimmed
-    }
-}
-
 /// Central observable store the transcript renders from, and the pipeline writes to.
 ///
 /// It owns a **single-floor segmentation state machine**: at most ONE section is
@@ -76,9 +27,6 @@ struct Section: Identifiable, Equatable {
 final class CaptionStore {
     private(set) var sections: [Section] = []
 
-    var isRunning: Bool = false
-
-    private let maxSections = 50_000
     /// DISPLAY cap: a single-speaker section seals and opens a fresh one once it has
     /// accumulated `maxSentencesPerSection` sentences of source, checked at the next
     /// commit (isFinal). Governs bubble size ONLY; translation context is the separate
@@ -264,6 +212,13 @@ final class CaptionStore {
         }
     }
 
+    func failTranslation(id: Int, generation: Int) {
+        mutate(id: id) { section in
+            guard generation == section.generation else { return }
+            section.translationState = .failed
+        }
+    }
+
     /// Chinese-meeting mode: the recognized text IS the caption.
     func setNativeCaption(id: Int) {
         mutate(id: id) { s in
@@ -276,7 +231,6 @@ final class CaptionStore {
 
     private func appendSection(_ s: Section) {
         sections.append(s)
-        if sections.count > maxSections { sections.removeFirst(sections.count - maxSections) }
     }
 
     func clear() {
@@ -297,6 +251,7 @@ final class CaptionStore {
     func restore(sections restored: [(id: Int, speaker: Speaker, source: String,
                                       target: String, startedAt: Date)]) {
         sections.removeAll()
+        recentSentences.removeAll()
         floorSpeaker = nil
         floorSectionId = nil
         var maxId = -1
@@ -309,6 +264,12 @@ final class CaptionStore {
             s.targetText = r.target
             s.startedAt = r.startedAt
             sections.append(s)
+            if !src.isEmpty {
+                recentSentences[r.speaker, default: []].append(src)
+                if recentSentences[r.speaker, default: []].count > contextWindowSentences {
+                    recentSentences[r.speaker]?.removeFirst()
+                }
+            }
             maxId = max(maxId, r.id)
         }
         nextId = maxId + 1

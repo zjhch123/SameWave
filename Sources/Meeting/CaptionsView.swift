@@ -1,11 +1,9 @@
 import SwiftUI
 
-/// The live transcript stage: a centered single-column text stream rendered
-/// **strictly in section-id order** (spec §四.3, §九). Because a section's id is
-/// allocated the instant its speaker begins, id order == speech-onset order, so a
-/// long turn that started early but finished late still renders above a short turn
-/// that started later, and one person's continuous speech is never split by the
-/// other's earlier-but-later-finishing sentence.
+/// The live transcript stage: a centered single-column text stream rendered in
+/// section-id order. The active speaker gets the only open section; a finalized
+/// sentence from the other speaker seals it and opens the next section. Interims from
+/// the non-active stream cannot reorder the transcript.
 ///
 /// Each section shows a speaker label (mine → "你" in accent blue; remote → "发言人"
 /// in meta gray), the Chinese translation as the large primary line, and the source
@@ -13,9 +11,9 @@ import SwiftUI
 /// "翻译中" indicator (spec Rule B — translation state affects only the UI hint).
 struct CaptionsView: View {
     let store: CaptionStore
+    var isListening = false
     /// A status / error line (permission prompt, model download, capture failure) shown
-    /// in the empty state so setup problems are visible rather than silent. Empty when
-    /// there's nothing to report.
+    /// in the empty state. MeetingStage also keeps it visible above populated captions.
     var statusMessage: String = ""
     /// True for a Chinese meeting, where the recognized text IS the caption and there is
     /// no translation. The large primary line already shows that Chinese, so the muted
@@ -45,7 +43,16 @@ struct CaptionsView: View {
     /// Cheap change signal so the scroll view knows to re-pin to the bottom.
     private var scrollSignal: String {
         guard let last = store.sections.last else { return "0" }
-        return "\(store.sections.count)|\(last.id)|\(last.targetText.count)|\(last.committedSource.count)|\(last.interimSource.count)|\(last.translationState == .done ? 1 : 0)"
+        return "\(store.sections.count)|\(last.id)|\(last.targetText.count)|\(last.committedSource.count)|\(last.interimSource.count)|\(translationSignal(last.translationState))"
+    }
+
+    private func translationSignal(_ state: TranslationState) -> Int {
+        switch state {
+        case .pending: 0
+        case .translating: 1
+        case .done: 2
+        case .failed: 3
+        }
     }
 
     private static let bottomAnchor = "captions.bottom"
@@ -93,10 +100,10 @@ struct CaptionsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: store.isRunning ? "waveform" : "text.bubble")
+            Image(systemName: isListening ? "waveform" : "text.bubble")
                 .font(.system(size: 34))
                 .foregroundStyle(Self.meta.opacity(0.5))
-            Text(store.isRunning ? "聆听中…" : "点击下方「开始」开始实时字幕")
+            Text(isListening ? "聆听中…" : "点击下方「开始」开始实时字幕")
                 .font(.system(size: 15))
                 .foregroundStyle(Self.muted)
             // Surface setup status / errors (permission, model download, capture
@@ -118,9 +125,12 @@ struct CaptionsView: View {
         let mine = (section.speaker == .mine)
         let target = section.targetText.trimmed
         let source = section.sourceText
-        let translating = section.contentState == .sealed && section.translationState != .done
+        let failed = section.translationState == .failed
+        let translating = section.contentState == .sealed
+            && (section.translationState == .pending || section.translationState == .translating)
+        let primary = failed ? source : target
         VStack(alignment: .leading, spacing: 6) {
-            // Speaker label + spoken time + optional "翻译中" hint (spec Rule B: UI-only).
+            // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
                 Text(mine ? "你" : "发言人")
                     .font(.system(size: 13, weight: .semibold))
@@ -133,21 +143,26 @@ struct CaptionsView: View {
                     Text(Self.translatingHint)
                         .font(.system(size: 11))
                         .foregroundStyle(Self.meta.opacity(0.8))
+                } else if failed {
+                    Text("翻译失败 · 已显示原文")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Self.danger)
                 }
             }
 
-            // Chinese = the cinematic primary line.
-            Text(target.isEmpty ? Self.translatingHint : target)
+            // Translation is primary when available. A failed translation falls back
+            // to the source as the primary line instead of looking permanently busy.
+            Text(primary.isEmpty ? Self.translatingHint : primary)
                 .font(.system(size: 25, weight: .medium))
                 .tracking(-0.2)
-                .foregroundStyle(target.isEmpty ? Self.muted : Self.fg)
+                .foregroundStyle(primary.isEmpty ? Self.muted : Self.fg)
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Source text = small muted secondary line. Never shown in Chinese mode
             // (it would duplicate the primary), nor when it's identical to the target.
-            if !hideSourceEcho && !source.isEmpty && source != target {
+            if !failed && !hideSourceEcho && !source.isEmpty && source != target {
                 Text(source)
                     .font(.system(size: 14))
                     .foregroundStyle(Self.muted)

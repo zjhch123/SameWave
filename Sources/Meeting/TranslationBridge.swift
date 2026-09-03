@@ -1,88 +1,129 @@
 import Foundation
 import Observation
 
-/// Bridges translation requests into the SwiftUI `.translationTask` closure.
+/// A latest-value mailbox for Apple Translation work.
 ///
-/// Work is keyed by **section** (spec Rule B — translation is a per-section axis).
-/// A section is re-translated as its source grows (spec §十 reschedule_translation on
-/// every ASR update) and once more, authoritatively, when it seals. Several
-/// sealed-but-not-yet-DONE sections can be in flight after back-to-back interrupts
-/// (spec §十二).
-///
-/// **Coalescing mailbox — not a FIFO queue.** Each `sectionId` slot keeps only its
-/// LATEST pending request; a newer snapshot of the same section supersedes the older
-/// (its text is a superset, or it's the sealing "final"). Distinct sections never
-/// evict each other, so dense speech on one section can't starve another's
-/// translation — no unbounded queue, no head-of-line blocking, and the translator
-/// self-throttles to the freshest text it can keep up with.
+/// Pending snapshots are coalesced per section while different sections keep FIFO
+/// fairness. In-flight work is counted explicitly so pause/stop can wait for the
+/// authoritative sealed-section translations instead of sleeping for an arbitrary
+/// amount of time.
 @MainActor
 @Observable
 final class TranslationBridge {
-    struct Request: Sendable {
+    struct Request: Equatable, Sendable {
+        let sessionID: UUID
         let generation: Int
         let sectionId: Int
-        /// What the translator receives: either the plain target, or (when
-        /// `hasContext`) `context + " ||| " + target` so the model has leading
-        /// discourse context. The pump splits the result back to the target portion.
         let source: String
-        /// The plain target text only — used for the delimiter-split fallback (translate
-        /// the target alone if the delimiter is lost in the combined output).
         let target: String
-        /// True when translating the frozen source of a sealed section — its arrival
-        /// drives the section to DONE.
         let isFinal: Bool
-        /// True when `source` is a combined context+target string needing a split.
         let hasContext: Bool
     }
 
-    /// Called with the completed request and its translated Chinese.
     var onTranslated: ((Request, String) -> Void)?
+    var onFailed: ((Request) -> Void)?
 
-    /// Latest not-yet-taken request per section, overwritten on enqueue.
     private var pending: [Int: Request] = [:]
-    /// Oldest-waiting-first order of section slots, so distinct sections are serviced
-    /// fairly rather than by hash order.
     private var order: [Int] = []
-    private var waiter: CheckedContinuation<Request?, Never>?
+    private var inFlightCount = 0
 
-    /// Enqueue the newest snapshot for `sectionId`, replacing any pending one.
-    func enqueue(generation: Int, sectionId: Int, source: String, target: String,
-                 isFinal: Bool, hasContext: Bool) {
-        if pending[sectionId] == nil { order.append(sectionId) }
-        pending[sectionId] = Request(generation: generation, sectionId: sectionId,
-                                     source: source, target: target,
-                                     isFinal: isFinal, hasContext: hasContext)
-        if waiter != nil, let next = takeNext() { wake(with: next) }
+    @ObservationIgnored private let signals: AsyncStream<Void>
+    @ObservationIgnored private let signalContinuation: AsyncStream<Void>.Continuation
+    @ObservationIgnored private var idleWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+
+    init() {
+        let pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        signals = pair.stream
+        signalContinuation = pair.continuation
     }
 
-    /// Drop any pending work for a section (e.g. it was pruned).
+    var isIdle: Bool { pending.isEmpty && inFlightCount == 0 }
+
+    func enqueue(sessionID: UUID, generation: Int, sectionId: Int, source: String,
+                 target: String, isFinal: Bool, hasContext: Bool) {
+        if pending[sectionId] == nil { order.append(sectionId) }
+        pending[sectionId] = Request(
+            sessionID: sessionID,
+            generation: generation,
+            sectionId: sectionId,
+            source: source,
+            target: target,
+            isFinal: isFinal,
+            hasContext: hasContext
+        )
+        signalContinuation.yield()
+    }
+
     func cancel(sectionId: Int) {
         if pending.removeValue(forKey: sectionId) != nil {
             order.removeAll { $0 == sectionId }
+            resumeIdleWaitersIfNeeded()
         }
     }
 
-    /// Oldest-waiting section first (fair, FIFO across sections).
-    private func takeNext() -> Request? {
-        while let sid = order.first {
-            order.removeFirst()
-            if let r = pending.removeValue(forKey: sid) { return r }
+    func cancelPending() {
+        pending.removeAll()
+        order.removeAll()
+        resumeIdleWaitersIfNeeded()
+    }
+
+    func failPending() {
+        let failed = order.compactMap { pending[$0] }
+        pending.removeAll()
+        order.removeAll()
+        failed.forEach { onFailed?($0) }
+        resumeIdleWaitersIfNeeded()
+    }
+
+    func next() async -> Request? {
+        if let request = takeNext() { return request }
+        for await _ in signals {
+            if Task.isCancelled { return nil }
+            if let request = takeNext() { return request }
         }
         return nil
     }
 
-    /// Await the next request; suspends until one is available. (The pump loop that
-    /// calls this is owned by a SwiftUI `.translationTask`, which cancels it on
-    /// teardown, so an abandoned continuation is harmless.)
-    func next() async -> Request? {
-        if let n = takeNext() { return n }
-        return await withCheckedContinuation { cont in waiter = cont }
+    func complete(_ request: Request) {
+        if inFlightCount > 0 { inFlightCount -= 1 }
+        resumeIdleWaitersIfNeeded()
     }
 
-    /// Resume a suspended `next()` with `req`, clearing the waiter.
-    private func wake(with req: Request?) {
-        guard let w = waiter else { return }
-        waiter = nil
-        w.resume(returning: req)
+    func waitUntilIdle(timeout: Duration) async -> Bool {
+        if isIdle { return true }
+        let id = UUID()
+        return await withCheckedContinuation { continuation in
+            idleWaiters[id] = continuation
+            Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: timeout)
+                } catch {
+                    return
+                }
+                self?.resumeWaiter(id: id, result: false)
+            }
+        }
+    }
+
+    private func takeNext() -> Request? {
+        while let sectionId = order.first {
+            order.removeFirst()
+            if let request = pending.removeValue(forKey: sectionId) {
+                inFlightCount += 1
+                return request
+            }
+        }
+        return nil
+    }
+
+    private func resumeIdleWaitersIfNeeded() {
+        guard isIdle else { return }
+        let continuations = Array(idleWaiters.values)
+        idleWaiters.removeAll()
+        continuations.forEach { $0.resume(returning: true) }
+    }
+
+    private func resumeWaiter(id: UUID, result: Bool) {
+        idleWaiters.removeValue(forKey: id)?.resume(returning: result)
     }
 }

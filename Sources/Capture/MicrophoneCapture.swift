@@ -1,30 +1,34 @@
 import AVFoundation
 import Foundation
 
-/// Captures the user's OWN voice from the current default input device
-/// (microphone) via `AVAudioEngine`. Mirrors `ProcessTapCapture`'s interface so
-/// the coordinator can feed either source into a `NativeSpeechEngine`
-/// interchangeably: same `onAudio: (([Float]) -> Void)?` mono callback at
-/// `inputSampleRate`, same `start()`/`stop()` lifecycle.
+/// Captures the user's own voice from the current default input device through
+/// `AVAudioEngine`, emitting mono samples together with the format's sample rate.
 ///
 /// `inputNode` automatically follows the system's selected input device
 /// (built-in mic, wired, or Bluetooth headset) — the user just picks it in
 /// System Settings. Device changes mid-session (e.g. Bluetooth disconnects,
 /// headphones plugged in) fire `.AVAudioEngineConfigurationChange`, on which we
-/// rebuild the tap — analogous to `ProcessTapCapture.rebuildForDeviceChange`.
-final class MicrophoneCapture: @unchecked Sendable {
+/// rebuild the tap against the new format.
+@MainActor
+final class MicrophoneCapture {
 
-    enum CaptureError: Error {
+    enum CaptureError: LocalizedError {
         case notAuthorized
         case engineStart(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .notAuthorized:
+                "需要在「系统设置 › 隐私与安全性 › 麦克风」中允许同频"
+            case .engineStart(let error):
+                "麦克风启动失败：\(error.localizedDescription)"
+            }
+        }
     }
 
-    /// Mono Float samples at `inputSampleRate` (NOT resampled — the engine
-    /// resamples whole utterances at once). Called on an audio thread.
-    var onAudio: (([Float]) -> Void)?
-
-    /// The input device's native sample rate. Valid after `start`.
-    private(set) var inputSampleRate: Double = 48_000
+    /// Mono Float samples and their device sample rate. Called on an audio thread.
+    var onAudio: (@Sendable ([Float], Double) -> Void)?
+    var onError: (@Sendable (Error) -> Void)?
 
     private let engine = AVAudioEngine()
     private var configObserver: NSObjectProtocol?
@@ -45,13 +49,13 @@ final class MicrophoneCapture: @unchecked Sendable {
         let input = engine.inputNode
 
         let format = input.outputFormat(forBus: 0)   // device's native format
-        inputSampleRate = format.sampleRate
 
         // Remove any prior tap (rebuild path) before installing a fresh one.
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.onAudio?(Self.monoSamples(from: buffer))
+        let audioSink = onAudio
+        let sampleRate = format.sampleRate
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+            audioSink?(Self.monoSamples(from: buffer), sampleRate)
         }
 
         engine.prepare()
@@ -68,7 +72,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         configObserver = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
         ) { [weak self] _ in
-            self?.rebuildForDeviceChange()
+            Task { @MainActor in self?.rebuildForDeviceChange() }
         }
     }
 
@@ -79,7 +83,12 @@ final class MicrophoneCapture: @unchecked Sendable {
         guard running else { return }
         engine.stop()
         engine.reset()
-        try? installTapAndStart()
+        do {
+            try installTapAndStart()
+        } catch {
+            running = false
+            onError?(error)
+        }
     }
 
     func stop() {
@@ -92,12 +101,10 @@ final class MicrophoneCapture: @unchecked Sendable {
         engine.stop()
     }
 
-    deinit { stop() }
-
     // MARK: - Helpers
 
     /// Downmix an interleaved/planar buffer to a mono `[Float]`.
-    private static func monoSamples(from buffer: AVAudioPCMBuffer) -> [Float] {
+    nonisolated private static func monoSamples(from buffer: AVAudioPCMBuffer) -> [Float] {
         let frames = Int(buffer.frameLength)
         guard frames > 0, let channelData = buffer.floatChannelData else { return [] }
         let channels = Int(buffer.format.channelCount)
@@ -115,7 +122,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         return out
     }
 
-    private static func requestMicAccess() async -> Bool {
+    nonisolated private static func requestMicAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: return true
         case .notDetermined:

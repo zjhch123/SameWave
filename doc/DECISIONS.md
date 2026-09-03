@@ -14,6 +14,88 @@
 
 ---
 
+## DEC-20260903-002：洞察与会后优化分离，实时 AI 只使用有界最新上下文
+
+- **日期**：2026-09-03
+- **状态**：Accepted
+- **范围**：AI 责任边界、输入预算、实时会话隔离
+
+### 背景
+
+实时洞察是低延迟、最新快照导向的单飞任务；会后优化是以行为单位、允许部分成功的串行分批任务。旧实现把两者放在一个引擎中，状态和辅助逻辑相互污染。同时，实时洞察传送完整会议，长会议会超过内置最小 8K 模型的上下文。
+
+### 决定
+
+- `InsightEngine` 只负责实时和历史结构化洞察；`TranscriptRefiner` 独立负责会后分批校对、重译和术语表。
+- 实时与历史洞察只发送最新、优先保持完整行的 6000 字符。这是 provider-无关的保守预算，不引入每模型 tokenizer 和配置层。
+- 实时请求绑定会话 token；重置时取消已知任务并拒绝迟到结果。两个引擎共用 provider 配置和宽容 JSON 解析器，但不共享业务状态。
+
+### 未采用方案
+
+- **保留全能 `InsightEngine`**：两种完全不同的执行/失败模型会继续扩大一个类。
+- **永远传送全文**：在已知 8K 模型下不可靠，也会让延迟和成本随会议时长无界增长。
+- **增加可配置 tokenizer/预算系统**：当前 provider 和模型种类不足以证明这个复杂度。
+
+### 理由与权衡
+
+责任拆分让每个引擎只拥有一个状态机。最新窗口适合“当下该怎么推进”的实时产品语义，并能适配最小内置模型。代价是长会议的很早内容不再自动出现于洞察上下文，且字符上限只是 token 的近似。
+
+### 影响
+
+- 后续洞察 schema/触发修改进入 `InsightEngine`，逐行优化修改进入 `TranscriptRefiner`。
+- AI 结果仍是 additive，不覆盖原始 ASR 事实。
+- 如果未来产品需要“全场会议总结”，应设计独立的分层摘要用例，不取消实时上下文上限。
+
+### 验证与相关文件
+
+- XCTest 验证优先保留最新完整行、单行超限后缀和 fenced JSON 解析。
+- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/InsightInspector.swift`](../Sources/App/InsightInspector.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)。
+
+---
+
+## DEC-20260903-001：显式建模会话生命周期，并以可等待 I/O 边界收尾
+
+- **日期**：2026-09-03
+- **状态**：Accepted
+- **范围**：会话状态机、音频/ASR/翻译并发、持久化可靠性、工程验证
+
+### 背景
+
+旧实现用多个布尔和时间字段拼装会话状态，采集/识别类依赖 unsafe Sendable，结束后固定等待 900ms 就保存。这些边界无法证明最后音频、ASR final 和权威翻译已经完成，旧任务也可能在新会议中迟到回写。SwiftData 错误被吞掉，容器失败时静默改用内存，界面仍可显示“已保存”。工程没有测试 target，且只开启最小并发检查。
+
+### 决定
+
+- 使用 `idle/starting/recording/pausing/paused/stopping` 的单一显式会话状态，UI 布尔从该状态派生。
+- `NativeSpeechEngine` 作为 actor 拥有有界音频流、converter 和 Speech 对象。停止时依次排空已接收音频、finalize Speech，并等待主 actor 写入 store。
+- `TranslationBridge` 跟踪 pending 和 in-flight；暂停/结束等待 idle，但为不可控的系统 Translation 服务设置 5 秒上限。ASR 和翻译请求携带会话 UUID，迟到结果被丢弃。
+- 持久化 API 抛出错误，会议最终内容和 ended 状态在同一次 save 提交，save 失败时 rollback context。启动容器失败时阻止会议，不保留内存 fallback；暂停或最终保存失败时保留挂载会话以便重试。
+- 主/测试 target 使用 `SWIFT_STRICT_CONCURRENCY=complete`，建立 XCTest target 固定可确定运行的领域不变量。
+
+### 未采用方案
+
+- **在布尔状态上增加更多 guard**：无法从类型上表达转换中状态，仍会留下矛盾组合。
+- **延长固定 sleep**：无论 900ms 还是更长都无法证明 I/O 完成，且平白增加正常路径延迟。
+- **容器失败时继续用内存运行**：会让用户对会议已持久化产生错误认知。
+- **降低严格并发级别或添加 unsafe 标注**：只会隐藏跨执行器访问，不能建立可证明的所有权。
+
+### 理由与权衡
+
+显式状态和可等待边界使启动、暂停、恢复和结束对应可审查的转换。actor 隔离和完整并发检查把约定变为编译器可验证的规则。主动接受的权衡是：Translation 超过 5 秒时优先保存原文并结束会议，不无限阻塞用户。
+
+### 影响
+
+- `CaptionStore` 只拥有 transcript 领域状态，会话生命周期留在 `CaptureCoordinator`。
+- 系统音频是必需链路，初始麦克风失败可降级为仅系统音频；两种失败都显示明确状态。
+- 翻译失败是 Section 的显式 `.failed` 状态，原文始终保留。
+- 后续对 Section、调度或持久化纯逻辑的修改必须更新并运行测试。
+
+### 验证与相关文件
+
+- XcodeGen 重新生成工程；无签名 Debug 构建和 macOS XCTest 作为最低门槛。
+- 相关文件：[`Sources/Meeting/MeetingModels.swift`](../Sources/Meeting/MeetingModels.swift)、[`Sources/Meeting/CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift)、[`Sources/Capture/NativeSpeechEngine.swift`](../Sources/Capture/NativeSpeechEngine.swift)、[`Sources/Meeting/TranslationBridge.swift`](../Sources/Meeting/TranslationBridge.swift)、[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`project.yml`](../project.yml)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`03-会话生命周期与数据.md`](03-会话生命周期与数据.md)、[`Tests/`](../Tests/)。
+
+---
+
 ## DEC-20260902-002：源码按领域责任组织
 
 - **日期**：2026-09-02

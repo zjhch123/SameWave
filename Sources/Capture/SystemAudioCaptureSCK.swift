@@ -3,19 +3,11 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-/// Captures system (other participants') audio via **ScreenCaptureKit** (SCStream),
-/// mirroring the reference implementation (thehwang/Scripta). This REPLACES the
-/// Core Audio process-tap path: opening the AirPods microphone (for "caption my own
-/// voice") was degrading the tapped output stream, but ScreenCaptureKit pulls app
-/// audio at a layer that is unaffected — so the remote transcription stays clean
-/// even while the mic is open.
-///
-/// Interface matches `ProcessTapCapture` so the coordinator is a near drop-in:
-/// `onAudio: (([Float]) -> Void)?` mono callback at `inputSampleRate`, plus
-/// `start()/stop()`. SCK is configured to emit 16 kHz mono directly (the analyzer's
-/// preferred rate), excluding our own process's audio to avoid self-capture.
+/// Captures other participants' system audio through ScreenCaptureKit. The stream
+/// emits 16 kHz mono samples and excludes this process to avoid self-capture.
 @available(macOS 13.0, *)
-final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @unchecked Sendable {
+@MainActor
+final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput {
 
     enum CaptureError: Error, LocalizedError {
         case permissionDenied
@@ -31,11 +23,11 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
     }
 
     /// Mono Float samples at `inputSampleRate`. Called on an audio queue.
-    var onAudio: (([Float]) -> Void)?
-    var onError: ((Error) -> Void)?
+    nonisolated let onAudio: @Sendable ([Float], Double) -> Void
+    nonisolated let onError: @Sendable (Error) -> Void
 
     /// SCK is configured to deliver this rate directly.
-    private(set) var inputSampleRate: Double = 16_000
+    private let inputSampleRate: Double = 16_000
 
     /// Bundle-id prefixes to EXCLUDE from capture, or nil to capture all system
     /// audio. (Per-app capture = exclude everything except the target; here we do the
@@ -45,8 +37,12 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
     private var stream: SCStream?
     private let sampleQueue = DispatchQueue(label: "com.plus.meetingcaptions.sck.audio", qos: .userInitiated)
 
-    init(excludeBundlePrefixes: [String] = []) {
+    init(excludeBundlePrefixes: [String] = [],
+         onAudio: @escaping @Sendable ([Float], Double) -> Void,
+         onError: @escaping @Sendable (Error) -> Void) {
         self.excludeBundlePrefixes = excludeBundlePrefixes
+        self.onAudio = onAudio
+        self.onError = onError
     }
 
     func start() async throws {
@@ -89,23 +85,29 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
         self.stream = s
     }
 
-    func stop() {
+    func stop() async {
         guard let stream else { return }
-        Task { try? await stream.stopCapture() }
         self.stream = nil
+        do {
+            try await stream.stopCapture()
+        } catch {
+            onError(error)
+        }
     }
 
     // MARK: - SCStreamDelegate
 
-    func stream(_ stream: SCStream, didStopWithError error: Error) { onError?(error) }
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
+        onError(error)
+    }
 
     // MARK: - SCStreamOutput
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-                of outputType: SCStreamOutputType) {
+    nonisolated func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+                           of outputType: SCStreamOutputType) {
         guard outputType == .audio, sampleBuffer.isValid else { return }
-        guard let samples = Self.monoFloat(from: sampleBuffer) else { return }
-        if !samples.isEmpty { onAudio?(samples) }
+        guard let chunk = Self.monoFloat(from: sampleBuffer) else { return }
+        if !chunk.samples.isEmpty { onAudio(chunk.samples, chunk.sampleRate) }
     }
 
     // MARK: - CMSampleBuffer → [Float] mono
@@ -113,7 +115,9 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
     /// Extract mono Float32 samples from an SCK audio CMSampleBuffer. SCK delivers
     /// PCM Float32; with channelCount=1 it's already mono, but we defensively
     /// downmix if more channels ever arrive.
-    private static func monoFloat(from sb: CMSampleBuffer) -> [Float]? {
+    nonisolated private static func monoFloat(
+        from sb: CMSampleBuffer
+    ) -> (samples: [Float], sampleRate: Double)? {
         guard let fmt = CMSampleBufferGetFormatDescription(sb),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt)?.pointee else { return nil }
         let frames = CMSampleBufferGetNumSamples(sb)
@@ -146,7 +150,7 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
             let ptr = data.assumingMemoryBound(to: Float.self)
             let total = Int(b.mDataByteSize) / MemoryLayout<Float>.size
             if ch <= 1 {
-                return Array(UnsafeBufferPointer(start: ptr, count: total))
+                return (Array(UnsafeBufferPointer(start: ptr, count: total)), asbd.mSampleRate)
             }
             // Interleaved multi-channel → average to mono.
             let n = total / ch
@@ -156,7 +160,7 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
                 for c in 0..<ch { acc += ptr[i * ch + c] }
                 out[i] = acc / Float(ch)
             }
-            return out
+            return (out, asbd.mSampleRate)
         } else {
             // Planar: one buffer per channel → average.
             let n = Int(buffers[0].mDataByteSize) / MemoryLayout<Float>.size
@@ -169,7 +173,7 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput, @
                 used += 1
             }
             if used > 1 { for i in 0..<n { out[i] /= Float(used) } }
-            return out
+            return (out, asbd.mSampleRate)
         }
     }
 }

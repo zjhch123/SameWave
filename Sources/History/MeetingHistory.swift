@@ -20,14 +20,10 @@ final class MeetingRecord {
     var language: String
     /// Cached count so the list doesn't have to fault every line just to show it.
     var lineCount: Int
-    /// Lifecycle: "recording" (live), "paused" (interrupted — resumable), or "ended"
-    /// (finished, shown in history). Defaults to "ended" so any record created before
-    /// this field existed migrates as a normal finished meeting.
+    /// Persisted raw value of `MeetingStatus`.
     var status: String
 
-    /// Cached AI insight for this meeting, as encoded `InsightResult` JSON (nil = never
-    /// generated). Generated on demand from the history detail view; a new optional field
-    /// so SwiftData lightweight-migrates existing records losslessly (as with `status`).
+    /// Cached AI insight for this meeting, encoded as `InsightResult` JSON.
     var insightJSON: String?
 
     /// When the transcript was last LLM-refined (source cleaned + translation redone),
@@ -43,16 +39,16 @@ final class MeetingRecord {
     @Relationship(deleteRule: .cascade, inverse: \TranscriptLine.record)
     var lines: [TranscriptLine]
 
-    init(id: UUID = UUID(), startedAt: Date, endedAt: Date, language: String,
-         lineCount: Int, status: String = "ended", insightJSON: String? = nil,
+    init(id: UUID = UUID(), startedAt: Date, endedAt: Date, language: MeetingLanguage,
+         lineCount: Int, status: MeetingStatus, insightJSON: String? = nil,
          refinedAt: Date? = nil, glossaryJSON: String? = nil,
          lines: [TranscriptLine] = []) {
         self.id = id
         self.startedAt = startedAt
         self.endedAt = endedAt
-        self.language = language
+        self.language = language.rawValue
         self.lineCount = lineCount
-        self.status = status
+        self.status = status.rawValue
         self.insightJSON = insightJSON
         self.refinedAt = refinedAt
         self.glossaryJSON = glossaryJSON
@@ -78,11 +74,8 @@ final class MeetingRecord {
     /// original. FALSE for a Chinese meeting, where the recognized text IS the caption and
     /// source == target, so an echo would just duplicate the primary. Derived from the one
     /// source of truth — the persisted language's `needsTranslation` — so display, export,
-    /// and the live view all agree. Unknown/legacy language defaults to TRUE (conservative:
-    /// never hide a genuine foreign-language original).
-    var showsSourceEcho: Bool {
-        CaptureCoordinator.MeetingLanguage(rawValue: language)?.needsTranslation ?? true
-    }
+    /// and the live view all agree.
+    var showsSourceEcho: Bool { meetingLanguage.needsTranslation }
 
     /// The decoded cached insight, or nil if none was generated (or it's unreadable).
     var insight: InsightResult? { InsightResult.decode(from: insightJSON) }
@@ -92,9 +85,19 @@ final class MeetingRecord {
     var hasRefinement: Bool { refinedAt != nil }
 
     /// The meeting language as the enum, for feeding the right prompt to the insight
-    /// engine when generating from history. Defaults to English for legacy rows.
-    var meetingLanguage: CaptureCoordinator.MeetingLanguage {
-        CaptureCoordinator.MeetingLanguage(rawValue: language) ?? .english
+    /// engine when generating from history.
+    var meetingLanguage: MeetingLanguage {
+        guard let value = MeetingLanguage(rawValue: language) else {
+            preconditionFailure("Invalid persisted meeting language: \(language)")
+        }
+        return value
+    }
+
+    var meetingStatus: MeetingStatus {
+        guard let value = MeetingStatus(rawValue: status) else {
+            preconditionFailure("Invalid persisted meeting status: \(status)")
+        }
+        return value
     }
 }
 
@@ -113,7 +116,7 @@ final class TranscriptLine {
     /// Ordering within the meeting (== section id order == chronological).
     var orderIndex: Int
     /// The live Section id this line came from — the upsert key for incremental
-    /// autosave. Defaults to `orderIndex`-agnostic 0 for pre-migration rows.
+    /// autosave.
     var sectionId: Int
 
     /// LLM-refined variants, ADDITIVE — the originals (`sourceText`/`targetText`) are
@@ -126,10 +129,10 @@ final class TranscriptLine {
 
     var record: MeetingRecord?
 
-    init(speaker: String, sourceText: String, targetText: String, spokenAt: Date,
-         orderIndex: Int, sectionId: Int = 0,
+    init(speaker: Speaker, sourceText: String, targetText: String, spokenAt: Date,
+         orderIndex: Int, sectionId: Int,
          refinedSource: String? = nil, refinedTarget: String? = nil) {
-        self.speaker = speaker
+        self.speaker = speaker.persistedValue
         self.sourceText = sourceText
         self.targetText = targetText
         self.spokenAt = spokenAt
@@ -139,7 +142,7 @@ final class TranscriptLine {
         self.refinedTarget = refinedTarget
     }
 
-    var isMine: Bool { speaker == "me" }
+    var isMine: Bool { speaker == Speaker.mine.persistedValue }
     /// Chinese primary; falls back to source if untranslated.
     var displayText: String {
         let zh = targetText.trimmed
@@ -169,14 +172,15 @@ final class TranscriptLine {
 final class MeetingHistoryStore {
     let container: ModelContainer
 
-    init() {
-        do {
+    init(configuration: ModelConfiguration? = nil) throws {
+        if let configuration {
+            container = try ModelContainer(
+                for: MeetingRecord.self,
+                TranscriptLine.self,
+                configurations: configuration
+            )
+        } else {
             container = try ModelContainer(for: MeetingRecord.self, TranscriptLine.self)
-        } catch {
-            // Fatal only in the truest sense — without a store, history can't work.
-            // Fall back to an in-memory container so the app still runs.
-            let cfg = ModelConfiguration(isStoredInMemoryOnly: true)
-            container = try! ModelContainer(for: MeetingRecord.self, TranscriptLine.self, configurations: cfg)
         }
     }
 
@@ -185,11 +189,16 @@ final class MeetingHistoryStore {
     /// Open a new live record (status "recording") the moment a meeting starts, so it
     /// exists on disk before a single word is spoken. Returned so the coordinator can
     /// keep syncing into it.
-    func beginRecord(startedAt: Date, language: String) -> MeetingRecord {
-        let r = MeetingRecord(startedAt: startedAt, endedAt: startedAt,
-                              language: language, lineCount: 0, status: "recording")
+    func beginRecord(startedAt: Date, language: MeetingLanguage) throws -> MeetingRecord {
+        let r = MeetingRecord(
+            startedAt: startedAt,
+            endedAt: startedAt,
+            language: language,
+            lineCount: 0,
+            status: .recording
+        )
         context.insert(r)
-        try? context.save()
+        try save()
         return r
     }
 
@@ -197,7 +206,14 @@ final class MeetingHistoryStore {
     /// section by its `sectionId` (update in place, or insert), drop lines whose
     /// section was pruned, and refresh count + endedAt. Cheap enough to call every few
     /// seconds and on every state change.
-    func sync(record: MeetingRecord, sections: [Section], endedAt: Date) {
+    func sync(record: MeetingRecord, sections: [Section], endedAt: Date,
+              status: MeetingStatus? = nil) throws {
+        update(record: record, sections: sections, endedAt: endedAt, status: status)
+        try save()
+    }
+
+    private func update(record: MeetingRecord, sections: [Section], endedAt: Date,
+                        status: MeetingStatus?) {
         let meaningful = sections.filter { $0.sourceText.hasSpokenContent || $0.targetText.hasSpokenContent }
         var existing: [Int: TranscriptLine] = [:]
         for l in record.lines { existing[l.sectionId] = l }
@@ -205,9 +221,9 @@ final class MeetingHistoryStore {
         var keptIds = Set<Int>()
         for (i, s) in meaningful.enumerated() {
             keptIds.insert(s.id)
-            let who = s.speaker == .mine ? "me" : "remote"
+            let who = s.speaker
             if let line = existing[s.id] {
-                line.speaker = who
+                line.speaker = who.persistedValue
                 line.sourceText = s.sourceText
                 line.targetText = s.targetText
                 line.spokenAt = s.startedAt
@@ -226,38 +242,48 @@ final class MeetingHistoryStore {
 
         record.lineCount = meaningful.count
         record.endedAt = endedAt
-        try? context.save()
+        if let status { record.status = status.rawValue }
     }
 
     /// Mark a record's lifecycle status (e.g. "paused" on pause, "recording" on resume).
-    func setStatus(_ record: MeetingRecord, _ status: String) {
-        record.status = status
-        try? context.save()
+    func setStatus(_ record: MeetingRecord, _ status: MeetingStatus) throws {
+        record.status = status.rawValue
+        try save()
     }
 
     /// Finalize a meeting: one last sync, then mark "ended" so it enters history. An
     /// empty meeting (nothing was said) is deleted rather than left as a blank row.
-    func finish(_ record: MeetingRecord, sections: [Section], endedAt: Date) {
-        sync(record: record, sections: sections, endedAt: endedAt)
+    func finish(_ record: MeetingRecord, sections: [Section], endedAt: Date) throws {
+        update(record: record, sections: sections, endedAt: endedAt, status: .ended)
         if record.lineCount == 0 {
             context.delete(record)
-        } else {
-            record.status = "ended"
         }
-        try? context.save()
+        try save()
     }
 
     /// All records that never reached "ended" (interrupted by quit/crash/pause),
     /// newest first — candidates for recovery on launch.
-    func unfinishedRecords() -> [MeetingRecord] {
+    func unfinishedRecords() throws -> [MeetingRecord] {
+        let ended = MeetingStatus.ended.rawValue
         let d = FetchDescriptor<MeetingRecord>(
-            predicate: #Predicate { $0.status != "ended" },
+            predicate: #Predicate { $0.status != ended },
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
-        return (try? context.fetch(d)) ?? []
+        return try context.fetch(d)
     }
 
-    func delete(_ record: MeetingRecord) {
+    func delete(_ record: MeetingRecord) throws {
         context.delete(record)
-        try? context.save()
+        try save()
+    }
+
+    /// Keeps a failed write from leaking uncommitted model mutations into the next
+    /// operation. The coordinator's `CaptionStore` remains the retry source of truth.
+    func save() throws {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 }
