@@ -3,7 +3,7 @@ import Foundation
 /// The ONE concrete provider. Speaks the frozen OpenAI `/chat/completions` wire format
 /// (`messages[]` in, `choices[0].message.content` out) that DeepSeek / 通义千问 /
 /// 智谱 GLM / Kimi all implement, so this single ~120-line type reaches every built-in
-/// vendor — the only thing that varies is the `LLMProviderConfig` (base URL, model,
+/// vendor — the only thing that varies is the `LLMProviderConfig` (address, model,
 /// quirks) it's handed. There is no "compatibility layer" to rot: the request/response
 /// Codable structs declare only the minimal fields we use, and the protocol is
 /// additive-only, so new server-side fields are ignored rather than breaking us.
@@ -15,31 +15,31 @@ import Foundation
 struct OpenAICompatibleProvider: InsightProvider {
     let config: LLMProviderConfig
     let apiKey: String
-    /// Effective base URL: the config's, or the user-supplied one for the custom row.
-    let baseURLOverride: String?
+    /// Effective API address: the config's, or the user-supplied one for the custom row.
+    let apiAddressOverride: String?
     /// Effective model: the config's default, or the user-supplied one for custom.
     let modelOverride: String?
 
     init(config: LLMProviderConfig, apiKey: String,
-         baseURLOverride: String? = nil, modelOverride: String? = nil) {
+         apiAddressOverride: String? = nil, modelOverride: String? = nil) {
         self.config = config
         self.apiKey = apiKey
-        self.baseURLOverride = baseURLOverride
+        self.apiAddressOverride = apiAddressOverride
         self.modelOverride = modelOverride
     }
 
-    private var baseURL: String {
-        (baseURLOverride?.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? config.baseURL
+    private var apiAddress: String {
+        (apiAddressOverride?.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? config.apiAddress
     }
     private var model: String {
         (modelOverride?.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? config.defaultModel
     }
 
     func complete(system: String, user: String) async throws -> String {
-        guard !apiKey.trimmed.isEmpty, !baseURL.isEmpty, !model.isEmpty else {
+        guard !apiKey.trimmed.isEmpty, !apiAddress.isEmpty, !model.isEmpty else {
             throw LLMError.notConfigured
         }
-        guard let url = URL(string: baseURL.trimmingTrailingSlash + "/chat/completions") else {
+        guard let url = OpenAIEndpointResolver.chatCompletionsURL(from: apiAddress) else {
             throw LLMError.network("无效的服务地址")
         }
 
@@ -89,6 +89,48 @@ struct OpenAICompatibleProvider: InsightProvider {
         guard !trimmed.isEmpty else { throw LLMError.emptyContent }
         return trimmed
     }
+
+    /// Fetch model IDs from the `/models` sibling of the resolved Chat Completions URL.
+    /// This is deliberately optional UI assistance: callers can still type an ID when a
+    /// compatible service does not implement model listing.
+    func fetchModels() async throws -> [LLMModel] {
+        guard !apiKey.trimmed.isEmpty, !apiAddress.isEmpty else {
+            throw LLMError.notConfigured
+        }
+        guard let url = OpenAIEndpointResolver.modelsURL(from: apiAddress) else {
+            throw LLMError.network("无效的服务地址")
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("Bearer \(apiKey.trimmed)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 30
+
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            throw LLMError.network(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else { throw LLMError.badResponse }
+        switch http.statusCode {
+        case 200...299: break
+        case 401, 403:  throw LLMError.unauthorized
+        case 429:       throw LLMError.rateLimited
+        case 404, 405:  throw LLMError.modelListingUnavailable
+        default:        throw LLMError.server(http.statusCode)
+        }
+
+        guard let decoded = try? JSONDecoder().decode(ModelListResponse.self, from: data) else {
+            throw LLMError.badResponse
+        }
+        var seen = Set<String>()
+        let models = decoded.data.filter { !$0.id.trimmed.isEmpty && seen.insert($0.id).inserted }
+        guard !models.isEmpty else { throw LLMError.modelListingUnavailable }
+        return models
+    }
 }
 
 // MARK: - Minimal wire types (only the fields we send/read)
@@ -117,9 +159,60 @@ private struct ChatResponse: Decodable {
     let choices: [Choice]
 }
 
-private extension String {
-    /// Drop a single trailing slash so `base + "/chat/completions"` never doubles up.
-    var trimmingTrailingSlash: String {
-        hasSuffix("/") ? String(dropLast()) : self
+private struct ModelListResponse: Decodable {
+    let data: [LLMModel]
+}
+
+/// Accepts the address forms users commonly find in provider documentation and resolves
+/// them to concrete OpenAI-compatible endpoints. A bare host uses the OpenAI-standard
+/// `/v1`; an existing path is treated as a versioned base unless it is already complete.
+enum OpenAIEndpointResolver {
+    static func chatCompletionsURL(from address: String) -> URL? {
+        guard var components = components(from: address) else { return nil }
+        components.fragment = nil
+
+        var path = components.path
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        if path.isEmpty || path == "/" {
+            path = "/v1/chat/completions"
+        } else if !path.lowercased().hasSuffix("/chat/completions") {
+            path += "/chat/completions"
+        }
+        components.path = path
+        return components.url
+    }
+
+    static func modelsURL(from address: String) -> URL? {
+        guard let chatURL = chatCompletionsURL(from: address),
+              var components = URLComponents(url: chatURL, resolvingAgainstBaseURL: false)
+        else { return nil }
+        let suffix = "/chat/completions"
+        guard components.path.lowercased().hasSuffix(suffix) else { return nil }
+        components.path = String(components.path.dropLast(suffix.count)) + "/models"
+        return components.url
+    }
+
+    private static func components(from address: String) -> URLComponents? {
+        let trimmed = address.trimmed
+        guard !trimmed.isEmpty else { return nil }
+        let lowercased = trimmed.lowercased()
+        let value: String
+        if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") {
+            value = trimmed
+        } else if lowercased.hasPrefix("localhost")
+                    || lowercased.hasPrefix("127.")
+                    || lowercased.hasPrefix("0.0.0.0")
+                    || lowercased.hasPrefix("[::1]") {
+            value = "http://" + trimmed
+        } else {
+            value = "https://" + trimmed
+        }
+        guard let components = URLComponents(string: value),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host,
+              !host.isEmpty
+        else { return nil }
+        return components
     }
 }

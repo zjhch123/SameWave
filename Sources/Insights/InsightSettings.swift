@@ -17,9 +17,9 @@ final class InsightSettings {
     var selectedProviderID: String {
         didSet { defaults.set(selectedProviderID, forKey: Keys.provider) }
     }
-    /// Custom endpoint base URL (only used when the "custom" provider is selected).
-    var customBaseURL: String {
-        didSet { defaults.set(customBaseURL, forKey: Keys.customBaseURL) }
+    /// Custom API address (host, versioned base, or complete Chat Completions endpoint).
+    var customAPIAddress: String {
+        didSet { defaults.set(customAPIAddress, forKey: Keys.customAPIAddress) }
     }
     /// Custom model id (only used for the "custom" provider).
     var customModel: String {
@@ -39,7 +39,7 @@ final class InsightSettings {
 
     init() {
         selectedProviderID = defaults.string(forKey: Keys.provider) ?? LLMProviderConfig.deepseek.id
-        customBaseURL = defaults.string(forKey: Keys.customBaseURL) ?? ""
+        customAPIAddress = defaults.string(forKey: Keys.customAPIAddress) ?? ""
         customModel = defaults.string(forKey: Keys.customModel) ?? ""
         apiKey = KeychainStore.get(Keys.apiKey) ?? ""
     }
@@ -53,7 +53,8 @@ final class InsightSettings {
     var isConfigured: Bool {
         guard !apiKey.trimmed.isEmpty else { return false }
         if selectedConfig.isCustom {
-            return !customBaseURL.trimmed.isEmpty && !customModel.trimmed.isEmpty
+            return OpenAIEndpointResolver.chatCompletionsURL(from: customAPIAddress) != nil
+                && !customModel.trimmed.isEmpty
         }
         return true
     }
@@ -65,13 +66,13 @@ final class InsightSettings {
         let cfg = selectedConfig
         return OpenAICompatibleProvider(
             config: cfg, apiKey: apiKey.trimmed,
-            baseURLOverride: cfg.isCustom ? customBaseURL : nil,
+            apiAddressOverride: cfg.isCustom ? customAPIAddress : nil,
             modelOverride: cfg.isCustom ? customModel : nil)
     }
 
     private enum Keys {
         static let provider = "insight.providerID"
-        static let customBaseURL = "insight.customBaseURL"
+        static let customAPIAddress = "insight.customAPIAddress"
         static let customModel = "insight.customModel"
         static let apiKey = "insight.apiKey"      // Keychain account name
     }
