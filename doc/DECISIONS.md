@@ -14,10 +14,260 @@
 
 ---
 
-## DEC-20260904-001：自定义 AI 地址自动规范化，并把模型发现作为可选辅助
+## DEC-20260904-007：历史洞察优先使用优化后的原文
 
 - **日期**：2026-09-04
 - **状态**：Accepted
+- **范围**：历史洞察输入、优化结果回退、实时洞察与标题的事实来源
+
+### 背景
+
+会后优化会保存逐行的 `refinedSource`，修正明显识别错误、专有词拼写和标点，但历史洞察仍固定使用 `sourceText`。这会让用户已经确认并保存的更高质量内容无法改善话题、待办和决定提取。同时，优化采用分批部分成功语义，不能假设每行都存在优化结果。
+
+### 决定
+
+- 用户在历史会议中生成或重新生成洞察时，按时间顺序组装 transcript，每行优先使用非空的 `refinedSource`；该行没有成功优化时单独回退到 `sourceText`。
+- 不使用 `refinedTarget` 作为洞察事实来源，避免将译文的二次误差带入结构化洞察。
+- 实时洞察没有会后优化结果，继续使用实时 `sourceText`。会议标题继续使用原始 `sourceText`，保持与优化并行生成的时序和结果稳定性。
+- 已缓存洞察不因后续优化自动删除或重跑；用户明确点击“重新生成”后，新请求才使用当前优化内容。
+
+### 未采用方案
+
+- **历史洞察始终使用原文**：浪费已保存的识别纠错和专有词改善。
+- **使用优化译文**：可能引入翻译偏差，且同语言与跨语言会议的事实来源不再一致。
+- **只要有一行缺失优化就整会回退原文**：与分批部分成功设计冲突，会丢失其他成功行的价值。
+- **优化完成后自动删除或重生成已有洞察**：会在未经用户确认时删除已保存成果或产生新请求费用。
+
+### 理由与权衡
+
+逐行优先级与现有优化展示的回退语义一致，在不要求全量优化成功的前提下尽可能使用高质量输入。显式保留实时洞察和标题的原文路径，则避免一个共享帮助方法的改动悄然改变其他 AI 用例。代价是旧的缓存洞察不会自动反映后来的优化，但这保留了用户对外部请求和结果替换的显式控制。
+
+### 影响
+
+- `InsightEngine.flatten(lines:preferringRefinedSource:)` 要求每个调用方显式选择文本语义，历史洞察选择优化优先，标题选择原文。
+- 洞察词表命中也以最终组装的历史洞察上下文为准，因此优化后恢复的专有词能正确进入洞察 prompt。
+
+### 验证与相关文件
+
+- XCTest 覆盖历史行优先使用 `refinedSource`、空优化逐行回退、时间排序，并锁定标题仍使用原文；无签名 Debug 构建通过，macOS 测试 51/51 通过。
+- 相关文件：[`Sources/App/InsightInspector.swift`](../Sources/App/InsightInspector.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`Tests/MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-006：智能洞察仅发送当前上下文命中的用户词条
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：智能洞察 prompt、词表生效边界、第三方数据披露
+- **替代**：[DEC-20260904-005](#dec-20260904-005用户词表同时约束本地英文识别与会后-ai-优化) 中“词表不附加到实时洞察”的决定；会后优化使用完整词表、标题不使用词表及其他决定继续有效
+
+### 背景
+
+智能洞察根据最近对话生成话题、建议、参考回答、待办和决定。对话中出现用户已确认的产品名、人名或缩写时，洞察输出仍可能改坏其拼写。但实时洞察会反复请求，每次附加整份词表会增加不必要的 token 和第三方数据暴露。
+
+### 决定
+
+- `InsightEngine` 读取同一个 `SpeechVocabularySettings`。每个实时或历史洞察请求开始时，在已限制为最近 6000 字符的请求上下文中筛选当前已保存词表，只把实际命中的词条加入 system prompt。
+- 匹配使用大小写无关的字面搜索。当词条首尾是字母或数字时，对应端必须是非字母数字边界；搜索会继续检查后续候选，避免前面的子串误命中遮蔽后面的独立词。命中结果保持用户配置顺序和精确拼写。
+- prompt 只要求模型在需要提及命中词条时保持精确拼写，明确禁止为了使用词表而植入对话中不存在的信息。空词表或无命中不增加词表段落，洞察 JSON Schema 保持不变。
+- 会后优化继续在整次操作内使用完整词表快照；会议标题请求继续不发送词表。
+
+### 未采用方案
+
+- **每次洞察发送整份词表**：实现更直接，但会在滚动请求中反复暴露无关项目名和人名，也占用上下文预算。
+- **直接做大小写无关子串匹配**：`PR` 会误命中 `project` 等更长单词。
+- **只在客户端替换洞察结果**：无法可靠判断语义对应关系，可能改坏正文，且与现有强类型结构化输出边界冲突。
+
+### 理由与权衡
+
+在已有最近上下文上先做确定性筛选，能让模型得到与当前对话直接相关的拼写提示，同时将每次请求的额外暴露与 token 增量限制在实际使用的词条。代价是子串匹配不会对 ASR 近音误字做模糊召回；这是有意的保守边界，避免将未出现的敏感词条发送给第三方。
+
+### 影响
+
+- 应用装配层把 `SpeechVocabularySettings` 同时注入 `CaptureCoordinator`、`InsightEngine` 和 `TranscriptRefiner`。
+- 保存后的词表对下一次智能洞察请求立即生效；已在途请求使用开始时的命中结果，不会在中途变化。
+- 命中词条可能包含内部项目名或人名，设置页和领域文档必须持续披露洞察、优化和标题的不同发送范围。
+
+### 验证与相关文件
+
+- XCTest 覆盖大小写无关命中、字母数字边界、后续独立命中、配置顺序、空命中 prompt 和禁止强行植入语义；无签名 Debug 构建通过，macOS 测试 50/50 通过。
+- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-005：用户词表同时约束本地英文识别与会后 AI 优化
+
+- **日期**：2026-09-04
+- **状态**：Superseded
+- **被替代**：“词表不附加到实时洞察”由 [DEC-20260904-006](#dec-20260904-006智能洞察仅发送当前上下文命中的用户词条) 替代；会后优化使用完整词表、标题不使用词表及其他决定继续有效。
+- **范围**：词表生效边界、会后优化 prompt、隐私披露
+- **替代**：[DEC-20260903-003](#dec-20260903-003英文识别词表由用户显式保存并按录制阶段冻结) 中“词表与云端 AI 完全隔离”的决定；其余本地识别、显式保存、阶段快照和模型缓存决定继续有效
+
+### 背景
+
+用户维护的词表包含产品名、人名和缩写，原实现只把它用于 Apple Speech。会后优化第一次运行时没有任何 AI 术语表，模型可能把已经识别正确的专有词改写或错误翻译；后续自动积累的 `glossaryJSON` 也无法表达用户预先确认的准确拼写。
+
+### 决定
+
+- `TranscriptRefiner` 读取同一个 `SpeechVocabularySettings`。每次会后优化开始时冻结当前已保存词表，并把同一份提示传给所有批次；操作进行中修改设置不改变本次运行。
+- 用户词表与 AI 上次生成的术语表保持两层：用户词表只表示候选专有词及准确拼写，仅在对话内容匹配时纠正 source，不作为强制字符串替换，也不伪造 target 映射；已有 AI 术语表的翻译映射优先。
+- 品牌、产品、人名和缩写没有既定译名时保留原文。空词表明确表示不提供用户专有词提示。
+- 词表只随用户明确触发的会后优化发送，不额外附加到实时洞察或标题请求。设置页和隐私文档明确披露该云端边界；Apple Speech 的训练数据和模型文件仍只留在本机。
+
+### 未采用方案
+
+- **把每个用户词条写成 term → 同名 target**：会错误阻止 `Wallet` 等普通术语按上下文翻译。
+- **在客户端对优化结果做确定性词条替换**：无法可靠判断语义对应关系，可能改坏正文。
+- **只依赖 AI 自动生成的术语表**：第一次优化仍没有用户确认的拼写，而且错误结果可能被继续沿用。
+- **把词表发送给所有 AI 请求**：实时洞察和标题不需要逐词校对，会扩大不必要的数据暴露。
+
+### 理由与权衡
+
+复用唯一的已保存词表让识别和会后校对共享用户意图，不增加第二套术语配置。把它作为有条件的 prompt 提示而非翻译映射，既能纠正相近音词和大小写，也避免强制插入无关词。代价是会后优化请求会额外暴露词表内容，因此必须在用户界面和文档中明确说明。
+
+### 影响
+
+- 应用装配层把 `SpeechVocabularySettings` 同时注入 `CaptureCoordinator` 和 `TranscriptRefiner`。
+- 保存后的词表对下一次会后优化立即生效；对本地识别仍在下一次开始或恢复会议时生效。
+- 词表内容可能包含内部项目名或人名，用户应按所选第三方 AI 服务的数据政策决定是否启用优化。
+
+### 验证与相关文件
+
+- XCTest 覆盖有词表和空词表的 prompt 语义；无签名 Debug 构建验证共享设置接线与 Swift 6 隔离。
+- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-004：AI 结构化输出统一使用 strict JSON Schema
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：AI provider 契约、模型支持面、解析失败语义、用户配置
+- **替代**：[DEC-20260904-001](#dec-20260904-001自定义-ai-地址自动规范化并把模型发现作为可选辅助) 中“任意 OpenAI-compatible 模型可用”的能力判定，以及 [DEC-20260903-002](#dec-20260903-002洞察与会后优化分离实时-ai-只使用有界最新上下文) 中的宽容 JSON 解析边界
+
+### 背景
+
+原 provider 固定发送 `response_format: {"type":"json_object"}`，prompt 再重复完整字段样例。这只能保证合法 JSON，不能保证键、类型和嵌套结构；客户端还会提取 code fence、外围文字并把缺失/错类型洞察字段默认为空值，可能把契约违反显示成虚假成功。OpenAI 官方 Structured Outputs 以及通义千问、Kimi 当前文档都提供 `json_schema` + `strict: true`，但 OpenAI-compatible 这一名称本身不保证该能力。实机验证还发现 Cherry Studio Copilot 网关会接受复杂 Schema 并返回 200，却忽略它并生成错误的顶层数组，原来的简单连接测试因此产生假阳性。
+
+### 决定
+
+- 每个 AI 用例拥有自己的 `LLMResponseSchema`：洞察、异语言优化、同语言优化、会议标题和连接测试分别声明 required 字段、nullable 字段和 `additionalProperties: false`。provider 每次必须在 `response_format` 发送调用方的 Schema 且固定 `strict: true`。
+- prompt 保留任务、事实和文风约束，并用一句话同步字段名及语义，但不复制完整 JSON 样例。这样所有 provider 仍走同一条 strict Schema 请求路径，同时降低兼容网关静默忽略 `response_format` 时生成错误顶层结构的概率。assistant content 只允许整体 `JSONDecoder` 解码，不提取 code fence/外围文字或为缺失字段填默认值。
+- 检查 `finish_reason` 和拒绝内容；截断、拒绝、400 Schema/参数错误给出独立的用户可读错误，不伪装成通用解析失败。
+- 内置服务收缩为已有文档证明 strict Schema 能力的通义千问 `qwen3.8-flash` 和 Kimi `kimi-k3`。删除 DeepSeek、智谱 GLM 及其 JSON Object 路径；自定义模型使用代表真实复杂度的嵌套 Schema 连接测试，确认其端到端可用性。
+- 旧服务商 ID 不读取已存 API Key，避免默认改选千问后把另一家的密钥发往阿里端点。用户需要显式重新配置。
+
+### 未采用方案
+
+- **按服务商使用 strict 或 JSON Object**：会使同一产品功能具有两套可靠性语义，且无法对用户承诺固定 Schema。
+- **strict 请求失败后自动降级**：会掩盖配置/能力错误并恢复旧宽容路径。
+- **仅在客户端校验 JSON Object**：能发现错误，但仍会产生不可用输出和重试成本。
+- **引入完整 JSON Schema 依赖**：当前 Schema 简单且服务端负责约束，一个最小可编码 JSON 值类型已足够，新包只会扩大构建和维护面。
+
+### 理由与权衡
+
+结构约束从 prompt 建议升级为 API 契约，原生支持的服务能在 token 生成阶段阻止非法结构，也使 Swift 解码失败具有明确意义。兼容网关可能接受却忽略 Schema，因此字段语义仍需在 prompt 中简述，并由客户端作最后一道严格校验。代价是少量 prompt 重复和自定义网关仍可能偶发失败；收益是无需恢复 JSON Object、宽容解析或 provider 分支，也能覆盖实际使用中的部分兼容入口。
+
+### 影响
+
+- AI 新用例必须在调用 provider 时提供明确 Schema，不能只在 prompt 中描述样例。
+- Schema 变更需同时更新 Codable 模型、请求体契约测试和领域 reference。
+- 服务商违反 Schema、输出被截断或拒绝时，用户看到对应的真实失败，不会获得空洞察或局部默认值。
+
+### 验证与相关文件
+
+- XCTest 覆盖 strict `response_format` 请求体、内置模型列表、字段语义 prompt、`answer: null`、缺字段/错类型/超量建议和 code fence 拒绝；连接测试使用嵌套对象与数组验证真实 endpoint。Cherry Studio `copilot:gpt-5.5` 实测证明旧 prompt 返回错误顶层数组，加入字段语义后的同一 strict 请求返回可解码对象。
+- 相关文件：[`Sources/Insights/LLMProvider.swift`](../Sources/Insights/LLMProvider.swift)、[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Sources/Insights/InsightModels.swift`](../Sources/Insights/InsightModels.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-003：会议标题成功生成后不随重新优化重复请求
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：会议标题生命周期、AI 请求成本、历史记录稳定性
+- **替代**：[DEC-20260904-002](#dec-20260904-002会后优化并行生成独立持久化的会议标题) 中“重新优化时重新生成标题”的触发规则
+
+### 背景
+
+会议 transcript 在结束后不再变化，已经成功生成的标题也是历史记录的稳定标识。若每次重新优化译文都再次请求标题，会产生没有必要的调用成本，也可能让用户熟悉的列表标题发生漂移。
+
+### 决定
+
+- 只有 `MeetingRecord` 没有非空 `aiTitle` 时，优化操作才并行发起标题请求。
+- 标题一旦成功持久化，后续“重新优化”只处理译文，不再请求或覆盖标题。
+- 标题请求失败或返回空内容时仍保留时间标题；因为记录仍无有效 `aiTitle`，下一次重新优化会再次尝试生成。
+- 当前不增加单独的“重新生成标题”操作。
+
+### 未采用方案
+
+- **每次重新优化都重新生成**：额外消耗一次请求，并会造成历史标题不稳定。
+- **标题失败后也永久停止尝试**：一次临时网络或服务错误会让记录永远失去自动标题。
+- **增加独立重生成按钮**：当前需求明确要求成功后不再生成，新增控制会扩大不需要的产品状态。
+
+### 理由与权衡
+
+持久化字段本身就是最简单可靠的请求门闩，不需要新增时间戳或生成状态。成功标题保持稳定并节省调用；代价是标题质量不理想时当前没有手动重生成入口。
+
+### 影响
+
+- `MeetingRecord.hasAITitle` 统一判定持久化标题是否有效，并同时驱动请求门闩和显示回退。
+- 译文重新优化的批处理、失败语义和持久化保持不变。
+
+### 验证与相关文件
+
+- XCTest 覆盖有效、缺失和空白标题的判定及持久化；无签名 Debug 构建验证条件请求接线。
+- 相关文件：[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`Sources/App/MeetingStage.swift`](../Sources/App/MeetingStage.swift)、[`Tests/MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-002：会后优化并行生成独立持久化的会议标题
+
+- **日期**：2026-09-04
+- **状态**：Superseded
+- **被替代**：标题重新生成规则由 [DEC-20260904-003](#dec-20260904-003会议标题成功生成后不随重新优化重复请求) 替代；其余独立请求、持久化与显示决定继续有效。
+- **范围**：会后 AI 编排、历史数据模型、会议记录展示
+
+### 背景
+
+历史记录原来只用会议开始时间作为主标题，无法从列表直接识别会议内容。译文优化已经会在用户明确触发时把 transcript 发送给所选 AI 服务，因此同一次操作可以生成内容标题，但标题不应被逐批优化的部分成功状态机绑住。
+
+### 决定
+
+- 用户触发“优化/重新优化”时，同时启动译文优化和标题生成两条独立 Chat Completions 请求。标题直接使用有界的原始 ASR transcript，不等待优化稿。
+- 两条请求独立判定成功并分别保存。任一请求失败、取消或返回非法内容，都不回退或丢弃另一条已经成功的结果；重新优化时仅用成功的新标题替换旧标题。
+- `MeetingRecord.aiTitle` 保存清洗后的简体中文标题。侧栏和历史详情优先显示有效 AI 标题，把会议开始时间保留为次要信息；没有标题时继续使用开始时间作为确定性主标题。
+- 标题任务复用当前 provider 与 JSON 解析边界，但由独立 `MeetingTitleGenerator` 拥有 prompt 和输入预算。切换会议时取消标题与优化任务，并在写入前校验操作 token 和记录 id。
+
+### 未采用方案
+
+- **把标题塞进每批优化响应**：标题会随批次重复、缺少全局视角，并让部分批失败影响标题语义。
+- **等待全部优化完成后再生成标题**：增加用户等待时间，也会让优化失败无谓阻止标题生成。
+- **标题失败时让整个优化操作失败**：两个增强结果没有一致性依赖，耦合失败只会丢掉可用结果。
+- **AI 标题完全替代并隐藏时间**：列表更易识别内容，但会丢失原有的时间定位信息。
+
+### 理由与权衡
+
+独立请求直接符合两个产物不同的输出结构和失败语义，同时可以复用现有 provider 而不扩展 HTTP 层。代价是每次优化会额外产生一次短请求；标题输入采用固定 6000 字符预算，极长且中途多次换题的会议可能更偏向最近话题。
+
+### 影响
+
+- 会后优化按钮现在启动两个可取消任务；按钮进度仍描述逐批译文优化，标题作为并行的轻量增强独立完成。
+- SwiftData 会议模型增加可选标题字段，成功生成后立即持久化并驱动现有 SwiftUI 查询更新。
+- 会议文字会多发送一次给用户已配置的第三方 AI 服务，但音频仍不上传。
+
+### 验证与相关文件
+
+- XCTest 覆盖标题 JSON 解析、长度边界、输入顺序、provider 调用、持久化和日期回退；无签名 Debug 构建验证 SwiftData 模型与并发任务接线。
+- 相关文件：[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Sources/App/MeetingStage.swift`](../Sources/App/MeetingStage.swift)、[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`Sources/App/MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift)、[`Tests/MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift)、[`Tests/MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift)、[`03-会话生命周期与数据.md`](03-会话生命周期与数据.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-001：自定义 AI 地址自动规范化，并把模型发现作为可选辅助
+
+- **日期**：2026-09-04
+- **状态**：Superseded
+- **被替代**：自定义模型的能力门槛由 [DEC-20260904-004](#dec-20260904-004ai-结构化输出统一使用-strict-json-schema) 替代；地址规范化和可选模型发现决定继续有效。
 - **范围**：AI 服务配置、OpenAI-compatible I/O 边界、设置交互
 
 ### 背景
@@ -97,7 +347,8 @@
 ## DEC-20260903-003：英文识别词表由用户显式保存并按录制阶段冻结
 
 - **日期**：2026-09-03
-- **状态**：Accepted
+- **状态**：Superseded
+- **被替代**：词表与云端 AI 的隔离边界由 [DEC-20260904-005](#dec-20260904-005用户词表同时约束本地英文识别与会后-ai-优化) 替代；其余本地识别、显式保存、阶段快照和缓存决定继续有效。
 - **范围**：本地语音识别、设置持久化、双路会话一致性
 
 ### 背景
@@ -137,7 +388,8 @@
 ## DEC-20260903-002：洞察与会后优化分离，实时 AI 只使用有界最新上下文
 
 - **日期**：2026-09-03
-- **状态**：Accepted
+- **状态**：Superseded
+- **被替代**：共享 JSON 解析边界由 [DEC-20260904-004](#dec-20260904-004ai-结构化输出统一使用-strict-json-schema) 替代；洞察/优化职责分离和实时上下文预算决定继续有效。
 - **范围**：AI 责任边界、输入预算、实时会话隔离
 
 ### 背景

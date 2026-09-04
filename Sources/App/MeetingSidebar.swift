@@ -96,7 +96,18 @@ struct MeetingSidebar: View {
         let isUnfinished = record.meetingStatus != .ended
         let isRecording = isCurrent && coordinator.sessionState == .recording
         let isSelected = isCurrent ? selectedRecord == nil : selectedRecord?.id == record.id
-        let subtitle = isUnfinished ? (isRecording ? "录制中…" : "已暂停") : record.metaText
+        let subtitle: String
+        let detail: String?
+        if isUnfinished {
+            subtitle = isRecording ? "录制中…" : "已暂停"
+            detail = nil
+        } else if record.hasAITitle {
+            subtitle = record.displayDate
+            detail = record.metaText
+        } else {
+            subtitle = record.metaText
+            detail = nil
+        }
 
         return Button {
             if isCurrent {
@@ -111,8 +122,9 @@ struct MeetingSidebar: View {
             }
         } label: {
             sidebarRow(
-                title: record.displayDate,
+                title: record.displayTitle,
                 subtitle: subtitle,
+                detail: detail,
                 highlighted: isUnfinished,
                 selected: isSelected,
                 showsRecordingDot: isRecording
@@ -129,7 +141,7 @@ struct MeetingSidebar: View {
         }
     }
 
-    private func sidebarRow(title: String, subtitle: String, highlighted: Bool,
+    private func sidebarRow(title: String, subtitle: String, detail: String? = nil, highlighted: Bool,
                             selected: Bool, showsRecordingDot: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
@@ -144,6 +156,11 @@ struct MeetingSidebar: View {
             }
             .font(.system(size: 11))
             .foregroundStyle(highlighted ? CaptionsView.accent.opacity(0.85) : CaptionsView.meta)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(CaptionsView.meta)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

@@ -23,6 +23,15 @@ struct SettingsView: View {
 /// Insight-provider settings use a draft that only reaches UserDefaults and Keychain
 /// after Save. The vocabulary tab follows the same Save/Cancel interaction.
 private struct InsightSettingsPane: View {
+    private struct ConnectionTestResponse: Decodable {
+        struct Status: Decodable {
+            let ok: Bool
+        }
+
+        let status: Status
+        let values: [Int]
+    }
+
     let settings: InsightSettings
 
     // Local draft — seeded from the saved settings, edited freely, applied on Save.
@@ -143,8 +152,8 @@ private struct InsightSettingsPane: View {
                     Text("智能洞察")
                 } footer: {
                     Text(draftConfig.isCustom
-                         ? "API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址，应用会自动补全。获取模型不可用时仍可手动填写模型 ID。会议文字会发送到该服务，音频不会上传。"
-                         : "智能洞察会将会议对话内容发送到你选择的服务商以生成总结与建议。字幕与翻译始终在本地进行，不受此设置影响。")
+                         ? "API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址，应用会自动补全。测试连接会用嵌套 JSON 结构验证模型；运行时仍会严格校验返回内容。AI 请求会发送会议文字；优化发送完整词表，洞察仅发送当前上下文命中的词条，标题不发送词表；音频不上传。"
+                         : "AI 请求会将会议文字发送到你选择的服务商；优化发送完整词表，洞察仅发送当前上下文命中的词条，标题不发送词表。字幕与实时翻译始终在本地进行。")
                         .font(.system(size: 11))
                         .foregroundStyle(CaptionsView.meta)
                 }
@@ -284,9 +293,16 @@ private struct InsightSettingsPane: View {
         testState = .testing
         Task { @MainActor in
             do {
-                _ = try await provider.complete(
-                    system: "你是一个连接测试助手，请只返回 JSON：{\"ok\":true}",
-                    user: "ping")
+                let raw = try await provider.complete(
+                    system: "你是连接测试助手。输出一个 JSON 对象：status.ok 为 true，values 为 [1, 2]。",
+                    user: "ping",
+                    schema: .connectionTest
+                )
+                guard let response = JSONResponseParser.decode(
+                    ConnectionTestResponse.self,
+                    from: raw
+                ), response.status.ok, response.values == [1, 2]
+                else { throw LLMError.schemaViolation }
                 testState = .ok
             } catch let e as LLMError {
                 testState = .failed(e.errorDescription ?? "连接失败")

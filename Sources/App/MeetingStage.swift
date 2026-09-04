@@ -56,6 +56,7 @@ private struct StageHeader: View {
     @Environment(\.openSettings) private var openSettings
     @State private var saveError: String?
     @State private var refinementTask: Task<Void, Never>?
+    @State private var titleTask: Task<Void, Never>?
     @State private var refinementToken = UUID()
 
     var body: some View {
@@ -65,9 +66,9 @@ private struct StageHeader: View {
 
             if let record = selectedRecord {
                 HStack(spacing: 10) {
-                    Text(record.displayDate)
+                    Text(record.displayTitle)
                         .font(.system(size: 15, weight: .semibold))
-                    Text(record.metaText)
+                    Text(record.displayMetaText)
                         .font(.system(size: 12))
                         .foregroundStyle(CaptionsView.meta)
                 }
@@ -197,6 +198,31 @@ private struct StageHeader: View {
         let languagePair = record.languagePair
         let token = UUID()
         refinementToken = token
+        if !record.hasAITitle, let titleGenerator = coordinator.titleGenerator {
+            titleTask = Task { @MainActor in
+                do {
+                    let title = try await titleGenerator.generate(lines: lines)
+                    guard !Task.isCancelled,
+                          refinementToken == token,
+                          selectedRecord?.id == record.id else { return }
+                    record.aiTitle = title
+                    do {
+                        try modelContext.save()
+                    } catch {
+                        modelContext.rollback()
+                        throw error
+                    }
+                } catch is CancellationError {
+                    return
+                } catch let error as LLMError {
+                    guard refinementToken == token else { return }
+                    saveError = "标题生成失败，译文优化不受影响。\n\(error.errorDescription ?? "未知错误")"
+                } catch {
+                    guard refinementToken == token else { return }
+                    saveError = "标题生成失败，译文优化不受影响。\n\(error.localizedDescription)"
+                }
+            }
+        }
         refinementTask = Task { @MainActor in
             do {
                 let outcome = try await refiner.refine(
@@ -209,7 +235,8 @@ private struct StageHeader: View {
                       selectedRecord?.id == record.id else { return }
                 for line in lines {
                     guard let refined = outcome.byIndex[line.orderIndex] else { continue }
-                    if let source = refined.source?.trimmed, !source.isEmpty {
+                    let source = refined.source.trimmed
+                    if !source.isEmpty {
                         line.refinedSource = source
                         if !languagePair.needsTranslation { line.refinedTarget = source }
                     }
@@ -241,6 +268,8 @@ private struct StageHeader: View {
     private func cancelRefinement() {
         refinementTask?.cancel()
         refinementTask = nil
+        titleTask?.cancel()
+        titleTask = nil
         refinementToken = UUID()
         coordinator.refiner?.cancel()
     }

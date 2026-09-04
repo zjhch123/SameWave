@@ -38,10 +38,22 @@ final class InsightSettings {
     private let defaults = UserDefaults.standard
 
     init() {
-        selectedProviderID = defaults.string(forKey: Keys.provider) ?? LLMProviderConfig.deepseek.id
+        let persistedProviderID = defaults.string(forKey: Keys.provider)
+        let supportedProvider = persistedProviderID.flatMap { id in
+            LLMProviderConfig.builtIn.first { $0.id == id }
+        }
+        selectedProviderID = supportedProvider?.id ?? LLMProviderConfig.qwen.id
         customAPIAddress = defaults.string(forKey: Keys.customAPIAddress) ?? ""
         customModel = defaults.string(forKey: Keys.customModel) ?? ""
-        apiKey = KeychainStore.get(Keys.apiKey) ?? ""
+        // A host-app XCTest process is unsigned and must never prompt for or read the
+        // user's real API key before the test bundle can start. A key saved for a now-
+        // unsupported provider is also kept disabled so it cannot be sent to Qwen by
+        // the default-provider selection; the user must explicitly configure again.
+        let mayLoadSavedKey = ProcessInfo.processInfo.environment["XCTestBundlePath"] == nil
+            && supportedProvider != nil
+        apiKey = mayLoadSavedKey
+            ? KeychainStore.get(Keys.apiKey) ?? ""
+            : ""
     }
 
     /// The currently-selected provider descriptor.

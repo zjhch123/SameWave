@@ -58,4 +58,42 @@ final class MeetingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.lineCount, 1)
         XCTAssertEqual(record.lines.first?.sectionId, 7)
     }
+
+    func testAITitlePersistsAndReplacesDateWhileDateRemainsInMetadata() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let history = try MeetingHistoryStore(configuration: configuration)
+        let record = try history.beginRecord(
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            languagePair: .englishToSimplifiedChinese
+        )
+
+        XCTAssertEqual(record.displayTitle, record.displayDate)
+        XCTAssertEqual(record.displayMetaText, record.metaText)
+        XCTAssertFalse(record.hasAITitle)
+
+        record.aiTitle = "项目交付时间与风险讨论"
+        try history.save()
+
+        let fetched = try XCTUnwrap(
+            history.context.fetch(FetchDescriptor<MeetingRecord>()).first
+        )
+        XCTAssertEqual(fetched.aiTitle, "项目交付时间与风险讨论")
+        XCTAssertTrue(fetched.hasAITitle)
+        XCTAssertEqual(fetched.displayTitle, "项目交付时间与风险讨论")
+        XCTAssertTrue(fetched.displayMetaText.hasPrefix(fetched.displayDate))
+    }
+
+    func testBlankAITitleFallsBackToDate() {
+        let record = MeetingRecord(
+            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            endedAt: Date(timeIntervalSince1970: 1_700_000_010),
+            languagePair: .englishToSimplifiedChinese,
+            lineCount: 1,
+            status: .ended,
+            aiTitle: "  \n "
+        )
+
+        XCTAssertEqual(record.displayTitle, record.displayDate)
+        XCTAssertFalse(record.hasAITitle)
+    }
 }

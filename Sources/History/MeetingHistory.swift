@@ -26,6 +26,10 @@ final class MeetingRecord {
     /// Cached AI insight for this meeting, encoded as `InsightResult` JSON.
     var insightJSON: String?
 
+    /// Concise title generated from the transcript by the configured AI provider.
+    /// nil or blank keeps the deterministic started-at date as the visible title.
+    var aiTitle: String?
+
     /// When the transcript was last LLM-refined (source cleaned + translation redone),
     /// or nil if never. Drives the "优化译文/重新优化" button label and whether the
     /// 原始/优化 toggle appears. The refined text itself lives per-line (additive, never
@@ -42,6 +46,7 @@ final class MeetingRecord {
     init(id: UUID = UUID(), startedAt: Date, endedAt: Date,
          languagePair: MeetingLanguagePair,
          lineCount: Int, status: MeetingStatus, insightJSON: String? = nil,
+         aiTitle: String? = nil,
          refinedAt: Date? = nil, glossaryJSON: String? = nil,
          lines: [TranscriptLine] = []) {
         self.id = id
@@ -51,6 +56,7 @@ final class MeetingRecord {
         self.lineCount = lineCount
         self.status = status.rawValue
         self.insightJSON = insightJSON
+        self.aiTitle = aiTitle
         self.refinedAt = refinedAt
         self.glossaryJSON = glossaryJSON
         self.lines = lines
@@ -61,6 +67,14 @@ final class MeetingRecord {
     /// "2026年7月7日 18:27" — the row/header title.
     var displayDate: String { DateFormat.dayTime.string(from: startedAt) }
 
+    /// The AI title when available, otherwise the deterministic meeting date.
+    var hasAITitle: Bool { aiTitle?.trimmed.isEmpty == false }
+
+    var displayTitle: String {
+        guard let title = aiTitle?.trimmed, !title.isEmpty else { return displayDate }
+        return title
+    }
+
     var durationText: String {
         let s = durationSec, m = s / 60, r = s % 60
         return m > 0 ? "\(m) 分 \(r) 秒" : "\(r) 秒"
@@ -68,6 +82,12 @@ final class MeetingRecord {
 
     /// "N 段 · 时长" — the one-line summary shown in the sidebar row and stage header.
     var metaText: String { "\(lineCount) 段 · \(durationText)" }
+
+    /// Keep the original date visible as secondary metadata after an AI title replaces it.
+    var displayMetaText: String {
+        guard hasAITitle else { return metaText }
+        return "\(displayDate) · \(metaText)"
+    }
 
     /// Whether this meeting's lines should render/export the source text as a secondary
     /// echo under the primary line. The target is primary only when source and target

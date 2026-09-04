@@ -1,17 +1,12 @@
 import Foundation
 
-/// The ONE concrete provider. Speaks the frozen OpenAI `/chat/completions` wire format
-/// (`messages[]` in, `choices[0].message.content` out) that DeepSeek / 通义千问 /
-/// 智谱 GLM / Kimi all implement, so this single ~120-line type reaches every built-in
-/// vendor — the only thing that varies is the `LLMProviderConfig` (address, model,
-/// quirks) it's handed. There is no "compatibility layer" to rot: the request/response
-/// Codable structs declare only the minimal fields we use, and the protocol is
-/// additive-only, so new server-side fields are ignored rather than breaking us.
+/// The ONE concrete provider. Speaks the OpenAI `/chat/completions` Structured Outputs
+/// wire format (`messages[]` plus strict `json_schema` in, structured message content
+/// out). The only vendor-specific values are the address, model, and temperature ceiling.
+/// Request/response Codable structs declare only the fields this app uses.
 ///
 /// Non-streaming: one request, await the whole JSON blob, return its content. An insight
-/// pass is a short object, so streaming would add complexity for no felt benefit. (If
-/// ever needed, `URLSession.bytes(for:)` yields SSE lines natively — a `data:`-prefixed
-/// line loop is the only addition, and this type's `complete` signature stays the same.)
+/// pass is a short object, so streaming would add complexity for no felt benefit.
 struct OpenAICompatibleProvider: InsightProvider {
     let config: LLMProviderConfig
     let apiKey: String
@@ -35,7 +30,8 @@ struct OpenAICompatibleProvider: InsightProvider {
         (modelOverride?.trimmed).flatMap { $0.isEmpty ? nil : $0 } ?? config.defaultModel
     }
 
-    func complete(system: String, user: String) async throws -> String {
+    func complete(system: String, user: String,
+                  schema: LLMResponseSchema) async throws -> String {
         guard !apiKey.trimmed.isEmpty, !apiAddress.isEmpty, !model.isEmpty else {
             throw LLMError.notConfigured
         }
@@ -47,20 +43,19 @@ struct OpenAICompatibleProvider: InsightProvider {
         // structured output stable.
         let temperature = min(0.3, config.maxTemperature ?? .greatestFiniteMagnitude)
 
-        let payload = ChatRequest(
-            model: model,
-            messages: [.init(role: "system", content: system),
-                       .init(role: "user", content: user)],
-            temperature: temperature,
-            responseFormat: .init(type: "json_object"))
-
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey.trimmed)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 30
         do {
-            req.httpBody = try JSONEncoder().encode(payload)
+            req.httpBody = try Self.makeRequestBody(
+                model: model,
+                system: system,
+                user: user,
+                temperature: temperature,
+                schema: schema
+            )
         } catch {
             throw LLMError.badResponse
         }
@@ -78,16 +73,49 @@ struct OpenAICompatibleProvider: InsightProvider {
         case 200...299: break
         case 401, 403:  throw LLMError.unauthorized
         case 429:       throw LLMError.rateLimited
+        case 400:
+            let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?
+                .error.message.trimmed
+            throw LLMError.invalidRequest(
+                message.flatMap { $0.isEmpty ? nil : $0 } ?? "请求参数或 JSON Schema 不被支持"
+            )
         default:        throw LLMError.server(http.statusCode)
         }
 
+        return try Self.parseContent(from: data)
+    }
+
+    static func parseContent(from data: Data) throws -> String {
         guard let decoded = try? JSONDecoder().decode(ChatResponse.self, from: data),
-              let content = decoded.choices.first?.message.content else {
-            throw LLMError.badResponse
+              let choice = decoded.choices.first else { throw LLMError.badResponse }
+        if let refusal = choice.message.refusal?.trimmed, !refusal.isEmpty {
+            throw LLMError.refused(refusal)
         }
+        switch choice.finishReason {
+        case "stop": break
+        case "length": throw LLMError.truncated
+        case "content_filter": throw LLMError.refused("内容安全策略阻止了输出")
+        default: throw LLMError.badResponse
+        }
+        guard let content = choice.message.content else { throw LLMError.emptyContent }
         let trimmed = content.trimmed
         guard !trimmed.isEmpty else { throw LLMError.emptyContent }
         return trimmed
+    }
+
+    /// Kept internal so tests can verify the exact Structured Outputs wire contract
+    /// without performing a network request.
+    static func makeRequestBody(model: String, system: String, user: String,
+                                temperature: Double,
+                                schema: LLMResponseSchema) throws -> Data {
+        let payload = ChatRequest(
+            model: model,
+            messages: [.init(role: "system", content: system),
+                       .init(role: "user", content: user)],
+            temperature: temperature,
+            responseFormat: .init(type: "json_schema", jsonSchema: schema)
+        )
+        return try JSONEncoder().encode(payload)
     }
 
     /// Fetch model IDs from the `/models` sibling of the resolved Chat Completions URL.
@@ -139,7 +167,15 @@ struct OpenAICompatibleProvider: InsightProvider {
 /// contract guarantees the server ignores nothing we omit and we ignore what we don't map.
 private struct ChatRequest: Encodable {
     struct Message: Encodable { let role: String; let content: String }
-    struct ResponseFormat: Encodable { let type: String }
+    struct ResponseFormat: Encodable {
+        let type: String
+        let jsonSchema: LLMResponseSchema
+
+        enum CodingKeys: String, CodingKey {
+            case type
+            case jsonSchema = "json_schema"
+        }
+    }
     let model: String
     let messages: [Message]
     let temperature: Double
@@ -154,9 +190,25 @@ private struct ChatRequest: Encodable {
 /// Response body — we only need `choices[0].message.content`. Extra server fields
 /// (usage, id, etc.) are simply not decoded.
 private struct ChatResponse: Decodable {
-    struct Choice: Decodable { let message: Message }
-    struct Message: Decodable { let content: String? }
+    struct Choice: Decodable {
+        let message: Message
+        let finishReason: String
+
+        enum CodingKeys: String, CodingKey {
+            case message
+            case finishReason = "finish_reason"
+        }
+    }
+    struct Message: Decodable {
+        let content: String?
+        let refusal: String?
+    }
     let choices: [Choice]
+}
+
+private struct ErrorResponse: Decodable {
+    struct APIError: Decodable { let message: String }
+    let error: APIError
 }
 
 private struct ModelListResponse: Decodable {
