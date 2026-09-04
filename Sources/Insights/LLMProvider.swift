@@ -5,15 +5,73 @@ import Foundation
 /// behind it — so adding/replacing a provider never touches upstream code.
 ///
 /// Deliberately minimal: a single "send a system + user prompt, get the text back"
-/// call. That maps 1:1 onto the frozen OpenAI `/chat/completions` contract that every
-/// target vendor (DeepSeek / 通义千问 / 智谱 GLM / Kimi) implements, so a lone
-/// `OpenAICompatibleProvider` satisfies it for all of them. Non-streaming on purpose:
+/// call. That maps 1:1 onto the OpenAI `/chat/completions` Structured Outputs contract
+/// implemented by the supported Qwen and Kimi models, so a lone
+/// `OpenAICompatibleProvider` satisfies both. Non-streaming on purpose:
 /// each insight pass returns a short JSON blob, so waiting for the whole response is
 /// simpler than streaming and costs nothing perceptible.
 protocol InsightProvider: Sendable {
-    /// Send `system` + `user` messages, return the assistant's raw text (expected to be
-    /// a JSON object matching `InsightResult`). Throws `LLMError` on any failure.
-    func complete(system: String, user: String) async throws -> String
+    /// Send `system` + `user` messages and require the assistant content to match the
+    /// supplied strict JSON Schema. Throws `LLMError` on any transport or API failure.
+    func complete(system: String, user: String,
+                  schema: LLMResponseSchema) async throws -> String
+}
+
+/// A request-scoped Structured Outputs contract. Every AI use case owns one of these,
+/// while the provider only knows how to put it on the wire.
+struct LLMResponseSchema: Encodable, Sendable {
+    let name: String
+    let schema: JSONValue
+    let strict = true
+
+    static let connectionTest = LLMResponseSchema(
+        name: "connection_test",
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "status": .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "ok": .object([
+                            "type": .string("boolean"),
+                            "description": .string("连接测试成功时返回 true")
+                        ])
+                    ]),
+                    "required": .array([.string("ok")]),
+                    "additionalProperties": .bool(false)
+                ]),
+                "values": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("integer")]),
+                    "minItems": .integer(2),
+                    "maxItems": .integer(2)
+                ])
+            ]),
+            "required": .array([.string("status"), .string("values")]),
+            "additionalProperties": .bool(false)
+        ])
+    )
+}
+
+/// Minimal JSON value needed to encode provider-independent JSON Schemas without
+/// introducing an untyped `[String: Any]` boundary or a third-party dependency.
+enum JSONValue: Encodable, Sendable {
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case string(String)
+    case integer(Int)
+    case bool(Bool)
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .string(let value): try container.encode(value)
+        case .integer(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        }
+    }
 }
 
 /// A user-readable failure, mapped from HTTP status / transport errors so the UI can
@@ -25,8 +83,12 @@ enum LLMError: Error, LocalizedError, Equatable {
     case rateLimited            // 429 — too many requests / quota
     case server(Int)            // other non-2xx
     case network(String)        // transport failure (offline, DNS, timeout)
+    case invalidRequest(String) // 400, including an unsupported/invalid JSON Schema
     case badResponse            // 2xx but body wasn't the expected shape
     case emptyContent           // model returned no usable content
+    case schemaViolation        // assistant content did not match the requested schema
+    case refused(String)        // model or provider declined to produce the requested data
+    case truncated              // finish_reason=length; JSON content is incomplete
     case modelListingUnavailable // endpoint does not expose a usable /models list
 
     var errorDescription: String? {
@@ -36,8 +98,13 @@ enum LLMError: Error, LocalizedError, Equatable {
         case .rateLimited:   return "请求过于频繁或额度不足（429），请稍后再试。"
         case .server(let c): return "服务返回错误（\(c)）。"
         case .network(let m): return "网络请求失败：\(m)"
+        case .invalidRequest(let m): return "AI 服务拒绝了请求：\(m)"
         case .badResponse:   return "无法解析服务返回的内容。"
         case .emptyContent:  return "服务未返回有效内容。"
+        case .schemaViolation:
+            return "AI 服务未按 JSON Schema 返回结构化内容，请检查当前模型或网关是否支持该格式。"
+        case .refused(let m): return "AI 拒绝了该请求：\(m)"
+        case .truncated: return "AI 输出被截断，未返回完整结果。"
         case .modelListingUnavailable:
             return "服务未提供可用模型列表，请手动填写模型 ID。"
         }
@@ -58,23 +125,19 @@ struct LLMModel: Decodable, Equatable, Identifiable {
 
 /// A vendor descriptor — the ENTIRE per-vendor surface. Adding a provider is adding a
 /// row here; nothing else changes. `apiAddress` is the complete Chat Completions URL
-/// endpoints (verified against each vendor's docs). `maxTemperature` and `needsJSONHint`
-/// are the only real behavioral quirks (Kimi caps temp at 1; Qwen/DeepSeek require the
-/// literal word "json" in the prompt when using json_object mode — which our system
-/// prompt always contains, so the flag is documentation more than logic).
+/// endpoints (verified against each vendor's docs). Every listed built-in model supports
+/// strict `json_schema` Structured Outputs; vendors that only offer JSON mode are not
+/// exposed because this app no longer accepts best-effort structured data.
 struct LLMProviderConfig: Identifiable, Equatable {
     let id: String
     let displayName: String
     /// Complete Chat Completions endpoint for built-in providers. Custom addresses are
     /// normalized separately so users may paste a host, versioned base, or full endpoint.
     let apiAddress: String
-    /// Default model id. The one recurring maintenance chore is bumping this when a
-    /// vendor retires a name (e.g. DeepSeek deprecates `deepseek-chat` 2026-07-24).
+    /// Default model id. It must continue to support strict Structured Outputs.
     let defaultModel: String
     /// Upper clamp for temperature (Kimi/Moonshot only accepts [0,1]); nil = no clamp.
     let maxTemperature: Double?
-    /// Whether json_object mode requires the word "json" in the prompt (Qwen/DeepSeek).
-    let needsJSONHint: Bool
     /// True for the "custom" row whose address/model come from the user, not this table.
     let isCustom: Bool
 
@@ -82,47 +145,29 @@ struct LLMProviderConfig: Identifiable, Equatable {
     var keyHint: String
 
     init(id: String, displayName: String, apiAddress: String, defaultModel: String,
-         maxTemperature: Double? = nil, needsJSONHint: Bool = false,
-         isCustom: Bool = false, keyHint: String = "") {
+         maxTemperature: Double? = nil, isCustom: Bool = false, keyHint: String = "") {
         self.id = id
         self.displayName = displayName
         self.apiAddress = apiAddress
         self.defaultModel = defaultModel
         self.maxTemperature = maxTemperature
-        self.needsJSONHint = needsJSONHint
         self.isCustom = isCustom
         self.keyHint = keyHint
     }
 }
 
 extension LLMProviderConfig {
-    /// The built-in provider table. Chinese-user-facing, all officially OpenAI-compatible
-    /// and directly reachable from mainland China. This static list + the model-name
-    /// constants are essentially the whole maintenance surface for the LLM layer.
-    static let deepseek = LLMProviderConfig(
-        id: "deepseek", displayName: "DeepSeek（深度求索）",
-        apiAddress: "https://api.deepseek.com/chat/completions",
-        defaultModel: "deepseek-chat",
-        needsJSONHint: true,
-        keyHint: "sk-… （platform.deepseek.com）")
-
+    /// The built-in provider table contains only documented strict-schema models.
     static let qwen = LLMProviderConfig(
         id: "qwen", displayName: "通义千问（阿里）",
         apiAddress: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-        defaultModel: "qwen-plus",
-        needsJSONHint: true,
+        defaultModel: "qwen3.8-flash",
         keyHint: "sk-… （dashscope 控制台）")
-
-    static let glm = LLMProviderConfig(
-        id: "glm", displayName: "智谱 GLM",
-        apiAddress: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        defaultModel: "glm-4-flash",
-        keyHint: "… （open.bigmodel.cn）")
 
     static let kimi = LLMProviderConfig(
         id: "kimi", displayName: "Kimi（月之暗面）",
         apiAddress: "https://api.moonshot.cn/v1/chat/completions",
-        defaultModel: "moonshot-v1-8k",
+        defaultModel: "kimi-k3",
         maxTemperature: 1.0,
         keyHint: "sk-… （platform.moonshot.cn）")
 
@@ -134,10 +179,10 @@ extension LLMProviderConfig {
         isCustom: true,
         keyHint: "你的 API Key")
 
-    static let builtIn: [LLMProviderConfig] = [deepseek, qwen, glm, kimi, custom]
+    static let builtIn: [LLMProviderConfig] = [qwen, kimi, custom]
 
-    /// Look up a config by id; falls back to DeepSeek if an unknown id was persisted.
+    /// Look up a config by id; obsolete persisted ids resolve to the current default.
     static func byID(_ id: String) -> LLMProviderConfig {
-        builtIn.first { $0.id == id } ?? deepseek
+        builtIn.first { $0.id == id } ?? qwen
     }
 }

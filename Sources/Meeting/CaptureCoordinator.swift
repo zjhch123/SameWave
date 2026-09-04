@@ -36,6 +36,7 @@ final class CaptureCoordinator {
     var history: MeetingHistoryStore?
     var insights: InsightEngine?
     var refiner: TranscriptRefiner?
+    var titleGenerator: MeetingTitleGenerator?
 
     private var activeRecord: MeetingRecord?
     private var autosaveTask: Task<Void, Never>?

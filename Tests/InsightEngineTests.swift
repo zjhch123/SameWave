@@ -3,6 +3,14 @@ import XCTest
 
 @MainActor
 final class InsightEngineTests: XCTestCase {
+    func testPromptDescribesSchemaFieldsForPartiallyCompatibleGateways() {
+        let prompt = InsightEngine.systemPrompt()
+
+        for field in ["topic", "suggestions", "answer", "todos", "decisions"] {
+            XCTAssertTrue(prompt.contains(field))
+        }
+    }
+
     func testRecentContextKeepsNewestCompleteLines() {
         let transcript = ["older line", "middle line", "newest line"].joined(separator: "\n")
 
@@ -18,13 +26,46 @@ final class InsightEngineTests: XCTestCase {
         )
     }
 
-    func testParsesFencedJSONResponse() {
-        let raw = """
+    func testParsesStrictJSONResponseWithNullAnswer() {
+        let raw = #"{"topic":"Roadmap","suggestions":[],"answer":null,"todos":[],"decisions":[]}"#
+
+        XCTAssertEqual(InsightEngine.parse(raw)?.topic, "Roadmap")
+    }
+
+    func testRejectsFencedOrIncompleteJSONResponse() {
+        let fenced = """
         ```json
-        {"topic":"Roadmap","suggestions":[],"answer":"","todos":[],"decisions":[]}
+        {"topic":"Roadmap","suggestions":[],"answer":null,"todos":[],"decisions":[]}
         ```
         """
 
-        XCTAssertEqual(InsightEngine.parse(raw)?.topic, "Roadmap")
+        XCTAssertNil(InsightEngine.parse(fenced))
+        XCTAssertNil(InsightEngine.parse(
+            #"{"topic":"Roadmap","suggestions":[],"answer":null,"todos":[]}"#
+        ))
+    }
+
+    func testRejectsWrongTypesAndTooManySuggestions() {
+        XCTAssertNil(InsightEngine.parse(
+            #"{"topic":"Roadmap","suggestions":"ask","answer":null,"todos":[],"decisions":[]}"#
+        ))
+        XCTAssertNil(InsightEngine.parse(
+            #"{"topic":"Roadmap","suggestions":["1","2","3","4"],"answer":null,"todos":[],"decisions":[]}"#
+        ))
+    }
+
+    func testPersistenceRoundTripKeepsRequiredNullAnswerKey() throws {
+        let result = InsightResult(
+            topic: "Roadmap",
+            suggestions: [],
+            answer: nil,
+            todos: [],
+            decisions: []
+        )
+
+        let json = try XCTUnwrap(result.encoded())
+
+        XCTAssertTrue(json.contains(#""answer":null"#))
+        XCTAssertEqual(InsightResult.decode(from: json), result)
     }
 }

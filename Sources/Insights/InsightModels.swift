@@ -37,16 +37,41 @@ struct InsightResult: Codable, Equatable {
         self.decisions = decisions
     }
 
-    /// Tolerant decoding: a real model often OMITS empty fields (no `decisions` key at
-    /// all), which synthesized Codable would reject. Default every field so a partial
-    /// object still decodes — we'd rather show what we got than fail the whole pass.
+    /// Decode the same required fields declared by `responseSchema`. `answer` may be
+    /// explicitly null, but omitting it is a contract violation.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        topic = (try? c.decode(String.self, forKey: .topic)) ?? ""
-        suggestions = (try? c.decode([String].self, forKey: .suggestions)) ?? []
-        answer = try? c.decodeIfPresent(String.self, forKey: .answer)
-        todos = (try? c.decode([InsightTodo].self, forKey: .todos)) ?? []
-        decisions = (try? c.decode([String].self, forKey: .decisions)) ?? []
+        topic = try c.decode(String.self, forKey: .topic)
+        suggestions = try c.decode([String].self, forKey: .suggestions)
+        guard suggestions.count <= 3 else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .suggestions,
+                in: c,
+                debugDescription: "suggestions exceeds the schema maximum of 3"
+            )
+        }
+        guard c.contains(.answer) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.answer,
+                .init(codingPath: c.codingPath, debugDescription: "answer is required")
+            )
+        }
+        answer = try c.decodeIfPresent(String.self, forKey: .answer)
+        todos = try c.decode([InsightTodo].self, forKey: .todos)
+        decisions = try c.decode([String].self, forKey: .decisions)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(topic, forKey: .topic)
+        try container.encode(suggestions, forKey: .suggestions)
+        if let answer {
+            try container.encode(answer, forKey: .answer)
+        } else {
+            try container.encodeNil(forKey: .answer)
+        }
+        try container.encode(todos, forKey: .todos)
+        try container.encode(decisions, forKey: .decisions)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -71,6 +96,50 @@ struct InsightTodo: Codable, Equatable, Identifiable {
 }
 
 extension InsightResult {
+    static let responseSchema = LLMResponseSchema(
+        name: "insight_result",
+        schema: .object([
+            "type": .string("object"),
+            "properties": .object([
+                "topic": .object([
+                    "type": .string("string"),
+                    "description": .string("用一两句话概括当前话题，没有时返回空字符串")
+                ]),
+                "suggestions": .object([
+                    "type": .string("array"),
+                    "description": .string("给使用者的下一步建议或追问"),
+                    "items": .object(["type": .string("string")]),
+                    "maxItems": .integer(3)
+                ]),
+                "answer": .object([
+                    "type": .array([.string("string"), .string("null")]),
+                    "description": .string("对方刚提问时的参考回答，否则返回 null")
+                ]),
+                "todos": .object([
+                    "type": .string("array"),
+                    "items": .object([
+                        "type": .string("object"),
+                        "properties": .object([
+                            "who": .object(["type": .string("string")]),
+                            "what": .object(["type": .string("string")])
+                        ]),
+                        "required": .array([.string("who"), .string("what")]),
+                        "additionalProperties": .bool(false)
+                    ])
+                ]),
+                "decisions": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("string")])
+                ])
+            ]),
+            "required": .array([
+                .string("topic"), .string("suggestions"), .string("answer"),
+                .string("todos"), .string("decisions")
+            ]),
+            "additionalProperties": .bool(false)
+        ])
+    )
+
     /// Decode from the persisted JSON string on a `MeetingRecord`. Returns nil for
     /// nil/blank/corrupt JSON so callers can treat "no insight yet" and "unreadable"
     /// identically (show the generate button).

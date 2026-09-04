@@ -14,10 +14,136 @@
 
 ---
 
-## DEC-20260904-001：自定义 AI 地址自动规范化，并把模型发现作为可选辅助
+## DEC-20260904-004：AI 结构化输出统一使用 strict JSON Schema
 
 - **日期**：2026-09-04
 - **状态**：Accepted
+- **范围**：AI provider 契约、模型支持面、解析失败语义、用户配置
+- **替代**：[DEC-20260904-001](#dec-20260904-001自定义-ai-地址自动规范化并把模型发现作为可选辅助) 中“任意 OpenAI-compatible 模型可用”的能力判定，以及 [DEC-20260903-002](#dec-20260903-002洞察与会后优化分离实时-ai-只使用有界最新上下文) 中的宽容 JSON 解析边界
+
+### 背景
+
+原 provider 固定发送 `response_format: {"type":"json_object"}`，prompt 再重复完整字段样例。这只能保证合法 JSON，不能保证键、类型和嵌套结构；客户端还会提取 code fence、外围文字并把缺失/错类型洞察字段默认为空值，可能把契约违反显示成虚假成功。OpenAI 官方 Structured Outputs 以及通义千问、Kimi 当前文档都提供 `json_schema` + `strict: true`，但 OpenAI-compatible 这一名称本身不保证该能力。实机验证还发现 Cherry Studio Copilot 网关会接受复杂 Schema 并返回 200，却忽略它并生成错误的顶层数组，原来的简单连接测试因此产生假阳性。
+
+### 决定
+
+- 每个 AI 用例拥有自己的 `LLMResponseSchema`：洞察、异语言优化、同语言优化、会议标题和连接测试分别声明 required 字段、nullable 字段和 `additionalProperties: false`。provider 每次必须在 `response_format` 发送调用方的 Schema 且固定 `strict: true`。
+- prompt 保留任务、事实和文风约束，并用一句话同步字段名及语义，但不复制完整 JSON 样例。这样所有 provider 仍走同一条 strict Schema 请求路径，同时降低兼容网关静默忽略 `response_format` 时生成错误顶层结构的概率。assistant content 只允许整体 `JSONDecoder` 解码，不提取 code fence/外围文字或为缺失字段填默认值。
+- 检查 `finish_reason` 和拒绝内容；截断、拒绝、400 Schema/参数错误给出独立的用户可读错误，不伪装成通用解析失败。
+- 内置服务收缩为已有文档证明 strict Schema 能力的通义千问 `qwen3.8-flash` 和 Kimi `kimi-k3`。删除 DeepSeek、智谱 GLM 及其 JSON Object 路径；自定义模型使用代表真实复杂度的嵌套 Schema 连接测试，确认其端到端可用性。
+- 旧服务商 ID 不读取已存 API Key，避免默认改选千问后把另一家的密钥发往阿里端点。用户需要显式重新配置。
+
+### 未采用方案
+
+- **按服务商使用 strict 或 JSON Object**：会使同一产品功能具有两套可靠性语义，且无法对用户承诺固定 Schema。
+- **strict 请求失败后自动降级**：会掩盖配置/能力错误并恢复旧宽容路径。
+- **仅在客户端校验 JSON Object**：能发现错误，但仍会产生不可用输出和重试成本。
+- **引入完整 JSON Schema 依赖**：当前 Schema 简单且服务端负责约束，一个最小可编码 JSON 值类型已足够，新包只会扩大构建和维护面。
+
+### 理由与权衡
+
+结构约束从 prompt 建议升级为 API 契约，原生支持的服务能在 token 生成阶段阻止非法结构，也使 Swift 解码失败具有明确意义。兼容网关可能接受却忽略 Schema，因此字段语义仍需在 prompt 中简述，并由客户端作最后一道严格校验。代价是少量 prompt 重复和自定义网关仍可能偶发失败；收益是无需恢复 JSON Object、宽容解析或 provider 分支，也能覆盖实际使用中的部分兼容入口。
+
+### 影响
+
+- AI 新用例必须在调用 provider 时提供明确 Schema，不能只在 prompt 中描述样例。
+- Schema 变更需同时更新 Codable 模型、请求体契约测试和领域 reference。
+- 服务商违反 Schema、输出被截断或拒绝时，用户看到对应的真实失败，不会获得空洞察或局部默认值。
+
+### 验证与相关文件
+
+- XCTest 覆盖 strict `response_format` 请求体、内置模型列表、字段语义 prompt、`answer: null`、缺字段/错类型/超量建议和 code fence 拒绝；连接测试使用嵌套对象与数组验证真实 endpoint。Cherry Studio `copilot:gpt-5.5` 实测证明旧 prompt 返回错误顶层数组，加入字段语义后的同一 strict 请求返回可解码对象。
+- 相关文件：[`Sources/Insights/LLMProvider.swift`](../Sources/Insights/LLMProvider.swift)、[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Sources/Insights/InsightModels.swift`](../Sources/Insights/InsightModels.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-003：会议标题成功生成后不随重新优化重复请求
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：会议标题生命周期、AI 请求成本、历史记录稳定性
+- **替代**：[DEC-20260904-002](#dec-20260904-002会后优化并行生成独立持久化的会议标题) 中“重新优化时重新生成标题”的触发规则
+
+### 背景
+
+会议 transcript 在结束后不再变化，已经成功生成的标题也是历史记录的稳定标识。若每次重新优化译文都再次请求标题，会产生没有必要的调用成本，也可能让用户熟悉的列表标题发生漂移。
+
+### 决定
+
+- 只有 `MeetingRecord` 没有非空 `aiTitle` 时，优化操作才并行发起标题请求。
+- 标题一旦成功持久化，后续“重新优化”只处理译文，不再请求或覆盖标题。
+- 标题请求失败或返回空内容时仍保留时间标题；因为记录仍无有效 `aiTitle`，下一次重新优化会再次尝试生成。
+- 当前不增加单独的“重新生成标题”操作。
+
+### 未采用方案
+
+- **每次重新优化都重新生成**：额外消耗一次请求，并会造成历史标题不稳定。
+- **标题失败后也永久停止尝试**：一次临时网络或服务错误会让记录永远失去自动标题。
+- **增加独立重生成按钮**：当前需求明确要求成功后不再生成，新增控制会扩大不需要的产品状态。
+
+### 理由与权衡
+
+持久化字段本身就是最简单可靠的请求门闩，不需要新增时间戳或生成状态。成功标题保持稳定并节省调用；代价是标题质量不理想时当前没有手动重生成入口。
+
+### 影响
+
+- `MeetingRecord.hasAITitle` 统一判定持久化标题是否有效，并同时驱动请求门闩和显示回退。
+- 译文重新优化的批处理、失败语义和持久化保持不变。
+
+### 验证与相关文件
+
+- XCTest 覆盖有效、缺失和空白标题的判定及持久化；无签名 Debug 构建验证条件请求接线。
+- 相关文件：[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`Sources/App/MeetingStage.swift`](../Sources/App/MeetingStage.swift)、[`Tests/MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-002：会后优化并行生成独立持久化的会议标题
+
+- **日期**：2026-09-04
+- **状态**：Superseded
+- **被替代**：标题重新生成规则由 [DEC-20260904-003](#dec-20260904-003会议标题成功生成后不随重新优化重复请求) 替代；其余独立请求、持久化与显示决定继续有效。
+- **范围**：会后 AI 编排、历史数据模型、会议记录展示
+
+### 背景
+
+历史记录原来只用会议开始时间作为主标题，无法从列表直接识别会议内容。译文优化已经会在用户明确触发时把 transcript 发送给所选 AI 服务，因此同一次操作可以生成内容标题，但标题不应被逐批优化的部分成功状态机绑住。
+
+### 决定
+
+- 用户触发“优化/重新优化”时，同时启动译文优化和标题生成两条独立 Chat Completions 请求。标题直接使用有界的原始 ASR transcript，不等待优化稿。
+- 两条请求独立判定成功并分别保存。任一请求失败、取消或返回非法内容，都不回退或丢弃另一条已经成功的结果；重新优化时仅用成功的新标题替换旧标题。
+- `MeetingRecord.aiTitle` 保存清洗后的简体中文标题。侧栏和历史详情优先显示有效 AI 标题，把会议开始时间保留为次要信息；没有标题时继续使用开始时间作为确定性主标题。
+- 标题任务复用当前 provider 与 JSON 解析边界，但由独立 `MeetingTitleGenerator` 拥有 prompt 和输入预算。切换会议时取消标题与优化任务，并在写入前校验操作 token 和记录 id。
+
+### 未采用方案
+
+- **把标题塞进每批优化响应**：标题会随批次重复、缺少全局视角，并让部分批失败影响标题语义。
+- **等待全部优化完成后再生成标题**：增加用户等待时间，也会让优化失败无谓阻止标题生成。
+- **标题失败时让整个优化操作失败**：两个增强结果没有一致性依赖，耦合失败只会丢掉可用结果。
+- **AI 标题完全替代并隐藏时间**：列表更易识别内容，但会丢失原有的时间定位信息。
+
+### 理由与权衡
+
+独立请求直接符合两个产物不同的输出结构和失败语义，同时可以复用现有 provider 而不扩展 HTTP 层。代价是每次优化会额外产生一次短请求；标题输入采用固定 6000 字符预算，极长且中途多次换题的会议可能更偏向最近话题。
+
+### 影响
+
+- 会后优化按钮现在启动两个可取消任务；按钮进度仍描述逐批译文优化，标题作为并行的轻量增强独立完成。
+- SwiftData 会议模型增加可选标题字段，成功生成后立即持久化并驱动现有 SwiftUI 查询更新。
+- 会议文字会多发送一次给用户已配置的第三方 AI 服务，但音频仍不上传。
+
+### 验证与相关文件
+
+- XCTest 覆盖标题 JSON 解析、长度边界、输入顺序、provider 调用、持久化和日期回退；无签名 Debug 构建验证 SwiftData 模型与并发任务接线。
+- 相关文件：[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Sources/App/MeetingStage.swift`](../Sources/App/MeetingStage.swift)、[`Sources/History/MeetingHistory.swift`](../Sources/History/MeetingHistory.swift)、[`Sources/App/MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift)、[`Tests/MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift)、[`Tests/MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift)、[`03-会话生命周期与数据.md`](03-会话生命周期与数据.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
+## DEC-20260904-001：自定义 AI 地址自动规范化，并把模型发现作为可选辅助
+
+- **日期**：2026-09-04
+- **状态**：Superseded
+- **被替代**：自定义模型的能力门槛由 [DEC-20260904-004](#dec-20260904-004ai-结构化输出统一使用-strict-json-schema) 替代；地址规范化和可选模型发现决定继续有效。
 - **范围**：AI 服务配置、OpenAI-compatible I/O 边界、设置交互
 
 ### 背景
@@ -137,7 +263,8 @@
 ## DEC-20260903-002：洞察与会后优化分离，实时 AI 只使用有界最新上下文
 
 - **日期**：2026-09-03
-- **状态**：Accepted
+- **状态**：Superseded
+- **被替代**：共享 JSON 解析边界由 [DEC-20260904-004](#dec-20260904-004ai-结构化输出统一使用-strict-json-schema) 替代；洞察/优化职责分离和实时上下文预算决定继续有效。
 - **范围**：AI 责任边界、输入预算、实时会话隔离
 
 ### 背景

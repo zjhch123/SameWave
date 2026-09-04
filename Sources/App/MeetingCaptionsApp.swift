@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // summarized (and history meetings generated on demand).
         coordinator.insights = InsightEngine(settings: insightSettings)
         coordinator.refiner = TranscriptRefiner(settings: insightSettings)
+        coordinator.titleGenerator = MeetingTitleGenerator(settings: insightSettings)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

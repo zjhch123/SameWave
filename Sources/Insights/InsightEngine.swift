@@ -71,8 +71,12 @@ final class InsightEngine {
         guard let provider = settings.makeProvider() else { throw LLMError.notConfigured }
         let input = Self.recentContext(from: transcript, limit: Self.contextCharacterLimit)
         guard !input.isEmpty else { return .empty }
-        let raw = try await provider.complete(system: Self.systemPrompt(), user: input)
-        guard let result = Self.parse(raw) else { throw LLMError.badResponse }
+        let raw = try await provider.complete(
+            system: Self.systemPrompt(),
+            user: input,
+            schema: InsightResult.responseSchema
+        )
+        guard let result = Self.parse(raw) else { throw LLMError.schemaViolation }
         return result
     }
 
@@ -116,9 +120,10 @@ final class InsightEngine {
         do {
             let raw = try await provider.complete(
                 system: systemPrompt(),
-                user: transcript
+                user: transcript,
+                schema: InsightResult.responseSchema
             )
-            guard let result = parse(raw) else { return .failure(.badResponse) }
+            guard let result = parse(raw) else { return .failure(.schemaViolation) }
             return .success(result)
         } catch let error as LLMError {
             return .failure(error)
@@ -172,15 +177,8 @@ final class InsightEngine {
     static func systemPrompt() -> String {
         """
         你是一个实时会议助手。下面是会议最近的对话（“我”是使用者，“对方”是其他参会者）。
-        请只返回 JSON 对象，不要解释或 markdown：
-        {
-          "topic": "用一两句话概括当前话题",
-          "suggestions": ["给我的下一步建议或追问"],
-          "answer": "对方刚提问时的参考回答，否则为空字符串",
-          "todos": [{"who": "负责人", "what": "待办"}],
-          "decisions": ["已达成的决定"]
-        }
-        所有内容使用简体中文。suggestions 限 1-3 条。只依据对话中出现的信息，没有的字段返回空值，不要编造。
+        输出必须是一个 JSON 对象：topic 是当前话题，suggestions 是 1-3 条下一步建议数组，answer 是参考回答或 null，todos 是包含 who 和 what 的待办数组，decisions 是已确定事项数组。
+        所有内容使用简体中文。建议限 1-3 条。只依据对话中出现的信息，没有参考回答时返回 null，其他没有内容的字段返回空字符串或空数组，不要编造。
         """
     }
 
@@ -191,27 +189,7 @@ final class InsightEngine {
 
 enum JSONResponseParser {
     static func decode<Value: Decodable>(_ type: Value.Type, from raw: String) -> Value? {
-        let cleaned = stripFence(raw)
-        if let data = cleaned.data(using: .utf8),
-           let value = try? JSONDecoder().decode(type, from: data) {
-            return value
-        }
-        guard let start = cleaned.firstIndex(of: "{"),
-              let end = cleaned.lastIndex(of: "}"),
-              start < end,
-              let data = String(cleaned[start...end]).data(using: .utf8)
-        else { return nil }
+        guard let data = raw.trimmed.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
-    }
-
-    private static func stripFence(_ value: String) -> String {
-        var result = value.trimmed
-        if result.hasPrefix("```"), let newline = result.firstIndex(of: "\n") {
-            result = String(result[result.index(after: newline)...])
-            if let fence = result.range(of: "```", options: .backwards) {
-                result = String(result[..<fence.lowerBound])
-            }
-        }
-        return result.trimmed
     }
 }
