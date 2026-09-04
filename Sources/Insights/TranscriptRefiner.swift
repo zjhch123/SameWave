@@ -18,7 +18,9 @@ final class TranscriptRefiner {
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             i = try container.decode(Int.self, forKey: .i)
-            source = try container.decode(String.self, forKey: .source)
+            source = TranscriptRefiner.strippingSpeakerPrefix(
+                from: try container.decode(String.self, forKey: .source)
+            )
             guard container.contains(.target) else {
                 throw DecodingError.keyNotFound(
                     CodingKeys.target,
@@ -26,6 +28,7 @@ final class TranscriptRefiner {
                 )
             }
             target = try container.decodeIfPresent(String.self, forKey: .target)
+                .map { TranscriptRefiner.strippingSpeakerPrefix(from: $0) }
         }
 
         private enum CodingKeys: String, CodingKey {
@@ -174,6 +177,32 @@ final class TranscriptRefiner {
         return value
     }
 
+    /// The prompt labels input lines so the model can preserve speaker context. Some
+    /// models echo that label into `source` or `target`; strip only an anchored label
+    /// followed by a colon so ordinary sentences such as "我觉得…" remain untouched.
+    nonisolated static func strippingSpeakerPrefix(from value: String) -> String {
+        var result = value.trimmed
+        let labels = ["Other party", "对方", "Me", "我"]
+
+        while true {
+            var removed = false
+            for label in labels {
+                guard let labelRange = result.range(
+                    of: label,
+                    options: [.anchored, .caseInsensitive]
+                ) else { continue }
+                var remainder = result[labelRange.upperBound...]
+                while remainder.first?.isWhitespace == true { remainder.removeFirst() }
+                guard remainder.first == ":" || remainder.first == "：" else { continue }
+                remainder.removeFirst()
+                result = String(remainder).trimmed
+                removed = true
+                break
+            }
+            if !removed { return result }
+        }
+    }
+
     static func prompt(languagePair: MeetingLanguagePair,
                        glossary: [GlossaryTerm]) -> String {
         let glossaryText = glossary.isEmpty
@@ -189,7 +218,7 @@ final class TranscriptRefiner {
             术语表：
             \(glossaryText)
 
-            每行都必须返回，i 与输入序号一致，不得合并或改序。source 必须保持\(source)，只删口水词、修正明显识别错误和补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表。
+            每行都必须返回，i 与输入序号一致，不得合并或改序。source 和 target 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只删口水词、修正明显识别错误和补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表。
             """
         }
         return """
@@ -199,7 +228,7 @@ final class TranscriptRefiner {
         术语表：
         \(glossaryText)
 
-        每行都必须返回，i 与输入序号一致，不得合并或改序。source 必须保持\(source)，target 返回 null；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
+        每行都必须返回，i 与输入序号一致，不得合并或改序。source 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，target 返回 null；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
         """
     }
 

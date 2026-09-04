@@ -54,6 +54,29 @@ final class TranscriptRefinerTests: XCTestCase {
         XCTAssertFalse(prompt.contains("重新翻译"))
     }
 
+    func testDecodedLineStripsEchoedSpeakerPrefixes() throws {
+        let data = try XCTUnwrap(
+            #"{"i":3,"source":" 对方： 不。","target":"Other party: No."}"#
+                .data(using: .utf8)
+        )
+
+        let line = try JSONDecoder().decode(TranscriptRefiner.RefinedLine.self, from: data)
+
+        XCTAssertEqual(line.source, "不。")
+        XCTAssertEqual(line.target, "No.")
+    }
+
+    func testSpeakerPrefixCleanupDoesNotStripOrdinaryFirstPersonText() {
+        XCTAssertEqual(
+            TranscriptRefiner.strippingSpeakerPrefix(from: "我觉得这个方案可行。"),
+            "我觉得这个方案可行。"
+        )
+        XCTAssertEqual(
+            TranscriptRefiner.strippingSpeakerPrefix(from: "Me too."),
+            "Me too."
+        )
+    }
+
     func testResponseSchemaFixesTargetTypeForEachMode() throws {
         XCTAssertEqual(
             try targetType(in: TranscriptRefiner.responseSchema(needsTranslation: true)),
