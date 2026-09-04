@@ -74,7 +74,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.history = history
         // Wire the insight engine with the user's settings so live captions can be
         // summarized (and history meetings generated on demand).
-        coordinator.insights = InsightEngine(settings: insightSettings)
+        coordinator.insights = InsightEngine(
+            settings: insightSettings,
+            vocabularySettings: speechVocabularySettings
+        )
         coordinator.refiner = TranscriptRefiner(
             settings: insightSettings,
             vocabularySettings: speechVocabularySettings

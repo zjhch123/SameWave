@@ -4,11 +4,42 @@ import XCTest
 @MainActor
 final class InsightEngineTests: XCTestCase {
     func testPromptDescribesSchemaFieldsForPartiallyCompatibleGateways() {
-        let prompt = InsightEngine.systemPrompt()
+        let prompt = InsightEngine.systemPrompt(relevantVocabulary: [])
 
         for field in ["topic", "suggestions", "answer", "todos", "decisions"] {
             XCTAssertTrue(prompt.contains(field))
         }
+        XCTAssertFalse(prompt.contains("用户专有词"))
+    }
+
+    func testRelevantVocabularyMatchesCaseInsensitivelyAtAlphanumericBoundaries() {
+        let vocabulary = ["PR", "XPay", "Copilot", "Not Mentioned"]
+
+        let matches = InsightEngine.relevantVocabulary(
+            from: "We use xpay in this project. The final PR works with COPILOT.",
+            configuredVocabulary: vocabulary
+        )
+
+        XCTAssertEqual(matches, ["PR", "XPay", "Copilot"])
+    }
+
+    func testRelevantVocabularyDoesNotMatchInsideLongerWord() {
+        XCTAssertEqual(
+            InsightEngine.relevantVocabulary(
+                from: "This project is ready.",
+                configuredVocabulary: ["PR"]
+            ),
+            []
+        )
+    }
+
+    func testPromptIncludesOnlyRelevantVocabularyAndPreventsForcedInsertion() {
+        let prompt = InsightEngine.systemPrompt(relevantVocabulary: ["XPay", "PR"])
+
+        XCTAssertTrue(prompt.contains("- XPay"))
+        XCTAssertTrue(prompt.contains("- PR"))
+        XCTAssertTrue(prompt.contains("精确拼写"))
+        XCTAssertTrue(prompt.contains("不得强行植入"))
     }
 
     func testRecentContextKeepsNewestCompleteLines() {

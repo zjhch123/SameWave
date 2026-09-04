@@ -47,7 +47,7 @@ struct SpeechVocabularySettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(CaptionsView.meta)
 
-                Text("用于英文识别；新词表在下次开始或恢复会议时生效。发起会后优化时，当前已保存词表会随会议文字发送给所选 AI 服务。")
+                Text("用于英文识别；新词表在下次开始或恢复会议时生效。会后优化会向所选 AI 服务发送完整已保存词表；智能洞察只发送最近对话中命中的词条。")
                     .font(.system(size: 11))
                     .foregroundStyle(CaptionsView.meta)
             }
