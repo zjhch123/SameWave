@@ -33,6 +33,7 @@ final class TranscriptRefinerTests: XCTestCase {
     func testTranslationPromptUsesSelectedDirection() {
         let prompt = TranscriptRefiner.prompt(
             languagePair: .simplifiedChineseToEnglish,
+            configuredVocabulary: ["XPay", "M365 Copilot"],
             glossary: []
         )
 
@@ -41,17 +42,22 @@ final class TranscriptRefinerTests: XCTestCase {
         XCTAssertTrue(prompt.contains("JSON 对象"))
         XCTAssertTrue(prompt.contains("glossary"))
         XCTAssertTrue(prompt.contains("lines"))
+        XCTAssertTrue(prompt.contains("- XPay"))
+        XCTAssertTrue(prompt.contains("- M365 Copilot"))
+        XCTAssertTrue(prompt.contains("不得强行植入未出现的词"))
     }
 
     func testSameLanguagePromptExplicitlyDisablesTranslation() {
         let prompt = TranscriptRefiner.prompt(
             languagePair: .englishToEnglish,
+            configuredVocabulary: [],
             glossary: []
         )
 
         XCTAssertTrue(prompt.contains("源语言和目标语言相同，不要翻译"))
         XCTAssertTrue(prompt.contains("target 返回 null"))
         XCTAssertFalse(prompt.contains("重新翻译"))
+        XCTAssertTrue(prompt.contains("（暂无用户词表）"))
     }
 
     func testDecodedLineStripsEchoedSpeakerPrefixes() throws {

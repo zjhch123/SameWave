@@ -52,13 +52,15 @@ final class TranscriptRefiner {
     }
 
     private let settings: InsightSettings
+    private let vocabularySettings: SpeechVocabularySettings
     private let batchLineLimit = 8
     private let batchCharacterLimit = 1_500
     private(set) var state: State = .idle
     private var runID = UUID()
 
-    init(settings: InsightSettings) {
+    init(settings: InsightSettings, vocabularySettings: SpeechVocabularySettings) {
         self.settings = settings
+        self.vocabularySettings = vocabularySettings
     }
 
     func cancel() {
@@ -87,6 +89,7 @@ final class TranscriptRefiner {
             maxLines: batchLineLimit,
             maxCharacters: batchCharacterLimit
         )
+        let configuredVocabulary = vocabularySettings.phrases
         var glossary = Self.decodeGlossary(priorGlossaryJSON)
         var refinedByIndex: [Int: RefinedLine] = [:]
         var successCount = 0
@@ -97,7 +100,11 @@ final class TranscriptRefiner {
             let context = index > 0 ? Array(batches[index - 1].suffix(2)) : []
             do {
                 let raw = try await provider.complete(
-                    system: Self.prompt(languagePair: languagePair, glossary: glossary),
+                    system: Self.prompt(
+                        languagePair: languagePair,
+                        configuredVocabulary: configuredVocabulary,
+                        glossary: glossary
+                    ),
                     user: Self.input(batch: batch, context: context),
                     schema: Self.responseSchema(needsTranslation: languagePair.needsTranslation)
                 )
@@ -204,9 +211,13 @@ final class TranscriptRefiner {
     }
 
     static func prompt(languagePair: MeetingLanguagePair,
+                       configuredVocabulary: [String],
                        glossary: [GlossaryTerm]) -> String {
+        let configuredVocabularyText = configuredVocabulary.isEmpty
+            ? "（暂无用户词表）"
+            : configuredVocabulary.map { "- \($0)" }.joined(separator: "\n")
         let glossaryText = glossary.isEmpty
-            ? "（暂无术语表）"
+            ? "（暂无上次优化术语表）"
             : glossary.map { "- \($0.term) → \($0.target)" }.joined(separator: "\n")
         let source = languagePair.source.label
         let target = languagePair.target.label
@@ -215,20 +226,26 @@ final class TranscriptRefiner {
             你是会议记录校对与翻译助手。源语言是\(source)，目标语言是\(target)。请逐行保守清理原文并重新翻译。
             输出必须是一个 JSON 对象：glossary 是术语数组，每项包含 term 和 target；lines 是逐行结果数组，每项包含输入序号 i、校对后的 source 和\(target)译文 target。
 
-            术语表：
+            用户词表（仅在对话内容匹配时使用；source 采用词条的精确拼写，不得强行植入未出现的词）：
+            \(configuredVocabularyText)
+
+            上次优化术语表（翻译映射优先于自行判断）：
             \(glossaryText)
 
-            每行都必须返回，i 与输入序号一致，不得合并或改序。source 和 target 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只删口水词、修正明显识别错误和补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表。
+            每行都必须返回，i 与输入序号一致，不得合并或改序。source 和 target 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只删口水词、根据上下文和用户词表修正明显识别错误并补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表；品牌、产品、人名和缩写没有既定翻译时保留原文。
             """
         }
         return """
         你是\(source)会议记录整理编辑。源语言和目标语言相同，不要翻译。请逐行补标点、删口水词和明显重复。
         输出必须是一个 JSON 对象：glossary 是术语数组，每项包含 term 和 target；lines 是逐行结果数组，每项包含输入序号 i、整理后的 source 和值为 null 的 target。
 
-        术语表：
+        用户词表（仅在对话内容匹配时使用；source 采用词条的精确拼写，不得强行植入未出现的词）：
+        \(configuredVocabularyText)
+
+        上次优化术语表：
         \(glossaryText)
 
-        每行都必须返回，i 与输入序号一致，不得合并或改序。source 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，target 返回 null；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
+        每行都必须返回，i 与输入序号一致，不得合并或改序。source 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只在上下文匹配时采用用户词表的精确拼写，target 返回 null；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
         """
     }
 

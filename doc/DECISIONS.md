@@ -14,6 +14,48 @@
 
 ---
 
+## DEC-20260904-005：用户词表同时约束本地英文识别与会后 AI 优化
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：词表生效边界、会后优化 prompt、隐私披露
+- **替代**：[DEC-20260903-003](#dec-20260903-003英文识别词表由用户显式保存并按录制阶段冻结) 中“词表与云端 AI 完全隔离”的决定；其余本地识别、显式保存、阶段快照和模型缓存决定继续有效
+
+### 背景
+
+用户维护的词表包含产品名、人名和缩写，原实现只把它用于 Apple Speech。会后优化第一次运行时没有任何 AI 术语表，模型可能把已经识别正确的专有词改写或错误翻译；后续自动积累的 `glossaryJSON` 也无法表达用户预先确认的准确拼写。
+
+### 决定
+
+- `TranscriptRefiner` 读取同一个 `SpeechVocabularySettings`。每次会后优化开始时冻结当前已保存词表，并把同一份提示传给所有批次；操作进行中修改设置不改变本次运行。
+- 用户词表与 AI 上次生成的术语表保持两层：用户词表只表示候选专有词及准确拼写，仅在对话内容匹配时纠正 source，不作为强制字符串替换，也不伪造 target 映射；已有 AI 术语表的翻译映射优先。
+- 品牌、产品、人名和缩写没有既定译名时保留原文。空词表明确表示不提供用户专有词提示。
+- 词表只随用户明确触发的会后优化发送，不额外附加到实时洞察或标题请求。设置页和隐私文档明确披露该云端边界；Apple Speech 的训练数据和模型文件仍只留在本机。
+
+### 未采用方案
+
+- **把每个用户词条写成 term → 同名 target**：会错误阻止 `Wallet` 等普通术语按上下文翻译。
+- **在客户端对优化结果做确定性词条替换**：无法可靠判断语义对应关系，可能改坏正文。
+- **只依赖 AI 自动生成的术语表**：第一次优化仍没有用户确认的拼写，而且错误结果可能被继续沿用。
+- **把词表发送给所有 AI 请求**：实时洞察和标题不需要逐词校对，会扩大不必要的数据暴露。
+
+### 理由与权衡
+
+复用唯一的已保存词表让识别和会后校对共享用户意图，不增加第二套术语配置。把它作为有条件的 prompt 提示而非翻译映射，既能纠正相近音词和大小写，也避免强制插入无关词。代价是会后优化请求会额外暴露词表内容，因此必须在用户界面和文档中明确说明。
+
+### 影响
+
+- 应用装配层把 `SpeechVocabularySettings` 同时注入 `CaptureCoordinator` 和 `TranscriptRefiner`。
+- 保存后的词表对下一次会后优化立即生效；对本地识别仍在下一次开始或恢复会议时生效。
+- 词表内容可能包含内部项目名或人名，用户应按所选第三方 AI 服务的数据政策决定是否启用优化。
+
+### 验证与相关文件
+
+- XCTest 覆盖有词表和空词表的 prompt 语义；无签名 Debug 构建验证共享设置接线与 Swift 6 隔离。
+- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
 ## DEC-20260904-004：AI 结构化输出统一使用 strict JSON Schema
 
 - **日期**：2026-09-04
@@ -223,7 +265,8 @@
 ## DEC-20260903-003：英文识别词表由用户显式保存并按录制阶段冻结
 
 - **日期**：2026-09-03
-- **状态**：Accepted
+- **状态**：Superseded
+- **被替代**：词表与云端 AI 的隔离边界由 [DEC-20260904-005](#dec-20260904-005用户词表同时约束本地英文识别与会后-ai-优化) 替代；其余本地识别、显式保存、阶段快照和缓存决定继续有效。
 - **范围**：本地语音识别、设置持久化、双路会话一致性
 
 ### 背景
