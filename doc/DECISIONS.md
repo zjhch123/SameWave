@@ -14,6 +14,46 @@
 
 ---
 
+## DEC-20260904-007：历史洞察优先使用优化后的原文
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：历史洞察输入、优化结果回退、实时洞察与标题的事实来源
+
+### 背景
+
+会后优化会保存逐行的 `refinedSource`，修正明显识别错误、专有词拼写和标点，但历史洞察仍固定使用 `sourceText`。这会让用户已经确认并保存的更高质量内容无法改善话题、待办和决定提取。同时，优化采用分批部分成功语义，不能假设每行都存在优化结果。
+
+### 决定
+
+- 用户在历史会议中生成或重新生成洞察时，按时间顺序组装 transcript，每行优先使用非空的 `refinedSource`；该行没有成功优化时单独回退到 `sourceText`。
+- 不使用 `refinedTarget` 作为洞察事实来源，避免将译文的二次误差带入结构化洞察。
+- 实时洞察没有会后优化结果，继续使用实时 `sourceText`。会议标题继续使用原始 `sourceText`，保持与优化并行生成的时序和结果稳定性。
+- 已缓存洞察不因后续优化自动删除或重跑；用户明确点击“重新生成”后，新请求才使用当前优化内容。
+
+### 未采用方案
+
+- **历史洞察始终使用原文**：浪费已保存的识别纠错和专有词改善。
+- **使用优化译文**：可能引入翻译偏差，且同语言与跨语言会议的事实来源不再一致。
+- **只要有一行缺失优化就整会回退原文**：与分批部分成功设计冲突，会丢失其他成功行的价值。
+- **优化完成后自动删除或重生成已有洞察**：会在未经用户确认时删除已保存成果或产生新请求费用。
+
+### 理由与权衡
+
+逐行优先级与现有优化展示的回退语义一致，在不要求全量优化成功的前提下尽可能使用高质量输入。显式保留实时洞察和标题的原文路径，则避免一个共享帮助方法的改动悄然改变其他 AI 用例。代价是旧的缓存洞察不会自动反映后来的优化，但这保留了用户对外部请求和结果替换的显式控制。
+
+### 影响
+
+- `InsightEngine.flatten(lines:preferringRefinedSource:)` 要求每个调用方显式选择文本语义，历史洞察选择优化优先，标题选择原文。
+- 洞察词表命中也以最终组装的历史洞察上下文为准，因此优化后恢复的专有词能正确进入洞察 prompt。
+
+### 验证与相关文件
+
+- XCTest 覆盖历史行优先使用 `refinedSource`、空优化逐行回退、时间排序，并锁定标题仍使用原文；无签名 Debug 构建通过，macOS 测试 51/51 通过。
+- 相关文件：[`Sources/App/InsightInspector.swift`](../Sources/App/InsightInspector.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`Tests/MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
 ## DEC-20260904-006：智能洞察仅发送当前上下文命中的用户词条
 
 - **日期**：2026-09-04

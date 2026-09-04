@@ -41,7 +41,10 @@ final class MeetingTitleGenerator {
 
     static func input(lines: [TranscriptLine], limit: Int) -> String {
         InsightEngine.recentContext(
-            from: InsightEngine.flatten(lines: lines),
+            from: InsightEngine.flatten(
+                lines: lines,
+                preferringRefinedSource: false
+            ),
             limit: limit
         )
     }

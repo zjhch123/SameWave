@@ -155,10 +155,20 @@ final class InsightEngine {
         .joined(separator: "\n")
     }
 
-    static func flatten(lines: [TranscriptLine]) -> String {
+    static func flatten(
+        lines: [TranscriptLine],
+        preferringRefinedSource: Bool
+    ) -> String {
         lines.sorted { $0.orderIndex < $1.orderIndex }
             .compactMap { line in
-                let text = line.sourceText.trimmed
+                let refinedSource = line.refinedSource?.trimmed
+                let text = if preferringRefinedSource,
+                              let refinedSource,
+                              !refinedSource.isEmpty {
+                    refinedSource
+                } else {
+                    line.sourceText.trimmed
+                }
                 guard !text.isEmpty else { return nil }
                 return "\(line.isMine ? "我" : "对方")：\(text)"
             }

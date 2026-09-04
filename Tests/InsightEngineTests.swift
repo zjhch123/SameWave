@@ -57,6 +57,26 @@ final class InsightEngineTests: XCTestCase {
         )
     }
 
+    func testHistoryTranscriptPrefersRefinedSourceAndFallsBackPerLine() {
+        let refinedLine = makeLine(
+            index: 1,
+            source: "raw second",
+            refinedSource: "polished second"
+        )
+        let fallbackLine = makeLine(
+            index: 0,
+            source: "raw first",
+            refinedSource: "   "
+        )
+
+        let transcript = InsightEngine.flatten(
+            lines: [refinedLine, fallbackLine],
+            preferringRefinedSource: true
+        )
+
+        XCTAssertEqual(transcript, "对方：raw first\n对方：polished second")
+    }
+
     func testParsesStrictJSONResponseWithNullAnswer() {
         let raw = #"{"topic":"Roadmap","suggestions":[],"answer":null,"todos":[],"decisions":[]}"#
 
@@ -98,5 +118,21 @@ final class InsightEngineTests: XCTestCase {
 
         XCTAssertTrue(json.contains(#""answer":null"#))
         XCTAssertEqual(InsightResult.decode(from: json), result)
+    }
+
+    private func makeLine(
+        index: Int,
+        source: String,
+        refinedSource: String?
+    ) -> TranscriptLine {
+        TranscriptLine(
+            speaker: .remote,
+            sourceText: source,
+            targetText: "",
+            spokenAt: .now,
+            orderIndex: index,
+            sectionId: index,
+            refinedSource: refinedSource
+        )
     }
 }

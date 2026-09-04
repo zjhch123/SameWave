@@ -33,7 +33,7 @@ final class MeetingTitleGeneratorTests: XCTestCase {
 
     func testInputUsesChronologicalSourceTranscriptWithinBudget() {
         let lines = [
-            makeLine(index: 1, text: "second"),
+            makeLine(index: 1, text: "second", refinedSource: "refined second"),
             makeLine(index: 0, text: "first")
         ]
 
@@ -42,14 +42,19 @@ final class MeetingTitleGeneratorTests: XCTestCase {
         XCTAssertEqual(input, "对方：first\n对方：second")
     }
 
-    private func makeLine(index: Int, text: String) -> TranscriptLine {
+    private func makeLine(
+        index: Int,
+        text: String,
+        refinedSource: String? = nil
+    ) -> TranscriptLine {
         TranscriptLine(
             speaker: .remote,
             sourceText: text,
             targetText: "",
             spokenAt: .now,
             orderIndex: index,
-            sectionId: index
+            sectionId: index,
+            refinedSource: refinedSource
         )
     }
 }

@@ -138,7 +138,10 @@ struct InsightInspector: View {
     private func generateHistoryInsight() {
         guard let record = selectedRecord, let engine = coordinator.insights else { return }
         generationState = .generating
-        let transcript = InsightEngine.flatten(lines: record.lines)
+        let transcript = InsightEngine.flatten(
+            lines: record.lines,
+            preferringRefinedSource: true
+        )
         let token = UUID()
         generationToken = token
         generationTask = Task { @MainActor in
