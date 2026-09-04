@@ -16,7 +16,7 @@ struct SettingsView: View {
                     Label("词表", systemImage: "text.book.closed")
                 }
         }
-        .frame(width: 560, height: 460)
+        .frame(width: 600, height: 500)
     }
 }
 
@@ -28,12 +28,18 @@ private struct InsightSettingsPane: View {
     // Local draft — seeded from the saved settings, edited freely, applied on Save.
     @State private var providerID: String
     @State private var apiKey: String
-    @State private var customBaseURL: String
+    @State private var customAPIAddress: String
     @State private var customModel: String
+    @State private var availableModels: [LLMModel] = []
 
     /// Connection-test lifecycle (runs against the DRAFT, so you can validate before saving).
     private enum TestState: Equatable { case idle, testing, ok, failed(String) }
     @State private var testState: TestState = .idle
+    private enum ModelDiscoveryState: Equatable {
+        case idle, loading, loaded(Int), failed(String)
+    }
+    @State private var modelDiscoveryState: ModelDiscoveryState = .idle
+    @State private var modelDiscoveryToken = UUID()
     /// Set briefly after a successful Save so the user gets confirmation feedback.
     @State private var justSaved = false
 
@@ -41,7 +47,7 @@ private struct InsightSettingsPane: View {
         self.settings = settings
         _providerID = State(initialValue: settings.selectedProviderID)
         _apiKey = State(initialValue: settings.apiKey)
-        _customBaseURL = State(initialValue: settings.customBaseURL)
+        _customAPIAddress = State(initialValue: settings.customAPIAddress)
         _customModel = State(initialValue: settings.customModel)
     }
 
@@ -52,16 +58,24 @@ private struct InsightSettingsPane: View {
     private var draftConfigured: Bool {
         guard !apiKey.trimmed.isEmpty else { return false }
         if draftConfig.isCustom {
-            return !customBaseURL.trimmed.isEmpty && !customModel.trimmed.isEmpty
+            return OpenAIEndpointResolver.chatCompletionsURL(from: customAPIAddress) != nil
+                && !customModel.trimmed.isEmpty
         }
         return true
+    }
+
+    private var canFetchModels: Bool {
+        draftConfig.isCustom
+            && !apiKey.trimmed.isEmpty
+            && OpenAIEndpointResolver.modelsURL(from: customAPIAddress) != nil
+            && modelDiscoveryState != .loading
     }
 
     /// Whether the draft differs from the saved settings (enables Save / 取消).
     private var isDirty: Bool {
         providerID != settings.selectedProviderID
             || apiKey != settings.apiKey
-            || customBaseURL != settings.customBaseURL
+            || customAPIAddress != settings.customAPIAddress
             || customModel != settings.customModel
     }
 
@@ -74,25 +88,63 @@ private struct InsightSettingsPane: View {
                             Text(cfg.displayName).tag(cfg.id)
                         }
                     }
-                    .onChange(of: providerID) { _, _ in editingChanged() }
+                    .onChange(of: providerID) { _, _ in connectionDetailsChanged() }
 
                     SecureField("API Key", text: $apiKey,
                                 prompt: Text(draftConfig.keyHint))
-                        .onChange(of: apiKey) { _, _ in editingChanged() }
+                        .onChange(of: apiKey) { _, _ in connectionDetailsChanged() }
 
-                    // Custom endpoint needs its own base URL + model.
+                    // Custom services accept whatever address the provider documents. The
+                    // resolved request URL makes the normalization visible and predictable.
                     if draftConfig.isCustom {
-                        TextField("接口地址（Base URL）", text: $customBaseURL,
-                                  prompt: Text("https://…/v1"))
-                            .onChange(of: customBaseURL) { _, _ in editingChanged() }
-                        TextField("模型名", text: $customModel,
-                                  prompt: Text("model-name"))
-                            .onChange(of: customModel) { _, _ in editingChanged() }
+                        TextField("API 地址", text: $customAPIAddress,
+                                  prompt: Text("https://api.example.com"))
+                            .onChange(of: customAPIAddress) { _, _ in
+                                connectionDetailsChanged()
+                            }
+
+                        if let resolved = OpenAIEndpointResolver.chatCompletionsURL(
+                            from: customAPIAddress
+                        ) {
+                            LabeledContent("实际请求") {
+                                Text(resolved.absoluteString)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(CaptionsView.meta)
+                                    .textSelection(.enabled)
+                                    .lineLimit(2)
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            TextField("模型 ID", text: $customModel,
+                                      prompt: Text("获取后选择，或手动填写"))
+                                .onChange(of: customModel) { _, _ in editingChanged() }
+
+                            if !availableModels.isEmpty {
+                                Menu("选择模型") {
+                                    ForEach(availableModels) { model in
+                                        Button(modelLabel(model)) {
+                                            customModel = model.id
+                                            editingChanged()
+                                        }
+                                    }
+                                }
+                            }
+
+                            Button(availableModels.isEmpty ? "获取模型" : "刷新列表") {
+                                fetchModels()
+                            }
+                            .disabled(!canFetchModels)
+                        }
+
+                        modelDiscoveryStatus
                     }
                 } header: {
                     Text("智能洞察")
                 } footer: {
-                    Text("智能洞察会将会议对话内容发送到你选择的服务商以生成总结与建议。字幕与翻译始终在本地进行，不受此设置影响。")
+                    Text(draftConfig.isCustom
+                         ? "API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址，应用会自动补全。获取模型不可用时仍可手动填写模型 ID。会议文字会发送到该服务，音频不会上传。"
+                         : "智能洞察会将会议对话内容发送到你选择的服务商以生成总结与建议。字幕与翻译始终在本地进行，不受此设置影响。")
                         .font(.system(size: 11))
                         .foregroundStyle(CaptionsView.meta)
                 }
@@ -157,6 +209,29 @@ private struct InsightSettingsPane: View {
         }
     }
 
+    @ViewBuilder private var modelDiscoveryStatus: some View {
+        switch modelDiscoveryState {
+        case .idle:
+            EmptyView()
+        case .loading:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("正在获取模型…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(CaptionsView.muted)
+            }
+        case .loaded(let count):
+            Label("已获取 \(count) 个模型", systemImage: "checkmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.green)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.circle.fill")
+                .font(.system(size: 11))
+                .foregroundStyle(CaptionsView.danger)
+                .lineLimit(2)
+        }
+    }
+
     // MARK: - Actions
 
     /// Any field edit invalidates a prior test result and clears the "已保存" flash.
@@ -165,11 +240,19 @@ private struct InsightSettingsPane: View {
         justSaved = false
     }
 
+    /// Address, key, and provider changes invalidate a previously discovered model list.
+    private func connectionDetailsChanged() {
+        modelDiscoveryToken = UUID()
+        availableModels = []
+        modelDiscoveryState = .idle
+        editingChanged()
+    }
+
     /// Commit the draft to the shared settings (persists prefs + writes the key to the
     /// Keychain via `InsightSettings`' setters). Only reachable when dirty.
     private func save() {
         settings.selectedProviderID = providerID
-        settings.customBaseURL = customBaseURL
+        settings.customAPIAddress = customAPIAddress
         settings.customModel = customModel
         settings.apiKey = apiKey            // triggers the Keychain write
         testState = .idle
@@ -181,8 +264,10 @@ private struct InsightSettingsPane: View {
     private func revert() {
         providerID = settings.selectedProviderID
         apiKey = settings.apiKey
-        customBaseURL = settings.customBaseURL
+        customAPIAddress = settings.customAPIAddress
         customModel = settings.customModel
+        availableModels = []
+        modelDiscoveryState = .idle
         testState = .idle
         justSaved = false
     }
@@ -194,7 +279,7 @@ private struct InsightSettingsPane: View {
         let cfg = draftConfig
         let provider = OpenAICompatibleProvider(
             config: cfg, apiKey: apiKey.trimmed,
-            baseURLOverride: cfg.isCustom ? customBaseURL : nil,
+            apiAddressOverride: cfg.isCustom ? customAPIAddress : nil,
             modelOverride: cfg.isCustom ? customModel : nil)
         testState = .testing
         Task { @MainActor in
@@ -209,5 +294,46 @@ private struct InsightSettingsPane: View {
                 testState = .failed(error.localizedDescription)
             }
         }
+    }
+
+    private func fetchModels() {
+        justSaved = false
+        let token = UUID()
+        modelDiscoveryToken = token
+        modelDiscoveryState = .loading
+        let provider = OpenAICompatibleProvider(
+            config: draftConfig,
+            apiKey: apiKey.trimmed,
+            apiAddressOverride: customAPIAddress,
+            modelOverride: customModel
+        )
+        Task { @MainActor in
+            do {
+                let models = try await provider.fetchModels()
+                guard modelDiscoveryToken == token else { return }
+                availableModels = models
+                if !models.contains(where: { $0.id == customModel }) {
+                    customModel = models[0].id
+                }
+                modelDiscoveryState = .loaded(models.count)
+                editingChanged()
+            } catch is CancellationError {
+                guard modelDiscoveryToken == token else { return }
+                modelDiscoveryState = .idle
+            } catch let error as LLMError {
+                guard modelDiscoveryToken == token else { return }
+                availableModels = []
+                modelDiscoveryState = .failed(error.errorDescription ?? "获取模型失败")
+            } catch {
+                guard modelDiscoveryToken == token else { return }
+                availableModels = []
+                modelDiscoveryState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func modelLabel(_ model: LLMModel) -> String {
+        guard let owner = model.ownedBy?.trimmed, !owner.isEmpty else { return model.id }
+        return "\(model.id) · \(owner)"
     }
 }

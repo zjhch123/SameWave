@@ -14,6 +14,47 @@
 
 ---
 
+## DEC-20260904-001：自定义 AI 地址自动规范化，并把模型发现作为可选辅助
+
+- **日期**：2026-09-04
+- **状态**：Accepted
+- **范围**：AI 服务配置、OpenAI-compatible I/O 边界、设置交互
+
+### 背景
+
+自定义服务原先要求用户同时知道 base URL 的精确格式和模型 ID。不同服务文档有的给域名、有的给 `/v1`，也有的直接给完整 `/chat/completions`；普通用户无法从“URL”标签判断应用会不会再拼接路径。模型 ID 同样经常只能从文档或服务后台查找。
+
+### 决定
+
+- 自定义配置只保留一个“API 地址”输入。它接受裸主机、带路径的 base URL 或完整 Chat Completions 地址，并在界面显示最终请求 URL。裸远程主机补全为 HTTPS `/v1/chat/completions`，localhost 和回环地址补全为 HTTP `/v1/chat/completions`；已有路径只补 `/chat/completions`。
+- 从最终 Chat Completions 地址推导同级 `/models`，使用相同 Bearer API Key 获取模型 ID。获取成功后提供选择菜单，但模型 ID 输入始终可编辑。
+- 模型发现只减少输入成本，不是配置成立的前提。服务未实现 `/models`、返回空列表或非标准结构时明确提示，并允许用户手动填写模型 ID。
+- 删除旧 `customBaseURL` 设置路径，不增加迁移或兼容读取。
+
+### 未采用方案
+
+- **要求用户固定填写带 `/v1` 的 base URL**：把接口拼接规则暴露给非技术用户，也无法适配版本段不是 `/v1` 的网关。
+- **只接受完整 `/chat/completions` URL**：结果最明确，但多数服务文档首先展示的是 host 或 base URL，复制成本更高。
+- **把 `/models` 作为强制校验**：会错误拒绝能正常补全、但没有标准模型列表接口的兼容服务。
+- **为不同网关增加模型发现适配器**：当前标准同级 `/models` 加手动输入已覆盖需求，逐服务分支会扩大维护面。
+
+### 理由与权衡
+
+一套确定性的地址规范化规则让用户无需理解 `/v1` 的含义，同时用“实际请求”消除隐式行为。标准 `/models` 覆盖 Cherry Studio 和常见 OpenAI-compatible 服务，手动输入保留了对非标准实现的可用性。代价是仅提供 host 且服务实际不使用 `/v1` 时仍需粘贴其带版本路径的地址；非标准模型接口也不会被自动探测。
+
+### 影响
+
+- 设置页负责呈现规范化结果和模型发现状态；provider 仍只负责 HTTP I/O。
+- 自定义服务是否可保存和测试，以规范化地址、API Key 和模型 ID 是否齐全为准，不依赖模型列表请求成功。
+- 后续调整地址推导规则时必须同步 URL resolver 测试，避免 UI 预览与实际请求分叉。
+
+### 验证与相关文件
+
+- XCTest 覆盖裸远程主机、回环地址、已有版本路径、完整端点、模型地址推导、无效地址和模型 ID 解码；无签名 Debug 构建验证设置界面与 provider 集成。
+- 相关文件：[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Sources/Insights/LLMProvider.swift`](../Sources/Insights/LLMProvider.swift)、[`Sources/Insights/InsightSettings.swift`](../Sources/Insights/InsightSettings.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/OpenAIEndpointResolverTests.swift`](../Tests/OpenAIEndpointResolverTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+
+---
+
 ## DEC-20260903-004：独立选择源语言和目标语言，同语言直接旁路翻译
 
 - **日期**：2026-09-03
