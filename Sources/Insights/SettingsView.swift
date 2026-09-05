@@ -2,7 +2,8 @@ import SwiftUI
 
 struct SettingsView: View {
     let insightSettings: InsightSettings
-    let speechVocabularySettings: SpeechVocabularySettings
+    let speechVocabularyDraft: SpeechVocabularyDraft
+    let vocabularyImportController: VocabularyImportController
 
     var body: some View {
         TabView {
@@ -11,7 +12,10 @@ struct SettingsView: View {
                     Label("智能洞察", systemImage: "sparkles")
                 }
 
-            SpeechVocabularySettingsView(settings: speechVocabularySettings)
+            SpeechVocabularySettingsView(
+                draft: speechVocabularyDraft,
+                importController: vocabularyImportController
+            )
                 .tabItem {
                     Label("词表", systemImage: "text.book.closed")
                 }

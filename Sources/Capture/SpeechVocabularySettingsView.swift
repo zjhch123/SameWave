@@ -1,31 +1,23 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SpeechVocabularySettingsView: View {
-    let settings: SpeechVocabularySettings
+    let draft: SpeechVocabularyDraft
+    let importController: VocabularyImportController
 
-    @State private var draft: String
+    @Environment(\.openWindow) private var openWindow
+    @State private var isChoosingMarkdown = false
     @State private var justSaved = false
 
-    init(settings: SpeechVocabularySettings) {
-        self.settings = settings
-        _draft = State(initialValue: settings.phrases.joined(separator: "\n"))
-    }
-
-    private var draftPhrases: [String] {
-        SpeechVocabularySettings.phrases(from: draft)
-    }
-
-    private var isDirty: Bool {
-        draftPhrases != settings.phrases
-    }
-
     var body: some View {
+        @Bindable var draft = draft
+
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("每行一个词或短语")
                     .font(.headline)
 
-                TextEditor(text: $draft)
+                TextEditor(text: $draft.text)
                     .font(.system(.body, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .padding(8)
@@ -37,17 +29,37 @@ struct SpeechVocabularySettingsView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .stroke(Color(nsColor: .separatorColor))
                     }
-                    .onChange(of: draft) { _, _ in justSaved = false }
+                    .onChange(of: draft.text) { _, _ in justSaved = false }
 
                 HStack {
-                    Text("\(draftPhrases.count) 个词条")
+                    Text("\(draft.phrases.count) 个词条")
                     Spacer()
                     Text("空行和重复词条会在保存时移除")
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(CaptionsView.meta)
 
-                Text("用于英文识别；新词表在下次开始或恢复会议时生效。会后优化会向所选 AI 服务发送完整已保存词表；智能洞察只发送最近对话中命中的词条。")
+                HStack(spacing: 10) {
+                    Button {
+                        if importController.hasActiveWorkflow {
+                            openWindow(id: VocabularyImportWindow.windowID)
+                        } else {
+                            isChoosingMarkdown = true
+                        }
+                    } label: {
+                        Label("从 Markdown 生成", systemImage: "doc.badge.plus")
+                    }
+                    .disabled(!importController.canStartOrResume)
+
+                    if !importController.isConfigured {
+                        Text("请先配置智能洞察")
+                            .font(.system(size: 11))
+                            .foregroundStyle(CaptionsView.meta)
+                    }
+                    Spacer()
+                }
+
+                Text("词表用于英文识别，在下次开始或恢复会议时生效。AI 生成与审核会在独立窗口中完成。")
                     .font(.system(size: 11))
                     .foregroundStyle(CaptionsView.meta)
             }
@@ -59,32 +71,36 @@ struct SpeechVocabularySettingsView: View {
                     Label("已保存", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.green)
-                } else if isDirty {
+                } else if draft.isDirty {
                     Text("有未保存的更改")
                         .font(.system(size: 12))
                         .foregroundStyle(CaptionsView.meta)
                 }
                 Spacer()
-                Button("取消") { revert() }
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(!isDirty)
-                Button("保存") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isDirty)
+                Button("取消") {
+                    draft.revert()
+                    justSaved = false
+                }
+                .keyboardShortcut(.cancelAction)
+                .disabled(!draft.isDirty)
+                Button("保存") {
+                    draft.save()
+                    justSaved = true
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(!draft.isDirty)
             }
             .padding(12)
         }
-    }
-
-    private func save() {
-        settings.save(draftPhrases)
-        draft = settings.phrases.joined(separator: "\n")
-        justSaved = true
-    }
-
-    private func revert() {
-        draft = settings.phrases.joined(separator: "\n")
-        justSaved = false
+        .fileImporter(
+            isPresented: $isChoosingMarkdown,
+            allowedContentTypes: VocabularyImportWindow.markdownContentTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            if importController.handleFileSelection(result) {
+                openWindow(id: VocabularyImportWindow.windowID)
+            }
+        }
     }
 }

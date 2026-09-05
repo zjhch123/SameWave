@@ -1,8 +1,8 @@
-# AGENTS.md — 同频（MeetingCaptions）
+# AGENTS.md — 同频（SameWave）
 
 ## 适用范围
 
-- 本文件约束整个 `MeetingCaptions` 仓库。所有项目源码、文档和工程声明都从仓库根目录使用相对路径，不依赖仓库外的工作区布局。
+- 本文件约束整个 `SameWave` 仓库。所有项目源码、文档和工程声明都从仓库根目录使用相对路径，不依赖仓库外的工作区布局。
 - 同频是面向 macOS 26+ 的 Swift 6 原生应用：SwiftUI/AppKit 界面、ScreenCaptureKit/AVFoundation 音频、Apple Speech 本地识别、Translation 本地翻译、SwiftData 历史记录，以及可选的 OpenAI-compatible 洞察服务。
 - 开始改动前先执行 `git status --short`。工作区可能已有用户改动；不得覆盖、回退或顺手整理与当前任务无关的内容。
 
@@ -45,7 +45,7 @@
 1. 先从 [`doc/README.md`](doc/README.md) 选择与任务相关的 reference，再定位需求对应的用户路径和完整数据流，阅读调用方、实现和下游消费者；不要仅凭 reference、文件名或 README 猜测。
 2. 写下需要保持的状态不变量和失败场景，再进行最小、完整的修改。修根因，不在 UI 层遮盖底层错误。
 3. 优先让纯逻辑与平台 I/O 解耦，以便确定性测试；不要为测试复制生产逻辑。
-4. 改动纯逻辑（尤其 `CaptionStore`、会话生命周期、解析、洞察合并或持久化映射）时必须添加或更新 XCTest。当前仓库尚无测试 target；首次需要单元测试时，在 `project.yml` 建立最小 `MeetingCaptionsTests` target，而不是跳过验证。
+4. 改动纯逻辑（尤其 `CaptionStore`、会话生命周期、解析、洞察合并或持久化映射）时必须在现有 `SameWaveTests` target 中添加或更新 XCTest，不得跳过验证。
 5. 修改工程配置后重新运行 XcodeGen，并审查生成的 plist/entitlement 差异。不要提交 `.build`、DerivedData、生成的 xcodeproj 或本地配置。
 6. 若一次缺陷暴露了可重复的盲区，把经验固化为测试、脚本、可执行检查或本文件中的短规则；不要只靠更多注释提醒下一位代理。
 
@@ -54,8 +54,8 @@
 在仓库根目录执行以下无签名验证；这是每次代码或工程配置改动的最低完成条件：
 ```
 xcodegen generate
-xcodebuild -project MeetingCaptions.xcodeproj \
-  -scheme MeetingCaptions \
+xcodebuild -project SameWave.xcodeproj \
+  -scheme SameWave \
   -configuration Debug \
   -derivedDataPath .build \
   CODE_SIGNING_ALLOWED=NO \

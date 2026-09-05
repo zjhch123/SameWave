@@ -1,21 +1,21 @@
-name: MeetingCaptions
+name: SameWave
 options:
-  bundleIdPrefix: com.plus.meetingcaptions
+  bundleIdPrefix: com.plus.samewave
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
 
 targets:
-  MeetingCaptions:
+  SameWave:
     type: application
     platform: macOS
     deploymentTarget: "26.0"
     sources:
       - path: Sources
         excludes:
-          - "Resources/MeetingCaptions.entitlements"
+          - "Resources/SameWave.entitlements"
     entitlements:
-      path: Sources/Resources/MeetingCaptions.entitlements
+      path: Sources/Resources/SameWave.entitlements
       properties:
         # Hardened Runtime is on (ENABLE_HARDENED_RUNTIME below). Microphone access
         # via AVFoundation REQUIRES this entitlement — without it the system denies
@@ -44,9 +44,9 @@ targets:
           NSAllowsLocalNetworking: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.plus.meetingcaptions
+        PRODUCT_BUNDLE_IDENTIFIER: com.plus.samewave
         # The built app is named 同频.app / the process shows as 同频. The Xcode target
-        # and scheme stay ASCII "MeetingCaptions" (safe for build tooling); only the
+        # and scheme stay ASCII "SameWave" (safe for build tooling); only the
         # user-visible product name is Chinese.
         PRODUCT_NAME: "同频"
         MARKETING_VERSION: "0.1.0"
@@ -63,17 +63,17 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
-  MeetingCaptionsTests:
+  SameWaveTests:
     type: bundle.unit-test
     platform: macOS
     deploymentTarget: "26.0"
     sources:
       - path: Tests
     dependencies:
-      - target: MeetingCaptions
+      - target: SameWave
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.plus.meetingcaptions.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.plus.samewave.tests
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/同频.app/Contents/MacOS/同频"
         BUNDLE_LOADER: "$(TEST_HOST)"
@@ -81,14 +81,14 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
 
 schemes:
-  MeetingCaptions:
+  SameWave:
     build:
       targets:
-        MeetingCaptions: all
-        MeetingCaptionsTests: [test]
+        SameWave: all
+        SameWaveTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - MeetingCaptionsTests
+        - SameWaveTests

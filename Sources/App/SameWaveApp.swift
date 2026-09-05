@@ -4,7 +4,7 @@ import Speech
 import SwiftUI
 
 @main
-struct MeetingCaptionsApp: App {
+struct SameWaveApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
@@ -29,9 +29,16 @@ struct MeetingCaptionsApp: App {
         Settings {
             SettingsView(
                 insightSettings: delegate.insightSettings,
-                speechVocabularySettings: delegate.speechVocabularySettings
+                speechVocabularyDraft: delegate.speechVocabularyDraft,
+                vocabularyImportController: delegate.vocabularyImportController
             )
         }
+
+        Window("从 Markdown 生成词表", id: VocabularyImportWindow.windowID) {
+            VocabularyImportWindow(controller: delegate.vocabularyImportController)
+        }
+        .defaultSize(width: 560, height: 460)
+        .defaultLaunchBehavior(.suppressed)
 
         // Lightweight menu-bar icon for quick access / quit.
         MenuBarExtra("同频", systemImage: "captions.bubble") {
@@ -54,12 +61,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let insightSettings: InsightSettings
     /// User-managed local vocabulary for English speech recognition.
     let speechVocabularySettings: SpeechVocabularySettings
+    /// App-lifetime edit draft shared by Settings and the standalone import window.
+    let speechVocabularyDraft: SpeechVocabularyDraft
+    /// Owns Markdown import work independently of the Settings scene lifecycle.
+    let vocabularyImportController: VocabularyImportController
 
     override init() {
         let insightSettings = InsightSettings()
         self.insightSettings = insightSettings
         let speechVocabularySettings = SpeechVocabularySettings()
         self.speechVocabularySettings = speechVocabularySettings
+        let speechVocabularyDraft = SpeechVocabularyDraft(settings: speechVocabularySettings)
+        self.speechVocabularyDraft = speechVocabularyDraft
+        vocabularyImportController = VocabularyImportController(
+            insightSettings: insightSettings,
+            vocabularyDraft: speechVocabularyDraft
+        )
         coordinator = CaptureCoordinator(
             speechVocabularySettings: speechVocabularySettings
         )

@@ -1,22 +1,21 @@
 #!/bin/bash
-# Build MeetingCaptions, sign with a STABLE identity (so the system-audio TCC
+# Build SameWave, sign with a STABLE identity (so the system-audio TCC
 # grant survives rebuilds — ad-hoc signing changes the cdhash every build and
 # silently voids the grant, giving silent/zero audio), install to a fixed path,
 # and launch.
-set -e
+set -euo pipefail
 cd "$(dirname "$0")"
 
 # Stable signing identity (has a Team ID → TCC pins to identifier+anchor, not cdhash).
 SIGN_ID="Apple Development: Jiahao Zhang (NWJTN3DP9L)"
-BUNDLE_ID="com.plus.meetingcaptions"
-ENTITLEMENTS="$(pwd)/Sources/Resources/MeetingCaptions.entitlements"
+BUNDLE_ID="com.plus.samewave"
+ENTITLEMENTS="$(pwd)/Sources/Resources/SameWave.entitlements"
 
 echo "▶︎ Building…"
-xcodebuild -project MeetingCaptions.xcodeproj \
-  -scheme MeetingCaptions -configuration Debug \
+xcodebuild -project SameWave.xcodeproj \
+  -scheme SameWave -configuration Debug \
   -derivedDataPath .build build \
-  CODE_SIGNING_ALLOWED=NO \
-  2>&1 | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+  CODE_SIGNING_ALLOWED=NO
 
 APP=".build/Build/Products/Debug/同频.app"
 if [ ! -d "$APP" ]; then
@@ -41,8 +40,8 @@ cp -R "$APP" ~/Desktop/同频.app
 
 # Make the local cloud credentials available at a stable runtime path.
 if [ -f "$(pwd)/config.local.json" ]; then
-  mkdir -p "$HOME/Library/Application Support/MeetingCaptions"
-  cp "$(pwd)/config.local.json" "$HOME/Library/Application Support/MeetingCaptions/config.local.json"
+  mkdir -p "$HOME/Library/Application Support/SameWave"
+  cp "$(pwd)/config.local.json" "$HOME/Library/Application Support/SameWave/config.local.json"
 fi
 
 echo "▶︎ Launching…"
