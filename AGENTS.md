@@ -5,6 +5,7 @@
 - 本文件约束整个 `SameWave` 仓库。所有项目源码、文档和工程声明都从仓库根目录使用相对路径，不依赖仓库外的工作区布局。
 - 同频是面向 macOS 26+ 的 Swift 6 原生应用：SwiftUI/AppKit 界面、ScreenCaptureKit/AVFoundation 音频、Apple Speech 本地识别、Translation 本地翻译、SwiftData 历史记录，以及可选的 OpenAI-compatible 洞察服务。
 - 开始改动前先执行 `git status --short`。工作区可能已有用户改动；不得覆盖、回退或顺手整理与当前任务无关的内容。
+- 开始任务时读取 [`MEMORY.md`](MEMORY.md)，遵循其中记录的项目偏好和持续授权。
 
 ## References
 
@@ -63,7 +64,7 @@ xcodebuild -project SameWave.xcodeproj \
 ```
 - 若存在测试 target，再运行相应 `xcodebuild test`；报告实际运行的 scheme/destination 和结果。不得声称测试通过却只做了编译。
 - 根据改动补充最小人工 smoke test：启动/权限、系统音频、麦克风、英译中、中文直出、双人抢话、暂停/恢复/结束、崩溃恢复、历史/导出、洞察失败降级。只验证受影响路径，不机械执行无关矩阵。
-- `build.sh` 会使用个人签名、终止并覆盖 `~/Desktop/同频.app` 后启动应用。除非任务明确需要签名/TCC 的端到端验证，否则不要运行；绝不能修改或假定其中的个人证书适用于其他环境。
+- 用户已在 [`MEMORY.md`](MEMORY.md) 持续授权：每次开发完成且上述验证通过后，默认运行 `./build.sh`，使用既有签名覆盖 `~/Desktop/同频.app` 并启动，无需再次确认；随后检查安装产物的签名和桌面版进程。用户在当前任务中另有明确要求时遵循该要求。不得修改或假定脚本中的个人证书适用于其他环境。
 - 无法执行某项验证时，明确说明缺失的环境能力、已经完成的替代检查和剩余风险，不得静默跳过。
 
 ## 完成定义
@@ -71,6 +72,7 @@ xcodebuild -project SameWave.xcodeproj \
 - 当前需求端到端成立，旧路径已删除，没有无关重构。
 - Golden invariants 仍成立；新增行为具备可重复验证或清楚的人工验证步骤。
 - XcodeGen 生成成功且无签名 Debug 构建通过；相关测试通过。
+- 默认已覆盖安装并启动桌面版，签名和运行状态检查通过；遵循用户在当前任务中的明确例外。
 - 本次若形成了需要长期保留的决策，`doc/DECISIONS.md` 已记录，相关领域 reference 已同步。
 - 用户可见行为、权限、配置、核心状态机或架构改变时，同步更新 README、对应的 `doc/` reference、需求文档或本文件中的 reference 路由。
 - 最终说明改了什么、验证了什么、仍有哪些风险；不要用代码注释或 TODO 代替未完成工作。

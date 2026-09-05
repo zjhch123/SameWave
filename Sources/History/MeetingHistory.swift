@@ -290,6 +290,14 @@ final class MeetingHistoryStore {
         return try context.fetch(d)
     }
 
+    func record(id: UUID) throws -> MeetingRecord? {
+        var descriptor = FetchDescriptor<MeetingRecord>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
     func delete(_ record: MeetingRecord) throws {
         context.delete(record)
         try save()

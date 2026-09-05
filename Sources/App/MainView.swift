@@ -1,16 +1,15 @@
 import SwiftUI
 
 struct MainView: View {
-    let coordinator: CaptureCoordinator
+    @Bindable var coordinator: CaptureCoordinator
 
     @State private var sidebarOpen = true
-    @State private var selectedRecord: MeetingRecord?
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 280
 
     var body: some View {
         HStack(spacing: 0) {
             if sidebarOpen {
-                MeetingSidebar(coordinator: coordinator, selectedRecord: $selectedRecord)
+                MeetingSidebar(coordinator: coordinator, selectedRecord: $coordinator.selectedHistoryRecord)
                     .frame(width: 240)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
@@ -18,12 +17,12 @@ struct MainView: View {
             MeetingStage(
                 coordinator: coordinator,
                 sidebarOpen: $sidebarOpen,
-                selectedRecord: $selectedRecord
+                selectedRecord: $coordinator.selectedHistoryRecord
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             InspectorResizeHandle(width: $inspectorWidth, minWidth: 240, maxWidth: 620)
-            InsightInspector(coordinator: coordinator, selectedRecord: $selectedRecord)
+            InsightInspector(coordinator: coordinator, selectedRecord: $coordinator.selectedHistoryRecord)
                 .frame(width: inspectorWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -35,9 +34,6 @@ struct MainView: View {
                 languagePair: coordinator.languagePair
             )
         )
-        .onChange(of: coordinator.isRunning) { _, isRunning in
-            if isRunning { selectedRecord = nil }
-        }
         .animation(.easeOut(duration: 0.22), value: sidebarOpen)
     }
 }
