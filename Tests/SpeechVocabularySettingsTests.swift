@@ -58,7 +58,7 @@ final class SpeechVocabularySettingsTests: XCTestCase {
         withIsolatedDefaults { defaults in
             let settings = SpeechVocabularySettings(defaults: defaults)
             let controller = VocabularyImportController(
-                insightSettings: InsightSettings(),
+                aiSettings: AISettings(),
                 vocabularyDraft: SpeechVocabularyDraft(settings: settings)
             )
             let cancellation = NSError(
@@ -77,7 +77,7 @@ final class SpeechVocabularySettingsTests: XCTestCase {
         withIsolatedDefaults { defaults in
             let settings = SpeechVocabularySettings(defaults: defaults)
             let controller = VocabularyImportController(
-                insightSettings: InsightSettings(),
+                aiSettings: AISettings(),
                 vocabularyDraft: SpeechVocabularyDraft(settings: settings)
             )
             let pickerError = NSError(domain: NSCocoaErrorDomain, code: NSFileReadUnknownError)

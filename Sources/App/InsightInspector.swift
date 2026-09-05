@@ -5,6 +5,8 @@ struct InsightInspector: View {
     let coordinator: CaptureCoordinator
     @Binding var selectedRecord: MeetingRecord?
     @Environment(\.openSettings) private var openSettings
+    @Environment(AISettings.self) private var aiSettings
+    @Environment(SettingsNavigation.self) private var settingsNavigation
     @Environment(\.modelContext) private var modelContext
 
     private enum GenerationState: Equatable {
@@ -39,13 +41,14 @@ struct InsightInspector: View {
             if isGenerating { ProgressView().controlSize(.small) }
             Spacer()
             if selectedRecord != nil { generationButton }
-            Button { openSettings() } label: {
+            Button { openAISettings() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 14))
                     .foregroundStyle(CaptionsView.muted)
             }
             .buttonStyle(.plain)
-            .help("智能洞察设置")
+            .help("AI 服务设置")
+            .accessibilityLabel("AI 服务设置")
         }
         .frame(height: 48)
         .padding(.horizontal, 16)
@@ -65,8 +68,8 @@ struct InsightInspector: View {
             InsightCardsView(
                 result: coordinator.insights?.current ?? .empty,
                 state: coordinator.insights?.state ?? .idle,
-                isConfigured: coordinator.insights?.isConfigured == true,
-                onOpenSettings: { openSettings() },
+                isConfigured: aiSettings.isConfigured,
+                onOpenSettings: { openAISettings() },
                 centersPlaceholder: true
             )
         }
@@ -74,12 +77,12 @@ struct InsightInspector: View {
 
     @ViewBuilder
     private var historyContent: some View {
-        if coordinator.insights?.isConfigured != true {
+        if !aiSettings.isConfigured {
             InsightCardsView(
                 result: .empty,
                 state: .idle,
                 isConfigured: false,
-                onOpenSettings: { openSettings() },
+                onOpenSettings: { openAISettings() },
                 centersPlaceholder: true
             )
         } else if let historyInsight, !historyInsight.isEmpty {
@@ -104,12 +107,12 @@ struct InsightInspector: View {
     private var generationButton: some View {
         let hasResult = historyInsight?.isEmpty == false
         return Button {
-            if coordinator.insights?.isConfigured == true { generateHistoryInsight() }
-            else { openSettings() }
+            if aiSettings.isConfigured { generateHistoryInsight() }
+            else { openAISettings() }
         } label: {
             Label(
-                coordinator.insights?.isConfigured != true
-                    ? "去设置"
+                !aiSettings.isConfigured
+                    ? "配置 AI 服务"
                     : hasResult ? "重新生成" : "生成洞察",
                 systemImage: hasResult ? "arrow.clockwise" : "sparkles"
             )
@@ -118,6 +121,10 @@ struct InsightInspector: View {
         }
         .buttonStyle(.plain)
         .disabled(generationState == .generating)
+    }
+
+    private func openAISettings() {
+        settingsNavigation.openAISettings { openSettings() }
     }
 
     private func centeredHint(_ text: String, color: Color) -> some View {

@@ -9,14 +9,14 @@ final class MeetingTitleGenerator {
         let title: String
     }
 
-    private let settings: InsightSettings
+    private let settings: AISettings
 
     /// Fixed provider-independent budget shared with one-shot insights. A title uses the
     /// latest complete conversation lines and does not wait for refined text.
     static let contextCharacterLimit = 6_000
     static let titleCharacterLimit = 30
 
-    init(settings: InsightSettings) {
+    init(settings: AISettings) {
         self.settings = settings
     }
 
@@ -25,7 +25,7 @@ final class MeetingTitleGenerator {
         return try await Self.generate(lines: lines, provider: provider)
     }
 
-    static func generate(lines: [TranscriptLine], provider: InsightProvider) async throws -> String {
+    static func generate(lines: [TranscriptLine], provider: LLMProvider) async throws -> String {
         let transcript = input(lines: lines, limit: contextCharacterLimit)
         guard !transcript.isEmpty else { throw LLMError.emptyContent }
 

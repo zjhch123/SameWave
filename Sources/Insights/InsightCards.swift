@@ -13,8 +13,7 @@ import SwiftUI
 struct InsightCardsView: View {
     let result: InsightResult
     let state: InsightEngine.State
-    /// Whether the feature is configured at all (a key exists). When false we show the
-    /// "go configure" prompt instead of empty cards.
+    /// Whether the app-wide AI service is configured. Otherwise show the configuration prompt.
     var isConfigured: Bool
     /// Optional action to open Settings, wired by the host (⌘, is always available too).
     var onOpenSettings: (() -> Void)? = nil
@@ -137,9 +136,9 @@ struct InsightCardsView: View {
 
     private var notConfigured: some View {
         placeholder(icon: "gearshape",
-                    title: "启用智能洞察",
-                    detail: "在设置（⌘,）中选择 AI 服务商并填写密钥，即可获得实时话题总结、建议与待办提取。",
-                    actionLabel: "打开设置")
+                    title: "智能洞察需要 AI 服务",
+                    detail: "前往「设置 → AI 服务」完成配置，即可生成话题总结、建议与待办。这份配置也用于会后优化、会议标题和词表生成。",
+                    actionLabel: "配置 AI 服务")
     }
 
     private var waiting: some View {

@@ -49,6 +49,13 @@ final class OpenAIEndpointResolverTests: XCTestCase {
         XCTAssertNil(OpenAIEndpointResolver.chatCompletionsURL(from: "https:///missing-host"))
     }
 
+    func testUnsupportedSchemesAreRejectedInsteadOfBecomingHostnames() {
+        for address in ["ftp://example.com", "file:///tmp/model", "ws://localhost:8080"] {
+            XCTAssertNil(OpenAIEndpointResolver.chatCompletionsURL(from: address))
+            XCTAssertNil(OpenAIEndpointResolver.modelsURL(from: address))
+        }
+    }
+
     func testModelDecodesGatewayOwnerWithoutChangingID() throws {
         let data = Data(#"{"id":"provider:model","owned_by":"Provider"}"#.utf8)
 

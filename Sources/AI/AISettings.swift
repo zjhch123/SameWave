@@ -2,17 +2,12 @@ import Foundation
 import Observation
 import Security
 
-/// User configuration for the insight feature: which provider, the (custom) endpoint,
-/// and the API key. Non-secret prefs live in `UserDefaults`; the key lives in the
-/// **Keychain** (never plaintext plist). This is the app's first settings surface —
-/// there was no prior preferences infrastructure — so it's self-contained here.
-///
-/// `@Observable` so SwiftUI settings + the insight cards react to changes live. The key
-/// is read/written through the Keychain on each access rather than cached, keeping the
-/// secret out of the observable object graph.
+/// App-wide provider configuration shared by insights, refinement, titles and vocabulary
+/// generation. Non-secret preferences use UserDefaults; the API key is persisted only
+/// in Keychain. Feature availability reacts to the same saved configuration.
 @MainActor
 @Observable
-final class InsightSettings {
+final class AISettings {
     /// Selected provider id (matches `LLMProviderConfig.id`). Persisted in UserDefaults.
     var selectedProviderID: String {
         didSet { defaults.set(selectedProviderID, forKey: Keys.provider) }
@@ -35,9 +30,10 @@ final class InsightSettings {
         }
     }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         let persistedProviderID = defaults.string(forKey: Keys.provider)
         let supportedProvider = persistedProviderID.flatMap { id in
             LLMProviderConfig.builtIn.first { $0.id == id }
@@ -59,21 +55,27 @@ final class InsightSettings {
     /// The currently-selected provider descriptor.
     var selectedConfig: LLMProviderConfig { LLMProviderConfig.byID(selectedProviderID) }
 
-    /// True once there's enough to actually call an LLM (a key, plus — for custom — an
-    /// endpoint + model). This is the single gate the UI uses to show cards vs. the
-    /// "configure me" prompt; there's no separate on/off switch — configuring IS enabling.
+    /// All AI features require a key and, for custom services, a valid endpoint and model.
     var isConfigured: Bool {
+        Self.isConfigured(
+            provider: selectedConfig, apiKey: apiKey,
+            customAPIAddress: customAPIAddress, customModel: customModel
+        )
+    }
+
+    /// Shared validation for saved configuration and the Settings connection-test draft.
+    static func isConfigured(provider: LLMProviderConfig, apiKey: String,
+                             customAPIAddress: String, customModel: String) -> Bool {
         guard !apiKey.trimmed.isEmpty else { return false }
-        if selectedConfig.isCustom {
+        if provider.isCustom {
             return OpenAIEndpointResolver.chatCompletionsURL(from: customAPIAddress) != nil
                 && !customModel.trimmed.isEmpty
         }
         return true
     }
 
-    /// Build a provider from the current settings, or nil if not configured. Handed to
-    /// the engine and to the settings' "test connection" action — one construction path.
-    func makeProvider() -> InsightProvider? {
+    /// Each AI operation takes a provider snapshot from the shared saved configuration.
+    func makeProvider() -> LLMProvider? {
         guard isConfigured else { return nil }
         let cfg = selectedConfig
         return OpenAICompatibleProvider(

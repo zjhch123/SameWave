@@ -256,7 +256,7 @@ final class VocabularyImportControllerTests: XCTestCase {
         let settings = SpeechVocabularySettings(defaults: defaults)
         settings.save(saved)
         let draft = SpeechVocabularyDraft(settings: settings)
-        return (settings, draft, VocabularyImportController(insightSettings: InsightSettings(), vocabularyDraft: draft))
+        return (settings, draft, VocabularyImportController(aiSettings: AISettings(), vocabularyDraft: draft))
     }
 
     private func files(_ prefixes: [String]) throws -> [URL] {
@@ -282,7 +282,7 @@ final class VocabularyImportControllerTests: XCTestCase {
     }
 }
 
-private actor ControlledVocabularyProvider: InsightProvider {
+private actor ControlledVocabularyProvider: LLMProvider {
     enum Response: Sendable {
         case content(String), held(String), failure
     }

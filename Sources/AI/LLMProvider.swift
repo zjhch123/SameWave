@@ -1,16 +1,8 @@
 import Foundation
 
-/// The one abstraction the insight layer depends on. Everything above it (the engine,
-/// the settings, the UI) speaks only to this protocol and never knows which vendor is
-/// behind it — so adding/replacing a provider never touches upstream code.
-///
-/// Deliberately minimal: a single "send a system + user prompt, get the text back"
-/// call. That maps 1:1 onto the OpenAI `/chat/completions` Structured Outputs contract
-/// implemented by the supported Qwen and Kimi models, so a lone
-/// `OpenAICompatibleProvider` satisfies both. Non-streaming on purpose:
-/// each insight pass returns a short JSON blob, so waiting for the whole response is
-/// simpler than streaming and costs nothing perceptible.
-protocol InsightProvider: Sendable {
+/// Shared AI transport boundary. Each feature owns its prompt and response schema;
+/// providers return a complete response without depending on any feature's state.
+protocol LLMProvider: Sendable {
     /// Send `system` + `user` messages and require the assistant content to match the
     /// supplied strict JSON Schema. Throws `LLMError` on any transport or API failure.
     func complete(system: String, user: String,
@@ -93,8 +85,8 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "尚未配置 AI 服务，请在设置（⌘,）中选择服务商并填写密钥。"
-        case .unauthorized:  return "密钥无效或无权限（401）。请检查设置中的 API Key。"
+        case .notConfigured: return "尚未配置 AI 服务，请前往「设置 → AI 服务」完成配置并保存（⌘,）。"
+        case .unauthorized:  return "密钥无效或无权限（401）。请检查「设置 → AI 服务」中的 API Key。"
         case .rateLimited:   return "请求过于频繁或额度不足（429），请稍后再试。"
         case .server(let c): return "服务返回错误（\(c)）。"
         case .network(let m): return "网络请求失败：\(m)"

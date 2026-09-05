@@ -5,9 +5,8 @@ import Foundation
 /// out). The only vendor-specific values are the address, model, and temperature ceiling.
 /// Request/response Codable structs declare only the fields this app uses.
 ///
-/// Non-streaming: one request, await the whole JSON blob, return its content. An insight
-/// pass is a short object, so streaming would add complexity for no felt benefit.
-struct OpenAICompatibleProvider: InsightProvider {
+/// Non-streaming: each operation receives one complete JSON response for validation.
+struct OpenAICompatibleProvider: LLMProvider {
     static let completionTimeout: TimeInterval = 60
 
     let config: LLMProviderConfig
@@ -251,7 +250,7 @@ enum OpenAIEndpointResolver {
         guard !trimmed.isEmpty else { return nil }
         let lowercased = trimmed.lowercased()
         let value: String
-        if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") {
+        if trimmed.contains("://") {
             value = trimmed
         } else if lowercased.hasPrefix("localhost")
                     || lowercased.hasPrefix("127.")

@@ -16,6 +16,38 @@
 
 ---
 
+## DEC-20260905-003：AI 服务作为全应用共享配置，智能洞察作为消费者
+
+- **日期**：2026-09-05
+- **状态**：Accepted
+- **范围**：设置的信息架构、AI 配置归属和功能可用性边界
+
+### 背景与决定
+
+洞察、会后优化、会议标题和 Markdown 词表生成已经共用一份服务商配置，但设置页仍名为“智能洞察”，会后优化还通过洞察引擎判断 AI 是否可用。产品与代码都把共享能力表现为某个功能的附属配置。
+
+- 设置入口统一为“AI 服务”，明确列出四类共同使用者；智能洞察保留独立功能名称，并提示先配置 AI 服务。
+- `AppDelegate` 持有唯一的 `AISettings`，各 AI 用例直接使用它创建 provider；界面直接读取共享配置，不通过 `InsightEngine` 代理其他功能的可用性。
+- 共享配置、`LLMProvider`、HTTP 实现、严格 JSON 解码和 AI 配置页归入 `Sources/AI/`；设置容器及导航归入 `Sources/App/`，删除原洞察专属配置类型和文件路径。
+- 各功能的配置入口明确选中 AI Tab，再打开设置；从词表切换不提交手动草稿。配置仍须显式保存，连接测试使用草稿；智能洞察继续按原有会议内容触发条件自动生成。
+
+### 未采用方案与权衡
+
+- **仅改设置标签**：无法解除会后优化对洞察引擎的配置依赖，也容易让新功能继续误用这层关系。
+- **每项功能独立保存服务商或增加统一启用开关**：当前所有 AI 用例共用服务，没有分配多套配置或新增开关的需求。
+- **重命名持久化键并要求重配**：配置含义和数据结构没有变化；同一组 UserDefaults 键与 Keychain 账户继续作为唯一存储，无双读、迁移或兼容分支。
+- 本地字幕、实时翻译、手动词表、历史与导出继续独立于 AI；本次不改变各 AI 用例的请求调度、保存和数据发送边界。
+
+### 验证与影响
+
+- XcodeGen、无签名 Debug 构建通过；`SameWave` scheme、`platform=macOS,arch=arm64` 全量 XCTest 90/90 通过，生成的 plist 和 entitlement 无差异。
+- 新测试覆盖密钥/地址/模型校验、四类消费者在未配置时的拦截、本地词表可编辑、配置跳转与词表草稿保留，并保留内置/自定义 AI 设置及词表页的渲染截图。
+- 配置校验测试发现非 HTTP 协议被错误补全为 HTTPS 主机，已在地址解析边界修复并加入 endpoint 回归测试。
+- 后续已按用户要求运行 `build.sh`，使用项目既有证书签名、安装到桌面并启动；安装产物的严格签名校验通过，已确认桌面版进程运行。未调用真实 AI 服务；连接测试、Keychain 写入和完整设置窗口交互仍需在安装版中做人工 smoke test。原有窗口按钮布局文件的并发警告不属于本次改动。
+- 相关文件：`Sources/AI/`、`Sources/App/SettingsView.swift`、`Sources/App/SameWaveApp.swift`、`Sources/App/InsightInspector.swift`、`Sources/App/MeetingStage.swift`、`Sources/Capture/SpeechVocabularySettingsView.swift`、`Tests/AISettingsTests.swift`、`Tests/OpenAIEndpointResolverTests.swift`、README 和 AI/架构/验证 reference。
+
+---
+
 ## DEC-20260905-002：SameWave 使用统一的新应用身份
 
 - **日期**：2026-09-05
@@ -38,7 +70,7 @@
 - XcodeGen、无签名 Debug 构建、`bash -n build.sh` 通过；`SameWave` scheme、`platform=macOS,arch=arm64` 全量 XCTest 83/83 通过，包括应用与测试 bundle 身份断言。
 - 未安装或启动新身份的签名桌面版；旧数据沿用、系统授权和真实音频不作为本次单元测试验证结果。
 - 权限排查发现当前 XCTest 宿主仍会执行启动时的语音/麦克风授权请求，临时签名宿主与同 bundle ID 的签名安装版会发生授权记录冲突。系统日志已证实该边界；本次重命名不改变权限启动逻辑，也不重置用户授权。
-- 相关文件：`project.yml`、`build.sh`、`Sources/App/SameWaveApp.swift`、`Sources/Resources/SameWave.entitlements`、`Sources/Capture/CustomSpeechLanguageModel.swift`、`Sources/Insights/InsightSettings.swift`、`Tests/AppIdentityTests.swift`、README 与开发 reference。
+- 相关文件：`project.yml`、`build.sh`、`Sources/App/SameWaveApp.swift`、`Sources/Resources/SameWave.entitlements`、`Sources/Capture/CustomSpeechLanguageModel.swift`、`Sources/AI/AISettings.swift`、`Tests/AppIdentityTests.swift`、README 与开发 reference。
 
 ---
 
@@ -283,7 +315,7 @@ Markdown 生成原本嵌在词表设置页：说明、选择、进度和结果�
 ### 验证与相关文件
 
 - XCTest 覆盖 20000/18000 字符边界、超长段落无丢失拆分、两次重试、第三次尝试成功、单请求失败后继续、部分结果和进度；XcodeGen 生成及无签名 Debug 构建通过，macOS arm64 测试 63/63 通过。
-- 相关文件：[`Sources/Insights/VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Capture/VocabularyReviewSheet.swift`](../Sources/Capture/VocabularyReviewSheet.swift)、[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Tests/VocabularyGeneratorTests.swift`](../Tests/VocabularyGeneratorTests.swift)、[`README.md`](../README.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Capture/VocabularyReviewSheet.swift`](../Sources/Capture/VocabularyReviewSheet.swift)、[`Sources/AI/OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift)、[`Tests/VocabularyGeneratorTests.swift`](../Tests/VocabularyGeneratorTests.swift)、[`README.md`](../README.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -451,7 +483,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖结构化结果去重、非法多行词条拒绝、后续批次失败时整体失败、超长段落无丢失分批、多文件读取、内容上限和扩展名拒绝；无签名 Debug 构建通过，macOS arm64 测试 58/58 通过。
-- 相关文件：[`Sources/Insights/VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Capture/SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/VocabularyGeneratorTests.swift`](../Tests/VocabularyGeneratorTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Capture/SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift)、[`Sources/App/SettingsView.swift`](../Sources/App/SettingsView.swift)、[`Tests/VocabularyGeneratorTests.swift`](../Tests/VocabularyGeneratorTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -532,7 +564,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖大小写无关命中、字母数字边界、后续独立命中、配置顺序、空命中 prompt 和禁止强行植入语义；无签名 Debug 构建通过，macOS 测试 50/50 通过。
-- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/App/SettingsView.swift`](../Sources/App/SettingsView.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -575,7 +607,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖有词表和空词表的 prompt 语义；无签名 Debug 构建验证共享设置接线与 Swift 6 隔离。
-- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/App/SettingsView.swift`](../Sources/App/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -618,7 +650,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖 strict `response_format` 请求体、内置模型列表、字段语义 prompt、`answer: null`、缺字段/错类型/超量建议和 code fence 拒绝；连接测试使用嵌套对象与数组验证真实 endpoint。Cherry Studio `copilot:gpt-5.5` 实测证明旧 prompt 返回错误顶层数组，加入字段语义后的同一 strict 请求返回可解码对象。
-- 相关文件：[`Sources/Insights/LLMProvider.swift`](../Sources/Insights/LLMProvider.swift)、[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Sources/Insights/InsightModels.swift`](../Sources/Insights/InsightModels.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/AI/LLMProvider.swift`](../Sources/AI/LLMProvider.swift)、[`Sources/AI/OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift)、[`Sources/Insights/InsightModels.swift`](../Sources/Insights/InsightModels.swift)、[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/Insights/MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift)、[`Tests/OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -742,7 +774,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖裸远程主机、回环地址、已有版本路径、完整端点、模型地址推导、无效地址和模型 ID 解码；无签名 Debug 构建验证设置界面与 provider 集成。
-- 相关文件：[`Sources/Insights/OpenAICompatibleProvider.swift`](../Sources/Insights/OpenAICompatibleProvider.swift)、[`Sources/Insights/LLMProvider.swift`](../Sources/Insights/LLMProvider.swift)、[`Sources/Insights/InsightSettings.swift`](../Sources/Insights/InsightSettings.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/OpenAIEndpointResolverTests.swift`](../Tests/OpenAIEndpointResolverTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/AI/OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift)、[`Sources/AI/LLMProvider.swift`](../Sources/AI/LLMProvider.swift)、[`Sources/AI/AISettings.swift`](../Sources/AI/AISettings.swift)、[`Sources/App/SettingsView.swift`](../Sources/App/SettingsView.swift)、[`Tests/OpenAIEndpointResolverTests.swift`](../Tests/OpenAIEndpointResolverTests.swift)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 

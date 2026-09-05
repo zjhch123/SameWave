@@ -51,14 +51,14 @@ final class TranscriptRefiner {
         let lines: [RefinedLine]
     }
 
-    private let settings: InsightSettings
+    private let settings: AISettings
     private let vocabularySettings: SpeechVocabularySettings
     private let batchLineLimit = 8
     private let batchCharacterLimit = 1_500
     private(set) var state: State = .idle
     private var runID = UUID()
 
-    init(settings: InsightSettings, vocabularySettings: SpeechVocabularySettings) {
+    init(settings: AISettings, vocabularySettings: SpeechVocabularySettings) {
         self.settings = settings
         self.vocabularySettings = vocabularySettings
     }

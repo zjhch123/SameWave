@@ -59,7 +59,7 @@ final class MeetingTitleGeneratorTests: XCTestCase {
     }
 }
 
-private actor StubProvider: InsightProvider {
+private actor StubProvider: LLMProvider {
     private(set) var callCount = 0
     private(set) var lastSchemaName: String?
     let output: String
