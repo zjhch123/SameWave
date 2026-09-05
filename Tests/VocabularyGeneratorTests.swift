@@ -318,7 +318,7 @@ private enum VocabularyProviderStubResponse: Sendable {
     case failure(LLMError)
 }
 
-private actor VocabularyProviderStub: InsightProvider {
+private actor VocabularyProviderStub: LLMProvider {
     private let responses: [VocabularyProviderStubResponse]
     private var index = 0
     private var requests = 0

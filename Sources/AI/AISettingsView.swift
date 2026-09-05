@@ -1,32 +1,8 @@
 import SwiftUI
 
-struct SettingsView: View {
-    let insightSettings: InsightSettings
-    let speechVocabularyDraft: SpeechVocabularyDraft
-    let vocabularyImportController: VocabularyImportController
-
-    var body: some View {
-        TabView {
-            InsightSettingsPane(settings: insightSettings)
-                .tabItem {
-                    Label("智能洞察", systemImage: "sparkles")
-                }
-
-            SpeechVocabularySettingsView(
-                draft: speechVocabularyDraft,
-                importController: vocabularyImportController
-            )
-                .tabItem {
-                    Label("词表", systemImage: "text.book.closed")
-                }
-        }
-        .frame(width: 600, height: 500)
-    }
-}
-
-/// Insight-provider settings use a draft that only reaches UserDefaults and Keychain
+/// App-wide AI settings use a draft that only reaches UserDefaults and Keychain
 /// after Save. The vocabulary tab follows the same Save/Cancel interaction.
-private struct InsightSettingsPane: View {
+struct AISettingsView: View {
     private struct ConnectionTestResponse: Decodable {
         struct Status: Decodable {
             let ok: Bool
@@ -36,7 +12,7 @@ private struct InsightSettingsPane: View {
         let values: [Int]
     }
 
-    let settings: InsightSettings
+    let settings: AISettings
 
     // Local draft — seeded from the saved settings, edited freely, applied on Save.
     @State private var providerID: String
@@ -56,7 +32,7 @@ private struct InsightSettingsPane: View {
     /// Set briefly after a successful Save so the user gets confirmation feedback.
     @State private var justSaved = false
 
-    init(settings: InsightSettings) {
+    init(settings: AISettings) {
         self.settings = settings
         _providerID = State(initialValue: settings.selectedProviderID)
         _apiKey = State(initialValue: settings.apiKey)
@@ -69,12 +45,10 @@ private struct InsightSettingsPane: View {
 
     /// Whether the DRAFT has enough to call an LLM (gates the test button).
     private var draftConfigured: Bool {
-        guard !apiKey.trimmed.isEmpty else { return false }
-        if draftConfig.isCustom {
-            return OpenAIEndpointResolver.chatCompletionsURL(from: customAPIAddress) != nil
-                && !customModel.trimmed.isEmpty
-        }
-        return true
+        AISettings.isConfigured(
+            provider: draftConfig, apiKey: apiKey,
+            customAPIAddress: customAPIAddress, customModel: customModel
+        )
     }
 
     private var canFetchModels: Bool {
@@ -95,6 +69,16 @@ private struct InsightSettingsPane: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
+                SwiftUI.Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("同频的 AI 服务")
+                            .font(.headline)
+                        Text("统一用于智能洞察、会后优化、会议标题和 Markdown 词表生成。配置并保存后，各项 AI 功能即可使用。")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 SwiftUI.Section {
                     Picker("AI 服务商", selection: $providerID) {
                         ForEach(LLMProviderConfig.builtIn) { cfg in
@@ -153,13 +137,13 @@ private struct InsightSettingsPane: View {
                         modelDiscoveryStatus
                     }
                 } header: {
-                    Text("智能洞察")
+                    Text("连接配置")
                 } footer: {
-                    Text(draftConfig.isCustom
-                         ? "API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址，应用会自动补全。测试连接会用嵌套 JSON 结构验证模型；运行时仍会严格校验返回内容。AI 请求会发送会议文字；优化发送完整词表，洞察仅发送当前上下文命中的词条，标题不发送词表；音频不上传。"
-                         : "AI 请求会将会议文字发送到你选择的服务商；优化发送完整词表，洞察仅发送当前上下文命中的词条，标题不发送词表。字幕与实时翻译始终在本地进行。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(CaptionsView.meta)
+                    if draftConfig.isCustom {
+                        Text("API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址。请使用支持结构化输出的模型，可先测试连接再保存。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(CaptionsView.meta)
+                    }
                 }
 
                 SwiftUI.Section {
@@ -168,13 +152,13 @@ private struct InsightSettingsPane: View {
                             .disabled(!draftConfigured || testState == .testing)
                         testStatus
                     }
+                } footer: {
+                    Text("使用 AI 功能时，会议文字或所选 Markdown 正文会发送给该服务商。会后优化会附带完整词表，洞察仅附带命中的词条，标题不附带词表。音频不上传；实时字幕、翻译和手动编辑词表在本地完成，无需配置 AI。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(CaptionsView.meta)
                 }
             }
             .formStyle(.grouped)
-            // A settings Form is a List under the hood → it shows a scrollbar the moment
-            // content is a hair taller than the window. Disable its internal scrolling and
-            // let the window size to the content (fixedSize below) instead.
-            .scrollDisabled(true)
 
             // Bottom action bar: draft is only applied on Save.
             Divider()
@@ -262,7 +246,7 @@ private struct InsightSettingsPane: View {
     }
 
     /// Commit the draft to the shared settings (persists prefs + writes the key to the
-    /// Keychain via `InsightSettings`' setters). Only reachable when dirty.
+    /// Keychain via `AISettings`' setters). Only reachable when dirty.
     private func save() {
         settings.selectedProviderID = providerID
         settings.customAPIAddress = customAPIAddress

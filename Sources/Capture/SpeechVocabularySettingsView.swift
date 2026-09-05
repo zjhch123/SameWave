@@ -6,6 +6,7 @@ struct SpeechVocabularySettingsView: View {
     let importController: VocabularyImportController
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(SettingsNavigation.self) private var settingsNavigation
     @State private var isChoosingMarkdown = false
     @State private var justSaved = false
 
@@ -52,9 +53,12 @@ struct SpeechVocabularySettingsView: View {
                     .disabled(!importController.canStartOrResume)
 
                     if !importController.isConfigured {
-                        Text("请先配置智能洞察")
-                            .font(.system(size: 11))
-                            .foregroundStyle(CaptionsView.meta)
+                        Button("配置 AI 服务") {
+                            settingsNavigation.selectedTab = .ai
+                        }
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                        .help("从 Markdown 生成词表需要先配置 AI 服务")
                     }
                     Spacer()
                 }

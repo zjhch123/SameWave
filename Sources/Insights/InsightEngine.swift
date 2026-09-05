@@ -17,7 +17,7 @@ final class InsightEngine {
     private(set) var current: InsightResult = .empty
     private(set) var state: State = .idle
 
-    private let settings: InsightSettings
+    private let settings: AISettings
     private let vocabularySettings: SpeechVocabularySettings
     private let sentencesPerRefresh = 6
     private var sentencesSinceGeneration = 0
@@ -31,12 +31,10 @@ final class InsightEngine {
     /// Fixed to fit the smallest built-in 8K context after prompt and output space.
     static let contextCharacterLimit = 6_000
 
-    init(settings: InsightSettings, vocabularySettings: SpeechVocabularySettings) {
+    init(settings: AISettings, vocabularySettings: SpeechVocabularySettings) {
         self.settings = settings
         self.vocabularySettings = vocabularySettings
     }
-
-    var isConfigured: Bool { settings.isConfigured }
 
     func reset() {
         liveTask?.cancel()
@@ -127,7 +125,7 @@ final class InsightEngine {
     }
 
     private static func perform(
-        provider: InsightProvider,
+        provider: LLMProvider,
         transcript: String,
         relevantVocabulary: [String]
     ) async -> Result<InsightResult, LLMError> {
@@ -261,12 +259,5 @@ final class InsightEngine {
 
     static func parse(_ raw: String) -> InsightResult? {
         JSONResponseParser.decode(InsightResult.self, from: raw)
-    }
-}
-
-enum JSONResponseParser {
-    static func decode<Value: Decodable>(_ type: Value.Type, from raw: String) -> Value? {
-        guard let data = raw.trimmed.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
     }
 }

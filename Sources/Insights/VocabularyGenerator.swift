@@ -241,7 +241,7 @@ struct VocabularyGenerator {
     输出必须是一个 JSON 对象，phrases 是词条字符串数组。
     """
 
-    let provider: InsightProvider
+    let provider: LLMProvider
 
     @MainActor
     func generate(

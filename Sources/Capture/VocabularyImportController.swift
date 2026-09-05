@@ -25,9 +25,9 @@ final class VocabularyImportController {
         case failed(String)
     }
 
-    private let insightSettings: InsightSettings
+    private let aiSettings: AISettings
     private let vocabularyDraft: SpeechVocabularyDraft
-    @ObservationIgnored private var provider: (any InsightProvider)?
+    @ObservationIgnored private var provider: (any LLMProvider)?
     @ObservationIgnored private var generationTask: Task<Void, Never>?
     @ObservationIgnored private var generationToken = UUID()
     @ObservationIgnored private var seenOriginals: Set<String> = []
@@ -39,12 +39,12 @@ final class VocabularyImportController {
     private(set) var discoveredCount = 0
     private(set) var savedMessage: String?
 
-    init(insightSettings: InsightSettings, vocabularyDraft: SpeechVocabularyDraft) {
-        self.insightSettings = insightSettings
+    init(aiSettings: AISettings, vocabularyDraft: SpeechVocabularyDraft) {
+        self.aiSettings = aiSettings
         self.vocabularyDraft = vocabularyDraft
     }
 
-    var isConfigured: Bool { insightSettings.isConfigured }
+    var isConfigured: Bool { aiSettings.isConfigured }
     var isRunning: Bool { state == .preparing || state == .generating }
     var hasActiveWorkflow: Bool { state != .idle || !requests.isEmpty }
     var canStartOrResume: Bool { isConfigured || hasActiveWorkflow }
@@ -69,7 +69,7 @@ final class VocabularyImportController {
         switch result {
         case .success(let urls):
             guard !urls.isEmpty else { return false }
-            guard let provider = insightSettings.makeProvider() else {
+            guard let provider = aiSettings.makeProvider() else {
                 state = .failed(LLMError.notConfigured.localizedDescription)
                 return true
             }
@@ -85,7 +85,7 @@ final class VocabularyImportController {
         }
     }
 
-    func start(from urls: [URL], using provider: any InsightProvider) {
+    func start(from urls: [URL], using provider: any LLMProvider) {
         close()
         self.provider = provider
         state = .preparing
@@ -159,7 +159,7 @@ final class VocabularyImportController {
         savedMessage = added > 0 ? "已保存 \(added) 个新词" : "所选词条已存在，没有重复添加"
     }
 
-    private func runPending(using provider: any InsightProvider, token: UUID) async {
+    private func runPending(using provider: any LLMProvider, token: UUID) async {
         guard generationToken == token, !Task.isCancelled else { return }
         state = .generating
         let pending = requests.filter { $0.status == .pending }.map(\.batch)

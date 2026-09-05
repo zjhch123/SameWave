@@ -17,6 +17,8 @@ struct SameWaveApp: App {
                     .ignoresSafeArea(.container, edges: .top)
                     .background(TrafficLightConfigurator(headerHeight: 48))
                     .modelContainer(history.container)
+                    .environment(delegate.aiSettings)
+                    .environment(delegate.settingsNavigation)
             } else {
                 StorageFailureView(message: delegate.storageError ?? "未知错误")
                     .frame(minWidth: 640, minHeight: 360)
@@ -24,14 +26,15 @@ struct SameWaveApp: App {
         }
         .windowStyle(.hiddenTitleBar)
 
-        // Insight and speech-vocabulary configuration (⌘,). SwiftUI wires this
+        // App-wide AI and speech-vocabulary configuration (⌘,). SwiftUI wires this
         // to the standard "同频 ▸ 设置…" menu item automatically.
         Settings {
             SettingsView(
-                insightSettings: delegate.insightSettings,
+                aiSettings: delegate.aiSettings,
                 speechVocabularyDraft: delegate.speechVocabularyDraft,
                 vocabularyImportController: delegate.vocabularyImportController
             )
+            .environment(delegate.settingsNavigation)
         }
 
         Window("从 Markdown 生成词表", id: VocabularyImportWindow.windowID) {
@@ -57,8 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shared persistent history store; also feeds the sidebar's @Query.
     let history: MeetingHistoryStore?
     let storageError: String?
-    /// User configuration for AI insights (provider + Keychain-stored key).
-    let insightSettings: InsightSettings
+    /// Shared AI configuration used by every AI feature.
+    let aiSettings: AISettings
+    let settingsNavigation = SettingsNavigation()
     /// User-managed local vocabulary for English speech recognition.
     let speechVocabularySettings: SpeechVocabularySettings
     /// App-lifetime edit draft shared by Settings and the standalone import window.
@@ -67,14 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let vocabularyImportController: VocabularyImportController
 
     override init() {
-        let insightSettings = InsightSettings()
-        self.insightSettings = insightSettings
+        let aiSettings = AISettings()
+        self.aiSettings = aiSettings
         let speechVocabularySettings = SpeechVocabularySettings()
         self.speechVocabularySettings = speechVocabularySettings
         let speechVocabularyDraft = SpeechVocabularyDraft(settings: speechVocabularySettings)
         self.speechVocabularyDraft = speechVocabularyDraft
         vocabularyImportController = VocabularyImportController(
-            insightSettings: insightSettings,
+            aiSettings: aiSettings,
             vocabularyDraft: speechVocabularyDraft
         )
         coordinator = CaptureCoordinator(
@@ -92,14 +96,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Wire the insight engine with the user's settings so live captions can be
         // summarized (and history meetings generated on demand).
         coordinator.insights = InsightEngine(
-            settings: insightSettings,
+            settings: aiSettings,
             vocabularySettings: speechVocabularySettings
         )
         coordinator.refiner = TranscriptRefiner(
-            settings: insightSettings,
+            settings: aiSettings,
             vocabularySettings: speechVocabularySettings
         )
-        coordinator.titleGenerator = MeetingTitleGenerator(settings: insightSettings)
+        coordinator.titleGenerator = MeetingTitleGenerator(settings: aiSettings)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

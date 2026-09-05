@@ -54,6 +54,8 @@ private struct StageHeader: View {
     @Binding var showRefined: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openSettings) private var openSettings
+    @Environment(AISettings.self) private var aiSettings
+    @Environment(SettingsNavigation.self) private var settingsNavigation
     @State private var saveError: String?
     @State private var refinementTask: Task<Void, Never>?
     @State private var titleTask: Task<Void, Never>?
@@ -160,7 +162,7 @@ private struct StageHeader: View {
     }
 
     private func refineButton(_ record: MeetingRecord) -> some View {
-        let configured = coordinator.insights?.isConfigured == true
+        let configured = aiSettings.isConfigured
         let state = coordinator.refiner?.state ?? .idle
         let busy: Bool = if case .refining = state { true } else { false }
         let failed: Bool = if case .error = state { true } else { false }
@@ -168,13 +170,17 @@ private struct StageHeader: View {
         case .refining(let done, let total): "优化中 \(done)/\(total)"
         case .error: "优化失败，重试"
         case .idle:
-            if !configured { "去设置" }
+            if !configured { "配置 AI 服务" }
             else if record.hasRefinement { "重新优化" }
             else { record.languagePair.needsTranslation ? "优化译文" : "优化原文" }
         }
 
         return Button {
-            if configured { runRefinement(record) } else { openSettings() }
+            if configured {
+                runRefinement(record)
+            } else {
+                settingsNavigation.openAISettings { openSettings() }
+            }
         } label: {
             HStack(spacing: 5) {
                 if busy {
