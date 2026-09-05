@@ -63,7 +63,6 @@ struct MeetingSidebar: View {
             Button {
                 Task {
                     await coordinator.startNewMeeting()
-                    selectedRecord = nil
                 }
             } label: {
                 Label("开启新会议", systemImage: "plus.circle.fill")
@@ -115,7 +114,6 @@ struct MeetingSidebar: View {
             } else if isUnfinished {
                 Task {
                     await coordinator.loadSession(record)
-                    selectedRecord = nil
                 }
             } else {
                 selectedRecord = record
@@ -134,7 +132,6 @@ struct MeetingSidebar: View {
         .contextMenu {
             if !isCurrent {
                 Button("删除", systemImage: "trash", role: .destructive) {
-                    if isSelected { selectedRecord = nil }
                     coordinator.delete(record)
                 }
             }

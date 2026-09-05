@@ -13,6 +13,10 @@ final class CaptureCoordinator {
     private(set) var sessionState: MeetingSessionState = .idle
     private(set) var statusMessage = ""
     private(set) var sessionStartedAt: Date?
+    /// nil shows the mounted session, or the new-meeting stage when none is mounted.
+    var selectedHistoryRecord: MeetingRecord? {
+        didSet { persistSelection() }
+    }
 
     private var pausedElapsed: TimeInterval = 0
     private var meetingStartedAt: Date?
@@ -32,15 +36,20 @@ final class CaptureCoordinator {
     let translation = TranslationBridge()
 
     private let speechVocabularySettings: SpeechVocabularySettings
+    private let defaults: UserDefaults
+    private static let selectedMeetingKey = "selectedMeetingID"
     private var activeVocabulary: [String] = []
     var history: MeetingHistoryStore?
     var insights: InsightEngine?
     var refiner: TranscriptRefiner?
     var titleGenerator: MeetingTitleGenerator?
 
-    private var activeRecord: MeetingRecord?
+    private var activeRecord: MeetingRecord? {
+        didSet { persistSelection() }
+    }
     private var autosaveTask: Task<Void, Never>?
     var activeRecordID: UUID? { activeRecord?.id }
+    var selectedRecordID: UUID? { selectedHistoryRecord?.id ?? activeRecordID }
     var languagePair: MeetingLanguagePair {
         MeetingLanguagePair(source: sourceLanguage, target: targetLanguage)
     }
@@ -52,8 +61,9 @@ final class CaptureCoordinator {
     private var isChangingMicrophone = false
     private var lastProvisionalText: [Speaker: String] = [:]
 
-    init(speechVocabularySettings: SpeechVocabularySettings) {
+    init(speechVocabularySettings: SpeechVocabularySettings, defaults: UserDefaults = .standard) {
         self.speechVocabularySettings = speechVocabularySettings
+        self.defaults = defaults
         translation.onTranslated = { [weak self] request, translated in
             guard let self, request.sessionID == self.sessionID else { return }
             self.store.applyTranslation(
@@ -88,6 +98,7 @@ final class CaptureCoordinator {
                 startedAt: meetingStartedAt ?? Date(),
                 languagePair: languagePair
             )
+            selectedHistoryRecord = nil
             try await startSystemPipeline(sessionID: expectedSessionID)
         } catch {
             guard sessionID == expectedSessionID, sessionState == .starting else { return }
@@ -189,9 +200,8 @@ final class CaptureCoordinator {
         startAutosave()
     }
 
-    @discardableResult
-    func stop() async -> MeetingRecord? {
-        guard sessionState.hasActiveSession, sessionState != .stopping else { return nil }
+    func stop() async {
+        guard sessionState.hasActiveSession, sessionState != .stopping else { return }
         if sessionStartedAt != nil { freezeElapsedTime() }
         sessionState = .stopping
         statusMessage = "正在收尾…"
@@ -203,56 +213,70 @@ final class CaptureCoordinator {
 
         guard let record = activeRecord, let history else {
             resetSession(keepingTranscript: true)
-            return nil
+            return
         }
         do {
             try history.finish(record, sections: store.sections, endedAt: endedAt)
         } catch {
             sessionState = .paused
             statusMessage = "会议保存失败，可重试结束：\(error.localizedDescription)"
-            return nil
+            return
         }
 
         let hasTranscript = record.lineCount > 0
+        selectedHistoryRecord = hasTranscript ? record : nil
         resetSession(keepingTranscript: true)
         statusMessage = translationsFinished ? "" : "已保存原文，部分译文未完成"
-        return hasTranscript ? record : nil
     }
 
     func startNewMeeting() async {
         guard await suspendCurrent() else { return }
         resetSession(keepingTranscript: false)
+        selectedHistoryRecord = nil
     }
 
     func loadSession(_ record: MeetingRecord) async {
         guard record.meetingStatus != .ended, record.id != activeRecord?.id else { return }
         guard await suspendCurrent() else { return }
-        resetSession(keepingTranscript: false)
         do {
             try mountPaused(record)
+            selectedHistoryRecord = nil
         } catch {
             statusMessage = "会议恢复失败：\(error.localizedDescription)"
         }
     }
 
-    func recoverUnfinishedSession() {
+    func restoreSelection() {
         guard sessionState == .idle, let history else { return }
         do {
             let records = try history.unfinishedRecords()
-            guard let latest = records.first else { return }
-            try mountPaused(latest)
-            for record in records.dropFirst() where record.meetingStatus != .paused {
+            for record in records where record.meetingStatus != .paused {
                 record.status = MeetingStatus.paused.rawValue
             }
             try history.save()
+
+            guard let value = defaults.string(forKey: Self.selectedMeetingKey),
+                  let id = UUID(uuidString: value),
+                  let record = try history.record(id: id) else {
+                defaults.removeObject(forKey: Self.selectedMeetingKey)
+                return
+            }
+            if record.meetingStatus == .ended {
+                selectedHistoryRecord = record
+            } else {
+                try mountPaused(record)
+            }
         } catch {
-            statusMessage = "未完成会议恢复失败：\(error.localizedDescription)"
+            statusMessage = "上次会议恢复失败：\(error.localizedDescription)"
         }
     }
 
     func delete(_ record: MeetingRecord) {
+        guard record.id != activeRecordID, let history else { return }
         do {
-            try history?.delete(record)
+            let wasSelected = selectedHistoryRecord?.id == record.id
+            try history.delete(record)
+            if wasSelected { selectedHistoryRecord = nil }
         } catch {
             statusMessage = "删除失败：\(error.localizedDescription)"
         }
@@ -586,6 +610,8 @@ final class CaptureCoordinator {
     }
 
     private func mountPaused(_ record: MeetingRecord) throws {
+        try history?.setStatus(record, .paused)
+        resetSession(keepingTranscript: false)
         let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
         store.restore(sections: lines.map { line in
             (
@@ -605,7 +631,14 @@ final class CaptureCoordinator {
         activeRecord = record
         sessionState = .paused
         statusMessage = "已暂停"
-        try history?.setStatus(record, .paused)
+    }
+
+    private func persistSelection() {
+        if let id = selectedRecordID {
+            defaults.set(id.uuidString, forKey: Self.selectedMeetingKey)
+        } else {
+            defaults.removeObject(forKey: Self.selectedMeetingKey)
+        }
     }
 
     private func discardEmptyActiveRecord() throws {

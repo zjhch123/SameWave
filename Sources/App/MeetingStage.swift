@@ -33,10 +33,7 @@ struct MeetingStage: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    MeetingControlDock(
-                        coordinator: coordinator,
-                        selectedRecord: $selectedRecord
-                    )
+                    MeetingControlDock(coordinator: coordinator)
                     .padding(.top, 12)
                     .padding(.bottom, 24)
                     .frame(maxWidth: .infinity)
@@ -295,7 +292,6 @@ private struct StageHeader: View {
 
 private struct MeetingControlDock: View {
     let coordinator: CaptureCoordinator
-    @Binding var selectedRecord: MeetingRecord?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -329,7 +325,7 @@ private struct MeetingControlDock: View {
                 .disabled(!coordinator.sessionState.acceptsCaptureControls)
 
                 primaryButton(icon: "stop.fill", label: "结束", color: CaptionsView.fg) {
-                    Task { selectedRecord = await coordinator.stop() }
+                    Task { await coordinator.stop() }
                 }
             } else {
                 primaryButton(icon: "play.fill", label: "开始", color: CaptionsView.accent) {

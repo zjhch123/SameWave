@@ -109,10 +109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)   // show in Dock; app has a main window
 
-        // Recover an interrupted meeting (quit/crash while recording or paused): it
-        // comes back as a paused, resumable session. Pure disk read — no capture — so
-        // it's safe to do first thing.
-        coordinator.recoverUnfinishedSession()
+        // Restore the last selection; interrupted meetings remain paused until resumed.
+        coordinator.restoreSelection()
 
         // Pre-request speech-recognition authorization at launch (main runloop is
         // ready here, so the system prompt appears reliably). The completion runs
