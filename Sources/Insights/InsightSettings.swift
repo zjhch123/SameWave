@@ -95,7 +95,7 @@ final class InsightSettings {
 /// fast and made only from the main actor (settings edits), so no extra threading.
 enum KeychainStore {
     private static var service: String {
-        Bundle.main.bundleIdentifier ?? "com.plus.meetingcaptions"
+        Bundle.main.bundleIdentifier ?? "com.plus.samewave"
     }
 
     private static func baseQuery(_ account: String) -> [String: Any] {

@@ -2,6 +2,8 @@
 
 本文件记录已经采纳、会长期影响项目的重要决定，重点回答“为什么这样做”。当前架构和实现细节仍由各领域 reference 与源码描述；本文件不是 changelog、需求池或待办列表。
 
+命名维护说明：历史条目中的工程标识和文件路径已统一按当前 SameWave 名称展示，原有决策日期、状态及验证结论保持不变；该机械更新不表示历史验证当时已使用新名称。
+
 ## 维护规则
 
 - 记录范围：产品行为、架构边界、核心状态机、数据模型、安全/隐私、外部依赖和工程工作方式中的重要选择。
@@ -11,6 +13,32 @@
 - 内容：简要写清背景、决定、否决方案、理由/权衡、影响、验证证据和相关文件。
 - 粒度：不记录机械改名、普通 bug 修复、需求已唯一确定的实现步骤或容易撤销的局部细节。
 - 一致性：决策改变当前系统时，同步更新相关领域 reference、需求、源码与测试；发生冲突时以当前源码和明确需求为事实依据，并修正文档。
+
+---
+
+## DEC-20260905-002：SameWave 使用统一的新应用身份
+
+- **日期**：2026-09-05
+- **状态**：Accepted
+- **范围**：应用身份、设置与密钥命名空间、语音模型缓存和工程入口
+
+### 背景与决定
+
+正式英文名确定为 SameWave，要求删除旧命名，不保留兼容或迁移路径。除工程、target、scheme、入口类型与文件名外，应用 bundle ID 统一为 `com.plus.samewave`，测试 bundle ID 为 `com.plus.samewave.tests`，语音模型标识和应用支持目录使用相同命名体系。中文显示名、可执行文件与 Swift 模块仍为“同频”。
+
+### 未采用方案与权衡
+
+- **只改展示名，保留旧运行身份**：能沿用原配置，但会留下第二套长期命名，不符合统一命名要求。
+- **迁移或双读旧设置、密钥和模型缓存**：增加过渡状态与兼容路径，不采用。
+- 新身份的 UserDefaults、Keychain service 和语音模型缓存独立于旧身份，用户需重新配置设置、词表与 API Key，系统也可能要求重新授权。旧数据文件不删除，SwiftData 模型与历史存储实现不改动。
+- 签名安装脚本保留既有个人证书与中文安装路径；构建失败必须直接退出，不能继续签名和安装残留产物。
+
+### 验证与影响
+
+- XcodeGen、无签名 Debug 构建、`bash -n build.sh` 通过；`SameWave` scheme、`platform=macOS,arch=arm64` 全量 XCTest 83/83 通过，包括应用与测试 bundle 身份断言。
+- 未安装或启动新身份的签名桌面版；旧数据沿用、系统授权和真实音频不作为本次单元测试验证结果。
+- 权限排查发现当前 XCTest 宿主仍会执行启动时的语音/麦克风授权请求，临时签名宿主与同 bundle ID 的签名安装版会发生授权记录冲突。系统日志已证实该边界；本次重命名不改变权限启动逻辑，也不重置用户授权。
+- 相关文件：`project.yml`、`build.sh`、`Sources/App/SameWaveApp.swift`、`Sources/Resources/SameWave.entitlements`、`Sources/Capture/CustomSpeechLanguageModel.swift`、`Sources/Insights/InsightSettings.swift`、`Tests/AppIdentityTests.swift`、README 与开发 reference。
 
 ---
 
@@ -44,7 +72,7 @@
 
 ### 验证与影响
 
-- XcodeGen、无签名 Debug 构建通过；`MeetingCaptions` scheme、`platform=macOS,arch=arm64` 全量 XCTest 81/81 通过。
+- XcodeGen、无签名 Debug 构建通过；`SameWave` scheme、`platform=macOS,arch=arm64` 全量 XCTest 81/81 通过。
 - 覆盖增量结果、Unicode 分片、失败两次重试后继续、停止/迟到响应、仅重试未完成部分、编辑与勾选保留、来源不发送、选择性持久化及保存时去重。原生 NSWindow 测试验证隐藏保留工作、关闭清理，并保留审核视图截图附件。
 - 一次初始测试进程以 code 0 提前退出，随后导入测试单独重跑及全量重跑均通过；未据此推断业务代码或服务延迟根因。未调用真实 AI，真实模型耗时与系统文件选择器交互仍需在安装版中核验。
 - 相关文件：`Sources/Capture/VocabularyImportController.swift`、`VocabularyImportWindow.swift`、`SpeechVocabularySettings.swift`、`Sources/Insights/VocabularyGenerator.swift`、对应 XCTest、README 与架构/词表/AI reference。
@@ -173,7 +201,7 @@ Markdown 生成原本嵌在词表设置页：说明、选择、进度和结果�
 ### 验证与相关文件
 
 - XCTest 覆盖应用级草稿加入新词后仍不修改正式词表，直到明确保存；XcodeGen 生成和无签名 Debug 构建通过，macOS arm64 测试 66/66 通过。
-- 相关文件：[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/VocabularyImportWindow.swift`](../Sources/Capture/VocabularyImportWindow.swift)、[`Sources/Capture/SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Tests/SpeechVocabularySettingsTests.swift`](../Tests/SpeechVocabularySettingsTests.swift)、[`README.md`](../README.md)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/VocabularyImportWindow.swift`](../Sources/Capture/VocabularyImportWindow.swift)、[`Sources/Capture/SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Tests/SpeechVocabularySettingsTests.swift`](../Tests/SpeechVocabularySettingsTests.swift)、[`README.md`](../README.md)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -504,7 +532,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖大小写无关命中、字母数字边界、后续独立命中、配置顺序、空命中 prompt 和禁止强行植入语义；无签名 Debug 构建通过，macOS 测试 50/50 通过。
-- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/InsightEngine.swift`](../Sources/Insights/InsightEngine.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/InsightEngineTests.swift`](../Tests/InsightEngineTests.swift)、[`01-项目全景与架构.md`](01-项目全景与架构.md)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -547,7 +575,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 ### 验证与相关文件
 
 - XCTest 覆盖有词表和空词表的 prompt 语义；无签名 Debug 构建验证共享设置接线与 Swift 6 隔离。
-- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/MeetingCaptionsApp.swift`](../Sources/App/MeetingCaptionsApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
+- 相关文件：[`Sources/Insights/TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift)、[`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift)、[`Sources/Capture/SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift)、[`Sources/Insights/SettingsView.swift`](../Sources/Insights/SettingsView.swift)、[`Tests/TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift)、[`02-实时字幕与翻译流水线.md`](02-实时字幕与翻译流水线.md)、[`04-AI洞察与会后优化.md`](04-AI洞察与会后优化.md)。
 
 ---
 
@@ -907,7 +935,7 @@ Markdown 词表生成原先同时设置 60000 字符正文上限和 1 MB 读取�
 
 ### 影响
 
-- `project.yml` 继续以 `Sources/` 为唯一源码根，Info.plist 和 entitlements 分别从 `Sources/Resources/Info.plist` 与 `Sources/Resources/MeetingCaptions.entitlements` 读取。
+- `project.yml` 继续以 `Sources/` 为唯一源码根，Info.plist 和 entitlements 分别从 `Sources/Resources/Info.plist` 与 `Sources/Resources/SameWave.entitlements` 读取。
 - `build.sh`、项目 README、reference 路由和源码链接使用新的领域路径。
 - 新文件优先进入现有领域；只有形成新的稳定职责边界时才新增一级目录。
 

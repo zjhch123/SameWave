@@ -1,6 +1,8 @@
-# 同频（MeetingCaptions）
+# 同频（SameWave）
 
 “同频”是一款面向一对一会议的 macOS 实时字幕应用。它将系统音频视为“对方”、麦克风视为“我”，在本机完成双路语音识别和按所选方向的翻译，并按发言顺序生成可恢复、可导出的会议记录。
+
+正式英文名为 **SameWave**。工程、target、scheme 与英文内部命名统一使用 SameWave；中文显示名与构建产物仍为“同频” / `同频.app`。
 
 ## 主要能力
 
@@ -32,8 +34,8 @@
 2. 进行无签名编译检查：
 
    ```sh
-   xcodebuild -project MeetingCaptions.xcodeproj \
-     -scheme MeetingCaptions \
+   xcodebuild -project SameWave.xcodeproj \
+     -scheme SameWave \
      -configuration Debug \
      -derivedDataPath .build \
      CODE_SIGNING_ALLOWED=NO \
@@ -43,8 +45,8 @@
 3. 运行单元测试：
 
    ```sh
-   xcodebuild test -project MeetingCaptions.xcodeproj \
-     -scheme MeetingCaptions \
+   xcodebuild test -project SameWave.xcodeproj \
+     -scheme SameWave \
      -configuration Debug \
      -derivedDataPath .build \
      CODE_SIGNING_ALLOWED=NO \
@@ -76,6 +78,8 @@
 
 如果本地 SwiftData 容器无法打开，应用会明确阻止新会议并显示错误，不会静默改用内存存储制造“已保存”假象。
 
+应用标识统一为 `com.plus.samewave`，UserDefaults 和 Keychain 使用该身份，语音模型缓存位于 `Application Support/SameWave/SpeechLanguageModel`。新版不读取或迁移旧身份下的设置、词表、密钥和模型缓存；安装后需重新配置，系统权限可能需要重新授权。现有数据文件不会被主动删除，历史记录的 SwiftData 模型与存储实现不变。
+
 ## 仓库结构
 
 ```text
@@ -95,7 +99,7 @@
 └── build.sh     # 本机签名、安装与启动脚本
 ```
 
-`MeetingCaptions.xcodeproj` 由 XcodeGen 生成且不纳入版本控制。源码级架构、状态机、数据模型和验证方式见 [项目文档索引](doc/README.md)。
+`SameWave.xcodeproj` 由 XcodeGen 生成且不纳入版本控制。源码级架构、状态机、数据模型和验证方式见 [项目文档索引](doc/README.md)。
 
 ## 当前边界
 

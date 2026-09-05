@@ -41,7 +41,7 @@
 
 - 从仓库根目录描述路径时使用完整的领域路径，例如 `Sources/Meeting/CaptionStore.swift` 或 `doc/02-实时字幕与翻译流水线.md`。
 - 从本目录链接源码时使用 `../Sources/...`。
-- 生成的 `MeetingCaptions.xcodeproj` 和构建产物不是文档事实来源；工程配置以 [`project.yml`](../project.yml) 为准。
+- 生成的 `SameWave.xcodeproj` 和构建产物不是文档事实来源；工程配置以 [`project.yml`](../project.yml) 为准。
 - 文档不依赖仓库外的参考项目、实验目录或特定上级目录名。
 
 ## 文档类型

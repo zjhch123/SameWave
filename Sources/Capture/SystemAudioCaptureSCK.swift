@@ -35,7 +35,7 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput {
     private let excludeBundlePrefixes: [String]
 
     private var stream: SCStream?
-    private let sampleQueue = DispatchQueue(label: "com.plus.meetingcaptions.sck.audio", qos: .userInitiated)
+    private let sampleQueue = DispatchQueue(label: "com.plus.samewave.sck.audio", qos: .userInitiated)
 
     init(excludeBundlePrefixes: [String] = [],
          onAudio: @escaping @Sendable ([Float], Double) -> Void,
@@ -55,7 +55,7 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput {
         guard let display = content.displays.first else { throw CaptureError.noDisplayFound }
 
         // Exclude our own app (never capture our own output) plus any requested apps.
-        let ownBundle = Bundle.main.bundleIdentifier ?? "com.plus.meetingcaptions"
+        let ownBundle = Bundle.main.bundleIdentifier ?? "com.plus.samewave"
         let excluded = content.applications.filter { app in
             app.bundleIdentifier == ownBundle
                 || excludeBundlePrefixes.contains { app.bundleIdentifier.hasPrefix($0) }

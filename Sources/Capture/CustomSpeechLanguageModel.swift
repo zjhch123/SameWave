@@ -25,7 +25,7 @@ actor CustomSpeechLanguageModel {
             create: true
         )
         let modelDirectory = applicationSupport
-            .appending(path: "MeetingCaptions/SpeechLanguageModel/\(fingerprint)",
+            .appending(path: "SameWave/SpeechLanguageModel/\(fingerprint)",
                        directoryHint: .isDirectory)
         try fileManager.createDirectory(
             at: modelDirectory,
@@ -39,7 +39,7 @@ actor CustomSpeechLanguageModel {
         if !fileManager.fileExists(atPath: trainingDataURL.path) {
             let trainingData = SFCustomLanguageModelData(
                 locale: locale,
-                identifier: "com.plus.meetingcaptions.terms",
+                identifier: "com.plus.samewave.terms",
                 version: fingerprint
             )
             for phrase in phrases {
