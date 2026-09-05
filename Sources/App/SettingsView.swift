@@ -24,7 +24,7 @@ struct SettingsView: View {
         TabView(selection: $navigation.selectedTab) {
             AISettingsView(settings: aiSettings)
                 .tabItem {
-                    Label("AI 服务", systemImage: "cpu")
+                    Label("AI Services", systemImage: "cpu")
                 }
                 .tag(SettingsNavigation.Tab.ai)
 
@@ -33,7 +33,7 @@ struct SettingsView: View {
                 importController: vocabularyImportController
             )
                 .tabItem {
-                    Label("词表", systemImage: "text.book.closed")
+                    Label("Vocabulary", systemImage: "text.book.closed")
                 }
                 .tag(SettingsNavigation.Tab.vocabulary)
         }

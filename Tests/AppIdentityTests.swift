@@ -1,11 +1,16 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 final class AppIdentityTests: XCTestCase {
-    func testApplicationUsesSameWaveIdentityAndKeepsChineseDisplayName() {
+    func testApplicationUsesEnglishSameWaveIdentity() {
         XCTAssertEqual(Bundle.main.bundleIdentifier, "com.plus.samewave")
-        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String, "同频")
-        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, "同频")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String, "SameWave")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, "SameWave")
+    }
+
+    func testApplicationDeclaresEnglishLocalization() {
+        XCTAssertEqual(Bundle.main.developmentLocalization, "en")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleLocalizations") as? [String], ["en"])
     }
 
     func testTestBundleUsesSameWaveIdentity() {

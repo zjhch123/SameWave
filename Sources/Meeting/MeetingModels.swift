@@ -22,8 +22,8 @@ enum MeetingLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var label: String {
         switch self {
-        case .english: "英语"
-        case .simplifiedChinese: "简体中文"
+        case .english: "English"
+        case .simplifiedChinese: "Simplified Chinese"
         }
     }
 

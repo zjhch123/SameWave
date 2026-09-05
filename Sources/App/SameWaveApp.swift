@@ -10,7 +10,7 @@ struct SameWaveApp: App {
     var body: some Scene {
         // Single integrated main window. Hidden title bar → the traffic-light buttons
         // float over our own 48pt header (TrafficLightConfigurator centers them there).
-        Window("同频", id: "control") {
+        Window("SameWave", id: "control") {
             if let history = delegate.history {
                 MainView(coordinator: delegate.coordinator)
                     .frame(minWidth: 940, minHeight: 480)
@@ -20,14 +20,14 @@ struct SameWaveApp: App {
                     .environment(delegate.aiSettings)
                     .environment(delegate.settingsNavigation)
             } else {
-                StorageFailureView(message: delegate.storageError ?? "未知错误")
+                StorageFailureView(message: delegate.storageError ?? "Unknown error")
                     .frame(minWidth: 640, minHeight: 360)
             }
         }
         .windowStyle(.hiddenTitleBar)
 
         // App-wide AI and speech-vocabulary configuration (⌘,). SwiftUI wires this
-        // to the standard "同频 ▸ 设置…" menu item automatically.
+        // to the standard "SameWave ▸ Settings…" menu item automatically.
         Settings {
             SettingsView(
                 aiSettings: delegate.aiSettings,
@@ -37,19 +37,19 @@ struct SameWaveApp: App {
             .environment(delegate.settingsNavigation)
         }
 
-        Window("从 Markdown 生成词表", id: VocabularyImportWindow.windowID) {
+        Window("Generate Vocabulary from Markdown", id: VocabularyImportWindow.windowID) {
             VocabularyImportWindow(controller: delegate.vocabularyImportController)
         }
         .defaultSize(width: 560, height: 460)
         .defaultLaunchBehavior(.suppressed)
 
         // Lightweight menu-bar icon for quick access / quit.
-        MenuBarExtra("同频", systemImage: "captions.bubble") {
-            Button("显示主窗口") {
+        MenuBarExtra("SameWave", systemImage: "captions.bubble") {
+            Button("Show Main Window") {
                 NSApp.activate(ignoringOtherApps: true)
             }
             Divider()
-            Button("退出") { NSApp.terminate(nil) }
+            Button("Quit") { NSApp.terminate(nil) }
         }
     }
 }
@@ -150,7 +150,7 @@ private struct StorageFailureView: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label("无法打开会议数据", systemImage: "externaldrive.badge.exclamationmark")
+            Label("Could Not Open Meeting Data", systemImage: "externaldrive.badge.exclamationmark")
         } description: {
             Text(message)
         }

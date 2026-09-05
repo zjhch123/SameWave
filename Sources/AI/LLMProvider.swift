@@ -26,7 +26,7 @@ struct LLMResponseSchema: Encodable, Sendable {
                     "properties": .object([
                         "ok": .object([
                             "type": .string("boolean"),
-                            "description": .string("连接测试成功时返回 true")
+                            "description": .string("Return true when the connection test succeeds")
                         ])
                     ]),
                     "required": .array([.string("ok")]),
@@ -85,20 +85,20 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "尚未配置 AI 服务，请前往「设置 → AI 服务」完成配置并保存（⌘,）。"
-        case .unauthorized:  return "密钥无效或无权限（401）。请检查「设置 → AI 服务」中的 API Key。"
-        case .rateLimited:   return "请求过于频繁或额度不足（429），请稍后再试。"
-        case .server(let c): return "服务返回错误（\(c)）。"
-        case .network(let m): return "网络请求失败：\(m)"
-        case .invalidRequest(let m): return "AI 服务拒绝了请求：\(m)"
-        case .badResponse:   return "无法解析服务返回的内容。"
-        case .emptyContent:  return "服务未返回有效内容。"
+        case .notConfigured: return "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save."
+        case .unauthorized:  return "Invalid API key or access denied (401). Check your API key in Settings → AI Services."
+        case .rateLimited:   return "Rate limit or quota exceeded (429). Please try again later."
+        case .server(let c): return "The service returned an error (\(c))."
+        case .network(let m): return "Network request failed: \(m)"
+        case .invalidRequest(let m): return "The AI service rejected the request: \(m)"
+        case .badResponse:   return "Could not parse the service response."
+        case .emptyContent:  return "The service returned no usable content."
         case .schemaViolation:
-            return "AI 服务未按 JSON Schema 返回结构化内容，请检查当前模型或网关是否支持该格式。"
-        case .refused(let m): return "AI 拒绝了该请求：\(m)"
-        case .truncated: return "AI 输出被截断，未返回完整结果。"
+            return "The AI response does not match the JSON Schema. Check whether your model or gateway supports Structured Outputs."
+        case .refused(let m): return "AI refused the request: \(m)"
+        case .truncated: return "The AI response was truncated and is incomplete."
         case .modelListingUnavailable:
-            return "服务未提供可用模型列表，请手动填写模型 ID。"
+            return "The service did not return a usable model list. Enter a model ID manually."
         }
     }
 }
@@ -151,25 +151,25 @@ struct LLMProviderConfig: Identifiable, Equatable {
 extension LLMProviderConfig {
     /// The built-in provider table contains only documented strict-schema models.
     static let qwen = LLMProviderConfig(
-        id: "qwen", displayName: "通义千问（阿里）",
+        id: "qwen", displayName: "Qwen (Alibaba)",
         apiAddress: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
         defaultModel: "qwen3.8-flash",
-        keyHint: "sk-… （dashscope 控制台）")
+        keyHint: "sk-… (DashScope console)")
 
     static let kimi = LLMProviderConfig(
-        id: "kimi", displayName: "Kimi（月之暗面）",
+        id: "kimi", displayName: "Kimi (Moonshot AI)",
         apiAddress: "https://api.moonshot.cn/v1/chat/completions",
         defaultModel: "kimi-k3",
         maxTemperature: 1.0,
-        keyHint: "sk-… （platform.moonshot.cn）")
+        keyHint: "sk-… (platform.moonshot.cn)")
 
     /// The escape hatch: any other OpenAI-compatible endpoint. Address + model come
     /// from the user's settings, not from this row.
     static let custom = LLMProviderConfig(
-        id: "custom", displayName: "自定义（OpenAI 兼容）",
+        id: "custom", displayName: "Custom (OpenAI Compatible)",
         apiAddress: "", defaultModel: "",
         isCustom: true,
-        keyHint: "你的 API Key")
+        keyHint: "Your API Key")
 
     static let builtIn: [LLMProviderConfig] = [qwen, kimi, custom]
 

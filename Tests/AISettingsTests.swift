@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class AISettingsTests: XCTestCase {

@@ -17,7 +17,7 @@ xcodebuild -project SameWave.xcodeproj \
   -derivedDataPath .build build \
   CODE_SIGNING_ALLOWED=NO
 
-APP=".build/Build/Products/Debug/同频.app"
+APP=".build/Build/Products/Debug/SameWave.app"
 if [ ! -d "$APP" ]; then
   echo "✗ Build failed — app not found."; exit 1
 fi
@@ -32,11 +32,11 @@ codesign --force --deep --options runtime \
 echo "▶︎ Designated requirement:"
 codesign -d -r- "$APP" 2>&1 | grep -E "designated" || true
 
-echo "▶︎ Installing to ~/Desktop/同频.app"
-pkill -f "Desktop/同频.app" 2>/dev/null || true
+echo "▶︎ Installing to ~/Desktop/SameWave.app"
+pkill -f "Desktop/SameWave.app" 2>/dev/null || true
 sleep 1
-rm -rf ~/Desktop/同频.app
-cp -R "$APP" ~/Desktop/同频.app
+rm -rf ~/Desktop/SameWave.app
+cp -R "$APP" ~/Desktop/SameWave.app
 
 # Make the local cloud credentials available at a stable runtime path.
 if [ -f "$(pwd)/config.local.json" ]; then
@@ -45,5 +45,5 @@ if [ -f "$(pwd)/config.local.json" ]; then
 fi
 
 echo "▶︎ Launching…"
-open ~/Desktop/同频.app
+open ~/Desktop/SameWave.app
 echo "✅ Running. Look for the 💬 icon in the menu bar."

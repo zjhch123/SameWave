@@ -1,19 +1,20 @@
 import Foundation
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class VocabularyGeneratorTests: XCTestCase {
     func testPromptRequiresNamedEntitiesAndRejectsGenericTechnicalTerms() {
         let prompt = VocabularyGenerator.systemPrompt
 
-        XCTAssertTrue(prompt.contains("命名实体门槛"))
-        XCTAssertTrue(prompt.contains("语音识别价值门槛"))
-        XCTAssertTrue(prompt.contains("通用技术或业务概念"))
-        XCTAssertTrue(prompt.contains("标题格式、首字母大写、全大写"))
-        XCTAssertTrue(prompt.contains("不确定是否同时满足两个门槛时一律省略"))
-        XCTAssertTrue(prompt.contains("SharePoint、OneDrive for Business"))
-        XCTAssertTrue(prompt.contains("Primary、ingestion、sharding、metadata"))
+        XCTAssertTrue(prompt.contains("Named-entity gate"))
+        XCTAssertTrue(prompt.contains("Speech-recognition value gate"))
+        XCTAssertTrue(prompt.contains("generic technical or business concepts"))
+        XCTAssertTrue(prompt.contains("Heading styles, initial capitals, ALL CAPS"))
+        XCTAssertTrue(prompt.contains("If uncertain whether both gates are met, omit the candidate"))
+        for example in ["SharePoint", "OneDrive for Business", "Primary", "ingestion", "sharding", "metadata"] {
+            XCTAssertTrue(prompt.contains(example))
+        }
     }
 
     func testReviewCandidatesOnlyContainPhrasesNewToCurrentDraft() {
@@ -163,7 +164,7 @@ final class VocabularyGeneratorTests: XCTestCase {
 
         XCTAssertEqual(batches.count, 3)
         XCTAssertTrue(batches.allSatisfy { $0.content.count <= VocabularyGenerator.batchCharacterLimit })
-        XCTAssertEqual(batches.map(\.content).joined().filter { $0 == "a" }.count, content.count)
+        XCTAssertEqual(batches.flatMap(\.sources).map(\.content).joined(), content)
     }
 
     func testBatchAndRetryBudgetsMatchRequestContract() {

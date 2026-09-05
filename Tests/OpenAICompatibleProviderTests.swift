@@ -1,5 +1,5 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 final class OpenAICompatibleProviderTests: XCTestCase {
     func testRequestBodyUsesStrictJSONSchema() throws {

@@ -1,21 +1,25 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class MeetingTitleGeneratorTests: XCTestCase {
     func testPromptNamesTitleFieldForPartiallyCompatibleGateways() {
-        XCTAssertTrue(MeetingTitleGenerator.systemPrompt().contains("title 字段"))
+        let prompt = MeetingTitleGenerator.systemPrompt()
+        XCTAssertTrue(prompt.contains("title field"))
+        XCTAssertTrue(prompt.contains("English title"))
+        XCTAssertTrue(prompt.contains("3–8 words"))
+        XCTAssertTrue(prompt.contains("\(MeetingTitleGenerator.titleCharacterLimit) characters"))
     }
 
     func testGenerateUsesIndependentProviderRequestAndParsesTitle() async throws {
-        let provider = StubProvider(output: #"{"title":" 项目交付时间与风险讨论 "}"#)
+        let provider = StubProvider(output: #"{"title":" Delivery Timeline and Risks "}"#)
 
         let title = try await MeetingTitleGenerator.generate(
             lines: [makeLine(index: 0, text: "Let's review the delivery risks")],
             provider: provider
         )
 
-        XCTAssertEqual(title, "项目交付时间与风险讨论")
+        XCTAssertEqual(title, "Delivery Timeline and Risks")
         let callCount = await provider.callCount
         XCTAssertEqual(callCount, 1)
         let schemaName = await provider.lastSchemaName
@@ -25,7 +29,7 @@ final class MeetingTitleGeneratorTests: XCTestCase {
     func testParseRejectsBlankTitleAndCapsUnexpectedlyLongOutput() {
         XCTAssertNil(MeetingTitleGenerator.parse(#"{"title":"   "}"#))
 
-        let longTitle = String(repeating: "题", count: 40)
+        let longTitle = String(repeating: "Title ", count: 20)
         let parsed = MeetingTitleGenerator.parse(#"{"title":"\#(longTitle)"}"#)
 
         XCTAssertEqual(parsed?.count, MeetingTitleGenerator.titleCharacterLimit)
@@ -39,7 +43,7 @@ final class MeetingTitleGeneratorTests: XCTestCase {
 
         let input = MeetingTitleGenerator.input(lines: lines, limit: 100)
 
-        XCTAssertEqual(input, "对方：first\n对方：second")
+        XCTAssertEqual(input, "Other party: first\nOther party: second")
     }
 
     private func makeLine(

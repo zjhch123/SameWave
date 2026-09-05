@@ -1,52 +1,52 @@
-# 同频项目文档
+# SameWave Documentation
 
-本目录是仓库内的技术文档中心，记录当前产品边界、运行机制、长期决策和验证方式。领域文档描述“当前系统如何工作”，需求文档描述“产品希望如何工作”；两者与实现冲突时，必须回到当前源码、[`project.yml`](../project.yml) 和明确需求核验。
+This directory is the repository's technical documentation hub, covering product boundaries, runtime behavior, long-term decisions, and validation. Domain references describe the current implementation; requirements describe intended behavior. Resolve conflicts against current source, [`project.yml`](../project.yml), and explicit requirements.
 
-## 一句话理解
+## At a glance
 
-“同频”是一款面向一对一会议的原生 macOS 应用：它把系统音频视为“对方”、麦克风视为“我”，在本机完成双路实时语音识别，并按用户选择的“英语 / 简体中文”源语言和目标语言翻译或直显，将结果组织为按发言顺序排列的 Section；会话被增量保存到 SwiftData，并可选把文字发送给用户配置的 strict JSON Schema Structured Outputs 服务生成洞察和会后优化稿。
+SameWave is a native macOS app for one-on-one meetings. It treats system audio as the other participant and the microphone as you, recognizes both locally, and translates or directly displays speech according to the selected English/Simplified Chinese source and target languages. Turns become ordered Sections, sessions save incrementally to SwiftData, and optional user-configured strict JSON Schema Structured Outputs services generate insights and refined transcripts. App-owned text, insights, titles, and documentation are in English; meeting content retains its selected languages.
 
-## 按任务阅读
+## Read by task
 
-| 需要了解的问题 | 文档 |
+| Question | Reference |
 |---|---|
-| 产品边界、技术栈、分层与界面结构 | [01-项目全景与架构.md](01-项目全景与架构.md) |
-| 音频、ASR、Section 状态机和翻译调度 | [02-实时字幕与翻译流水线.md](02-实时字幕与翻译流水线.md) |
-| 开始、暂停、恢复、持久化、历史和导出 | [03-会话生命周期与数据.md](03-会话生命周期与数据.md) |
-| AI 服务商、洞察、优化稿与隐私边界 | [04-AI洞察与会后优化.md](04-AI洞察与会后优化.md) |
-| 设计原则、演进、已知边界和后续判断顺序 | [05-设计思想、演进与边界.md](05-设计思想、演进与边界.md) |
-| 环境、构建、权限、改动入口和验证矩阵 | [06-开发与验证指南.md](06-开发与验证指南.md) |
-| 已采纳的长期决策及原因 | [DECISIONS.md](DECISIONS.md) |
-| 对话分段与渲染的设计基线 | [会议实时翻译-对话渲染需求与状态机.md](会议实时翻译-对话渲染需求与状态机.md) |
+| Product scope, stack, layers, UI | [Product and architecture](01-product-and-architecture.md) |
+| Audio, ASR, Section state machine, translation scheduling | [Live captions and translation](02-live-captions-and-translation.md) |
+| Start, pause, resume, persistence, history, export | [Session lifecycle and data](03-session-lifecycle-and-data.md) |
+| AI providers, insights, refinement, privacy | [AI insights and refinement](04-ai-insights-and-refinement.md) |
+| Principles, evolution, boundaries, future decision order | [Design, evolution, and boundaries](05-design-evolution-and-boundaries.md) |
+| Environment, build, permissions, change entry points, validation | [Development and validation](06-development-and-validation.md) |
+| Accepted long-term decisions and rationale | [DECISIONS.md](DECISIONS.md) |
+| Conversation segmentation and rendering baseline | [Conversation rendering requirements](conversation-rendering-requirements.md) |
 
-## 仓库内的路径约定
+## Repository paths
 
 ```text
 .
 ├── Sources/
-│   ├── App/          # 应用装配、窗口壳与设置导航
-│   ├── AI/           # 全应用 AI 配置、服务商与响应解析
-│   ├── Capture/      # 音频采集与识别 I/O
-│   ├── Meeting/      # 实时会话、字幕与翻译
-│   ├── History/      # 持久化、历史界面与导出
-│   ├── Insights/     # 洞察、优化、标题与词表生成等 AI 用例
-│   ├── Shared/       # 跨领域共享工具
-│   └── Resources/    # 应用资源与构建元数据
-├── Tests/        # 领域状态、调度、持久化与 AI 解析测试
-├── doc/          # 本文档集
-├── README.md     # 面向使用者和新贡献者的项目入口
-├── AGENTS.md     # 仓库协作与验证规则
-├── project.yml  # XcodeGen 构建事实来源
-└── build.sh     # 本机签名安装脚本
+│   ├── App/          # App assembly, window shell, settings navigation
+│   ├── AI/           # Shared AI configuration, providers, response parsing
+│   ├── Capture/      # Audio capture and recognition I/O
+│   ├── Meeting/      # Live sessions, captions, translation
+│   ├── History/      # Persistence, history UI, export
+│   ├── Insights/     # AI insights, refinement, titles, vocabulary generation
+│   ├── Shared/       # Cross-domain utilities
+│   └── Resources/    # App resources and build metadata
+├── Tests/            # Domain state, scheduling, persistence, AI parsing tests
+├── doc/              # This documentation set
+├── README.md         # Entry point for users and contributors
+├── AGENTS.md         # Collaboration and validation rules
+├── project.yml       # XcodeGen source of truth
+└── build.sh          # Local signed installation script
 ```
 
-- 从仓库根目录描述路径时使用完整的领域路径，例如 `Sources/Meeting/CaptionStore.swift` 或 `doc/02-实时字幕与翻译流水线.md`。
-- 从本目录链接源码时使用 `../Sources/...`。
-- 生成的 `SameWave.xcodeproj` 和构建产物不是文档事实来源；工程配置以 [`project.yml`](../project.yml) 为准。
-- 文档不依赖仓库外的参考项目、实验目录或特定上级目录名。
+- Use complete domain paths from the repository root, such as `Sources/Meeting/CaptionStore.swift` or `doc/02-live-captions-and-translation.md`.
+- Link to source from this directory with `../Sources/...`.
+- Generated `SameWave.xcodeproj` and build artifacts are not sources of documentation truth; [`project.yml`](../project.yml) owns project configuration.
+- Documentation must not depend on external reference projects, experimental directories, or a specific parent directory name.
 
-## 文档类型
+## Document types
 
-- **当前实现**：`01`–`06` 描述可以在当前源码中核验的行为。
-- **设计基线**：需求文档可以领先于实现；已知差异必须在相关领域文档中明示。
-- **决策记录**：`DECISIONS.md` 只回答“为什么这样决定”，不替代领域文档或 changelog。
+- **Current implementation:** `01`–`06` describe behavior verifiable in current source.
+- **Design baseline:** requirements may lead implementation; relevant references must disclose known differences.
+- **Decision records:** `DECISIONS.md` explains why decisions were made, rather than replacing domain documentation or a changelog.

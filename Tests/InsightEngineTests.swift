@@ -1,5 +1,5 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class InsightEngineTests: XCTestCase {
@@ -9,7 +9,8 @@ final class InsightEngineTests: XCTestCase {
         for field in ["topic", "suggestions", "answer", "todos", "decisions"] {
             XCTAssertTrue(prompt.contains(field))
         }
-        XCTAssertFalse(prompt.contains("用户专有词"))
+        XCTAssertFalse(prompt.contains("User vocabulary"))
+        XCTAssertTrue(prompt.contains("Write all content in English"))
     }
 
     func testRelevantVocabularyMatchesCaseInsensitivelyAtAlphanumericBoundaries() {
@@ -38,8 +39,8 @@ final class InsightEngineTests: XCTestCase {
 
         XCTAssertTrue(prompt.contains("- XPay"))
         XCTAssertTrue(prompt.contains("- PR"))
-        XCTAssertTrue(prompt.contains("精确拼写"))
-        XCTAssertTrue(prompt.contains("不得强行植入"))
+        XCTAssertTrue(prompt.contains("exact spelling"))
+        XCTAssertTrue(prompt.contains("Do not introduce information absent"))
     }
 
     func testRecentContextKeepsNewestCompleteLines() {
@@ -74,7 +75,7 @@ final class InsightEngineTests: XCTestCase {
             preferringRefinedSource: true
         )
 
-        XCTAssertEqual(transcript, "对方：raw first\n对方：polished second")
+        XCTAssertEqual(transcript, "Other party: raw first\nOther party: polished second")
     }
 
     func testParsesStrictJSONResponseWithNullAnswer() {

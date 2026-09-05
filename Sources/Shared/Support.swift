@@ -24,14 +24,18 @@ extension String {
 /// are read per-row on every SwiftUI redraw, so they must be created once — not on
 /// each access.
 enum DateFormat {
-    /// "2026年7月7日 18:27" — a saved meeting's title.
-    static let dayTime: DateFormatter = make("yyyy年M月d日 HH:mm")
+    /// "Jul 7, 2026 at 18:27" — a saved meeting's title.
+    static let dayTime: DateFormatter = make("MMM d, yyyy 'at' HH:mm")
     /// "18:27" — a per-line spoken time.
     static let clock: DateFormatter = make("HH:mm")
     /// "20260707-1827" — a filename-safe export stamp.
     static let fileStamp: DateFormatter = make("yyyyMMdd-HHmm")
 
     private static func make(_ pattern: String) -> DateFormatter {
-        let f = DateFormatter(); f.dateFormat = pattern; return f
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = pattern
+        return f
     }
 }

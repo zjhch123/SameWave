@@ -148,7 +148,7 @@ final class InsightEngine {
         sections.compactMap { section in
             let text = section.sourceText.trimmed
             guard !text.isEmpty else { return nil }
-            return "\(section.speaker == .mine ? "我" : "对方")：\(text)"
+            return "\(section.speaker == .mine ? "Me" : "Other party"): \(text)"
         }
         .joined(separator: "\n")
     }
@@ -168,7 +168,7 @@ final class InsightEngine {
                     line.sourceText.trimmed
                 }
                 guard !text.isEmpty else { return nil }
-                return "\(line.isMine ? "我" : "对方")：\(text)"
+                return "\(line.isMine ? "Me" : "Other party"): \(text)"
             }
             .joined(separator: "\n")
     }
@@ -241,9 +241,9 @@ final class InsightEngine {
 
     static func systemPrompt(relevantVocabulary: [String]) -> String {
         let base = """
-        你是一个实时会议助手。下面是会议最近的对话（“我”是使用者，“对方”是其他参会者）。
-        输出必须是一个 JSON 对象：topic 是当前话题，suggestions 是 1-3 条下一步建议数组，answer 是参考回答或 null，todos 是包含 who 和 what 的待办数组，decisions 是已确定事项数组。
-        所有内容使用简体中文。建议限 1-3 条。只依据对话中出现的信息，没有参考回答时返回 null，其他没有内容的字段返回空字符串或空数组，不要编造。
+        You are a live meeting assistant. The input is the latest conversation: "Me" is the user and "Other party" is the other participant.
+        Return a JSON object: topic is the current topic, suggestions is an array of 1–3 suggested next steps, answer is a suggested answer or null, todos is an array of action items with who and what, and decisions is an array of agreed decisions.
+        Write all content in English. Limit suggestions to 1–3 items. Use only information present in the conversation. Return null when no suggested answer is appropriate, and empty strings or arrays for other fields without content. Do not invent information.
         """
         guard !relevantVocabulary.isEmpty else { return base }
 
@@ -251,9 +251,9 @@ final class InsightEngine {
         return """
         \(base)
 
-        当前上下文命中的用户专有词：
+        User vocabulary matched in the current context:
         \(terms)
-        输出中如需提及上述词条，必须保持其精确拼写；不得强行植入对话中不存在的信息。
+        When referring to these terms, preserve their exact spelling. Do not introduce information absent from the conversation.
         """
     }
 

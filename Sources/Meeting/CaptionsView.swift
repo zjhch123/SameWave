@@ -5,10 +5,10 @@ import SwiftUI
 /// sentence from the other speaker seals it and opens the next section. Interims from
 /// the non-active stream cannot reorder the transcript.
 ///
-/// Each section shows a speaker label (mine → "你" in accent blue; remote → "发言人"
+/// Each section shows a speaker label (mine → "You" in accent blue; remote → "Speaker"
 /// in meta gray), the selected target language as the large primary line, and the
 /// source text as a small muted secondary line. A still-translating section shows a subtle
-/// "翻译中" indicator (spec Rule B — translation state affects only the UI hint).
+/// "Translating" indicator (spec Rule B — translation state affects only the UI hint).
 struct CaptionsView: View {
     let store: CaptionStore
     var isListening = false
@@ -35,7 +35,7 @@ struct CaptionsView: View {
 
     /// Shown while a sealed section's translation is still in flight, and as the
     /// placeholder for the primary line before any translation lands.
-    static let translatingHint = "翻译中…"
+    static let translatingHint = "Translating…"
 
     /// HH:mm formatter for the per-line spoken time.
     static func timeString(_ date: Date) -> String { DateFormat.clock.string(from: date) }
@@ -103,7 +103,7 @@ struct CaptionsView: View {
             Image(systemName: isListening ? "waveform" : "text.bubble")
                 .font(.system(size: 34))
                 .foregroundStyle(Self.meta.opacity(0.5))
-            Text(isListening ? "聆听中…" : "点击下方「开始」开始实时字幕")
+            Text(isListening ? "Listening…" : "Click Start below to begin live captions")
                 .font(.system(size: 15))
                 .foregroundStyle(Self.muted)
             // Surface setup status / errors (permission, model download, capture
@@ -132,7 +132,7 @@ struct CaptionsView: View {
         VStack(alignment: .leading, spacing: 6) {
             // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
-                Text(mine ? "你" : "发言人")
+                Text(mine ? "You" : "Speaker")
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(mine ? Self.accent : Self.meta)
@@ -144,7 +144,7 @@ struct CaptionsView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Self.meta.opacity(0.8))
                 } else if failed {
-                    Text("翻译失败 · 已显示原文")
+                    Text("Translation failed · Showing source text")
                         .font(.system(size: 11))
                         .foregroundStyle(Self.danger)
                 }

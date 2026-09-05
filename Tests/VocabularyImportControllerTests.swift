@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class VocabularyImportControllerTests: XCTestCase {
@@ -207,7 +207,7 @@ final class VocabularyImportControllerTests: XCTestCase {
         XCTAssertEqual(draft.phrases, ["Existing", "Manual", "XPay"])
         XCTAssertTrue(draft.isDirty)
         XCTAssertEqual(controller.candidates.map(\.text), ["SwiftData"])
-        XCTAssertEqual(controller.savedMessage, "已保存 1 个新词")
+        XCTAssertEqual(controller.savedMessage, "New terms saved: 1")
         XCTAssertTrue(controller.isRunning)
         await provider.release()
         try await waitUntil { !controller.isRunning }
@@ -232,7 +232,7 @@ final class VocabularyImportControllerTests: XCTestCase {
         controller.saveSelected()
         XCTAssertEqual(settings.phrases, ["XPay"])
         XCTAssertTrue(controller.candidates.isEmpty)
-        XCTAssertEqual(controller.savedMessage, "所选词条已存在，没有重复添加")
+        XCTAssertEqual(controller.savedMessage, "All selected terms already exist; no duplicates were added")
     }
 
     func testInvalidEditedSelectionCannotBeSaved() async throws {

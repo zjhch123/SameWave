@@ -14,7 +14,7 @@ final class MeetingTitleGenerator {
     /// Fixed provider-independent budget shared with one-shot insights. A title uses the
     /// latest complete conversation lines and does not wait for refined text.
     static let contextCharacterLimit = 6_000
-    static let titleCharacterLimit = 30
+    static let titleCharacterLimit = 60
 
     init(settings: AISettings) {
         self.settings = settings
@@ -51,9 +51,9 @@ final class MeetingTitleGenerator {
 
     static func systemPrompt() -> String {
         """
-        你是会议标题编辑。请根据会议对话生成一个具体、易识别的简体中文标题。
-        输出必须是一个只包含 title 字段的 JSON 对象。
-        标题应概括会议的核心议题，优先使用对话中的项目、产品或事项名称，控制在 6 到 20 个汉字；不要使用“会议记录”“沟通讨论”等空泛标题，不要添加日期、引号、句号或解释，不得虚构对话中没有的信息。
+        You are a meeting title editor. Generate a specific, recognizable English title from the conversation.
+        Return a JSON object containing only the title field.
+        Summarize the central topic, preferably using project, product, or task names from the conversation. Use 3–8 words and no more than \(titleCharacterLimit) characters. Avoid generic titles such as "Meeting Notes" or "Discussion". Do not add dates, quotation marks, a final period, explanations, or information absent from the conversation.
         """
     }
 
@@ -64,7 +64,7 @@ final class MeetingTitleGenerator {
             "properties": .object([
                 "title": .object([
                     "type": .string("string"),
-                    "description": .string("具体、易识别的简体中文会议标题")
+                    "description": .string("A specific, recognizable English meeting title")
                 ])
             ]),
             "required": .array([.string("title")]),

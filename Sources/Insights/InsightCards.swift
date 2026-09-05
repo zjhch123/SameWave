@@ -18,7 +18,7 @@ struct InsightCardsView: View {
     /// Optional action to open Settings, wired by the host (⌘, is always available too).
     var onOpenSettings: (() -> Void)? = nil
     /// When true (the live Inspector), placeholder/empty states fill the available height
-    /// and center — so "等待对话" sits in the middle of the panel, not the top-left.
+    /// and center — so "Waiting for Conversation" sits in the middle of the panel, not the top-left.
     /// When false (embedded in history's transcript scroll), everything stays a plain
     /// top-aligned content block so it doesn't fight the host's layout.
     var centersPlaceholder: Bool = false
@@ -76,7 +76,7 @@ struct InsightCardsView: View {
 
     @ViewBuilder private var cards: some View {
         if !result.topic.trimmed.isEmpty {
-            card(icon: "text.magnifyingglass", title: "当前话题") {
+            card(icon: "text.magnifyingglass", title: "Current Topic") {
                 Text(result.topic)
                     .font(.system(size: 13))
                     .foregroundStyle(CaptionsView.fg)
@@ -85,8 +85,8 @@ struct InsightCardsView: View {
             }
         }
         if let answer = result.answer?.trimmed, !answer.isEmpty {
-            // Highlighted — "对方在问，这是参考答案".
-            card(icon: "bubble.left.and.text.bubble.right", title: "参考回答",
+            // Highlighted — "The other participant asked a question; here is a suggested answer".
+            card(icon: "bubble.left.and.text.bubble.right", title: "Suggested Answer",
                  tint: CaptionsView.accent) {
                 Text(answer)
                     .font(.system(size: 13))
@@ -96,7 +96,7 @@ struct InsightCardsView: View {
             }
         }
         if !result.suggestions.isEmpty {
-            card(icon: "lightbulb", title: "建议") {
+            card(icon: "lightbulb", title: "Suggestions") {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(result.suggestions.enumerated()), id: \.offset) { _, s in
                         bullet(s)
@@ -105,7 +105,7 @@ struct InsightCardsView: View {
             }
         }
         if !result.todos.isEmpty {
-            card(icon: "checklist", title: "待办") {
+            card(icon: "checklist", title: "Action Items") {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(result.todos) { todo in
                         HStack(alignment: .top, spacing: 6) {
@@ -122,7 +122,7 @@ struct InsightCardsView: View {
             }
         }
         if !result.decisions.isEmpty {
-            card(icon: "checkmark.seal", title: "决定") {
+            card(icon: "checkmark.seal", title: "Decisions") {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(Array(result.decisions.enumerated()), id: \.offset) { _, d in
                         bullet(d)
@@ -136,21 +136,21 @@ struct InsightCardsView: View {
 
     private var notConfigured: some View {
         placeholder(icon: "gearshape",
-                    title: "智能洞察需要 AI 服务",
-                    detail: "前往「设置 → AI 服务」完成配置，即可生成话题总结、建议与待办。这份配置也用于会后优化、会议标题和词表生成。",
-                    actionLabel: "配置 AI 服务")
+                    title: "Insights Require an AI Service",
+                    detail: "Open Settings → AI Services to configure topic summaries, suggestions, and action items. The same configuration is used for transcript refinement, meeting titles, and vocabulary generation.",
+                    actionLabel: "Configure AI Services")
     }
 
     private var waiting: some View {
         placeholder(icon: "sparkles",
-                    title: "等待对话",
-                    detail: "开始会议后，智能洞察会随对话自动生成。")
+                    title: "Waiting for Conversation",
+                    detail: "Insights appear automatically as your meeting progresses.")
     }
 
     private var analyzing: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("分析中…")
+            Text("Analyzing…")
                 .font(.system(size: 13))
                 .foregroundStyle(CaptionsView.muted)
         }
@@ -162,7 +162,7 @@ struct InsightCardsView: View {
     private var analyzingInline: some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
-            Text("更新中…")
+            Text("Updating…")
                 .font(.system(size: 11))
                 .foregroundStyle(CaptionsView.meta)
         }
@@ -174,16 +174,16 @@ struct InsightCardsView: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(CaptionsView.danger)
-                Text("洞察暂不可用")
+                Text("Insights Unavailable")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(CaptionsView.fg)
             }
-            Text(e.errorDescription ?? "未知错误")
+            Text(e.errorDescription ?? "Unknown error")
                 .font(.system(size: 12))
                 .foregroundStyle(CaptionsView.muted)
                 .fixedSize(horizontal: false, vertical: true)
             if e == .notConfigured || e == .unauthorized, let onOpenSettings {
-                Button("打开设置", action: onOpenSettings)
+                Button("Open Settings", action: onOpenSettings)
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(CaptionsView.accent)

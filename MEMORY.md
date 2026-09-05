@@ -1,8 +1,8 @@
-# 同频项目记忆
+# SameWave Project Memory
 
-## 开发完成后自动安装并启动
+## Automatically install and launch after development
 
-- 用户于 2026-09-05 明确要求：本项目每次开发完成后，都覆盖安装桌面版并启动，无需再次询问。
-- 先完成 `AGENTS.md` 要求的构建和测试，再在仓库根目录运行 `./build.sh`，使用项目既有签名配置覆盖 `~/Desktop/同频.app` 并启动。
-- 安装后检查应用签名和桌面版进程，确认启动成功后再报告完成。
-- 这是本项目的持续授权；用户在当前任务中明确要求不安装或不启动时，以当前要求为准。
+- On 2026-09-05, the user explicitly requested that every completed development task replace and launch the desktop app without asking again.
+- First complete the build and tests required by `AGENTS.md`, then run `./build.sh` from the repository root, using the existing signing configuration to replace and launch `~/Desktop/SameWave.app`.
+- After installation, verify the app signature and desktop process. Confirm successful launch before reporting completion.
+- This is continuing authorization for this project. Follow any explicit instruction in the current task not to install or launch.

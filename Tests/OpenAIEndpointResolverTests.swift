@@ -1,5 +1,5 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 final class OpenAIEndpointResolverTests: XCTestCase {
     func testBareRemoteHostUsesOpenAIStandardV1Path() {
