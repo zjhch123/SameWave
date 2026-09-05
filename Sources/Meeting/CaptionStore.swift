@@ -16,7 +16,7 @@ import Observation
 /// transcript can't render two people truly at once, so we serialize by
 /// finalized-sentence order, which is exactly "render whoever spoke, when they
 /// spoke." A speaker resuming after being cut off simply takes the floor again and
-/// gets a fresh section placed at its true chronological position (spec §四.3 order
+/// gets a fresh section placed at its true chronological position (spec §4.3 order
 /// is preserved: the interrupter's sentence, committed first, sits before the
 /// resumer's, committed later).
 ///

@@ -1,12 +1,12 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 final class MeetingLanguageTests: XCTestCase {
     func testLanguageNamesAndPlatformIdentifiersAreFixed() {
-        XCTAssertEqual(MeetingLanguage.english.label, "英语")
+        XCTAssertEqual(MeetingLanguage.english.label, "English")
         XCTAssertEqual(MeetingLanguage.english.localeID, "en-US")
         XCTAssertEqual(MeetingLanguage.english.translationIdentifier, "en")
-        XCTAssertEqual(MeetingLanguage.simplifiedChinese.label, "简体中文")
+        XCTAssertEqual(MeetingLanguage.simplifiedChinese.label, "Simplified Chinese")
         XCTAssertEqual(MeetingLanguage.simplifiedChinese.localeID, "zh-CN")
         XCTAssertEqual(MeetingLanguage.simplifiedChinese.translationIdentifier, "zh-Hans")
     }

@@ -8,7 +8,7 @@ import SwiftUI
 /// (the single home for insights) — this view is PURE transcript, no duplicate panel.
 struct HistoryDetailView: View {
     let record: MeetingRecord
-    /// Whether to show the LLM-refined text (page-wide 原始/优化 toggle, owned by the
+    /// Whether to show the LLM-refined text (page-wide Original/Refined toggle, owned by the
     /// stage). Falls back to originals per-line when a line has no refined variant.
     var showRefined: Bool = false
 
@@ -39,7 +39,7 @@ struct HistoryDetailView: View {
         let source = line.displaySource(refined: showRefined)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(mine ? "你" : "发言人")
+                Text(mine ? "You" : "Speaker")
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(mine ? CaptionsView.accent : CaptionsView.meta)

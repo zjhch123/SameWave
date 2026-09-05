@@ -156,7 +156,7 @@ final class VocabularyImportController {
         let selectedIDs = Set(candidates.filter(\.isSelected).map(\.id))
         let added = vocabularyDraft.saveImported(selectedPhrases)
         candidates.removeAll { selectedIDs.contains($0.id) }
-        savedMessage = added > 0 ? "已保存 \(added) 个新词" : "所选词条已存在，没有重复添加"
+        savedMessage = added > 0 ? "New terms saved: \(added)" : "All selected terms already exist; no duplicates were added"
     }
 
     private func runPending(using provider: any LLMProvider, token: UUID) async {

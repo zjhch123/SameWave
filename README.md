@@ -1,38 +1,38 @@
-# 同频（SameWave）
+# SameWave
 
-“同频”是一款面向一对一会议的 macOS 实时字幕应用。它将系统音频视为“对方”、麦克风视为“我”，在本机完成双路语音识别和按所选方向的翻译，并按发言顺序生成可恢复、可导出的会议记录。
+SameWave is a native macOS live-captioning app for one-on-one meetings. It treats system audio as the other participant and the microphone as you, recognizes both streams locally, translates in the selected direction, and builds a recoverable, exportable transcript in speaking order.
 
-正式英文名为 **SameWave**。工程、target、scheme 与英文内部命名统一使用 SameWave；中文显示名与构建产物仍为“同频” / `同频.app`。
+The app, executable, Swift module, project, target, and scheme all use the name **SameWave**. The interface, documentation, export templates, AI insights, and generated titles are in English. Meeting text follows the selected source and target languages.
 
-## 主要能力
+## Features
 
-- 通过 ScreenCaptureKit 捕获系统输出，通过 AVFoundation 捕获麦克风。
-- 两路音频分别使用 Apple `SpeechAnalyzer` 进行本地流式识别。
-- 可在设置的“词表”Tab 编辑并持久化英文产品名、人名和缩写；已配置 AI 的用户还可从一个或多个 Markdown 文件生成待确认词表，提高本地识别命中率，并在会后优化和智能洞察中保持专有词拼写。
-- 源语言和目标语言都可选择“英语”或“简体中文”；语言不同时使用 Apple Translation 本地翻译，语言相同时直接显示识别结果。
-- 以 Section 组织双方发言；翻译时以目标语言为主、源语言为辅，同语言时不重复显示原文。
-- 会议从开始起增量保存到 SwiftData，支持暂停、恢复、崩溃恢复、历史查看和 Markdown 导出。
-- 重新打开应用时选中上次查看的会议；未结束会议以暂停状态恢复。上次选择新会议、没有选择记录或记录已删除时，显示新会议。
-- 在设置的“AI 服务”Tab 统一配置全应用的 AI；智能洞察、会后优化、会议标题和 Markdown 词表生成共用该配置，各自使用独立的强类型输出契约。
-- 内置通义千问和 Kimi 的 Structured Outputs 模型；自定义 AI 服务可填写域名、带版本路径的地址或完整接口地址，并通过“测试连接”验证嵌套结构化输出契约。
-- 录制、暂停和结束由显式状态机管理；结束时先排空音频、ASR 和翻译，再完成最终保存。
+- Capture system output with ScreenCaptureKit and microphone input with AVFoundation.
+- Recognize both audio streams locally with Apple `SpeechAnalyzer`.
+- Edit and save English product names, personal names, and acronyms in the Vocabulary settings tab. With AI configured, generate vocabulary for review from one or more Markdown files to improve recognition and preserve terminology in refinement and insights.
+- Select English or Simplified Chinese independently for source and target. Use local Apple Translation when they differ; display recognition directly when they match.
+- Organize turns into Sections. Translated captions emphasize the target text with the source beneath it; same-language captions avoid duplicate text.
+- Save incrementally to SwiftData from the start of a meeting, with pause, resume, crash recovery, history, and Markdown export.
+- Reopen the last selected meeting. Unfinished meetings resume in a paused state. Show a new meeting if the previous selection was a new meeting, is missing, or was deleted.
+- Configure AI once in the AI Services settings tab. Insights, refinement, meeting titles, and Markdown vocabulary generation share that configuration, each with its own typed output contract.
+- Use built-in Qwen and Kimi models that support Structured Outputs. Custom services accept a domain, a versioned URL, or a complete endpoint; Test Connection verifies a nested structured-output contract.
+- Manage recording, pausing, and ending through an explicit state machine. Drain audio, ASR, and translation before the final save.
 
-## 系统要求
+## Requirements
 
-- macOS 26.0 或更高版本。
-- Xcode 26+ 与 macOS 26 SDK。
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen)。
-- 使用 [`build.sh`](build.sh) 安装运行时，需要将脚本中的签名身份改为本机可用的 Apple Development 证书。
+- macOS 26.0 or later.
+- Xcode 26+ with the macOS 26 SDK.
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+- To install with [`build.sh`](build.sh), use an Apple Development certificate available on your machine in the script's signing configuration.
 
-## 开始使用
+## Getting started
 
-1. 在仓库根目录生成 Xcode 工程：
+1. Generate the Xcode project from the repository root:
 
    ```sh
    xcodegen generate
    ```
 
-2. 进行无签名编译检查：
+2. Build without signing:
 
    ```sh
    xcodebuild -project SameWave.xcodeproj \
@@ -43,7 +43,7 @@
      build
    ```
 
-3. 运行单元测试：
+3. Run unit tests:
 
    ```sh
    xcodebuild test -project SameWave.xcodeproj \
@@ -54,58 +54,58 @@
      -destination 'platform=macOS'
    ```
 
-4. 本机开发签名配置完成后，可构建、安装并启动固定路径下的应用：
+4. With local development signing configured, build, install, and launch:
 
    ```sh
    ./build.sh
    ```
 
-   脚本会停止已运行的桌面版应用，覆盖 `~/Desktop/同频.app` 后重新启动。
+   The script stops the desktop app, replaces `~/Desktop/SameWave.app`, and relaunches it.
 
-5. 首次运行时按系统提示允许语音识别、麦克风和屏幕录制权限，并准备识别与翻译所需的系统语言资源。
+5. On first launch, grant speech recognition, microphone, and screen recording permissions when prompted, and prepare the system language resources required for recognition and translation.
 
-## 基本操作
+## Basic workflow
 
-1. 如需维护英文识别与 AI 专有词词表，打开设置（⌘,）的“词表”Tab，每行填写一个词或短语并保存。完成 AI 配置后，点击“从 Markdown 生成”会直接出现文件选择器；选中文件后才打开独立小窗展示生成进度与新词审核。切换或关闭设置窗口不会中断任务；关闭生成小窗会取消本次任务。单个 UTF-8 Markdown 文件最多 3 MB，一次选择总计最多 30 MB。文档按每个最多 2 万字符的 AI 请求串行处理，每个请求最多重试 2 次，单个请求最终失败也会继续后续请求。每个成功请求都会立即展示已去重的新词，可边生成边勾选、编辑和查看来源，并直接“添加并保存”。停止保留已有结果，未完成部分可单独重试；导入保存不会顺带提交设置中的其他手动修改。
-2. 如需使用 AI，打开设置的“AI 服务”Tab，选择服务商、填写 API Key 并保存。自定义服务还需填写 API 地址和支持结构化输出的模型 ID，可先用“测试连接”验证。保存后，智能洞察、会后优化、会议标题和 Markdown 词表生成统一使用该配置；各功能的“配置 AI 服务”入口会直接打开此页。未配置 AI 时，本地字幕、实时翻译、手动编辑词表、历史和导出仍可使用。
-3. 在主窗口分别选择源语言和目标语言；两个菜单都提供“英语”和“简体中文”。
-4. 按需开启“我的麦克风”，然后开始会议。系统音频会被统一记为“对方”。
-5. 会议中可暂停或恢复；结束后记录自动进入左侧历史。
-6. 历史记录可导出为 Markdown。配置 AI 服务后，还可生成洞察或优化稿；首次优化时用独立请求生成标题，成功后不再重复生成。
+1. To maintain English recognition and AI terminology, open Settings (⌘,) → Vocabulary, enter one word or phrase per line, and save. After configuring AI, Generate from Markdown opens a file picker, then a separate window for progress and review. Switching or closing Settings does not interrupt generation; closing the generation window cancels it. Each UTF-8 Markdown file can be up to 3 MB, with a 30 MB total selection limit. Documents are processed serially in AI requests of at most 20,000 characters. Each request retries at most twice; a final failure does not block later requests. Successful requests immediately show deduplicated terms for selection, editing, and source inspection. Add and Save persists selected terms. Stop keeps existing results; incomplete requests can be retried. Import saves do not submit other manual settings edits.
+2. To use AI, open Settings → AI Services, select a provider, enter an API key, and save. Custom services also require an API URL and a model ID that supports Structured Outputs; Test Connection can verify them first. All four AI features use the saved configuration, and their Configure AI Services actions open this tab directly. Local captions, live translation, manual vocabulary, history, and export remain available without AI.
+3. Select source and target languages in the main window. Both menus offer English and Simplified Chinese.
+4. Enable your microphone if needed, then start the meeting. All system audio belongs to the other participant.
+5. Pause or resume during the meeting. Ended meetings appear in the history sidebar automatically.
+6. Export history as Markdown. With AI configured, generate insights or a refined transcript. The first refinement also requests a title independently; a successfully generated title is not requested again.
 
-## 数据与隐私
+## Data and privacy
 
-音频捕获、语音识别、Apple Translation 和会议历史均在本机处理，应用不保存音频。AI 能力不属于离线主链路：当用户配置并触发服务后，会议文字会发送给所选第三方 Structured Outputs 接口；从 Markdown 生成词表时，所选文件正文也会分批发送给该服务，文件名不发送，原文件不会上传；正文、来源摘录和未保存候选只保留在本次窗口的内存中。会后优化还会发送当前完整的已保存词表；智能洞察只发送最近上下文中命中的词条；会议标题不发送词表。音频不会由 AI 链路上传。
+Audio capture, speech recognition, Apple Translation, and meeting history are handled locally. The app does not save audio. AI features are separate from the offline captioning pipeline: configured services receive meeting text when invoked. Markdown vocabulary generation sends selected file contents in batches, without filenames or uploading the original files. Content, source excerpts, and unsaved candidates stay in the window's in-memory session. Refinement also sends the full saved vocabulary; insights send only terms matched in recent context; titles send no vocabulary. The AI pipeline never uploads audio.
 
-如果本地 SwiftData 容器无法打开，应用会明确阻止新会议并显示错误，不会静默改用内存存储制造“已保存”假象。
+If the local SwiftData container cannot open, the app blocks new meetings and displays an error. It does not silently switch to memory storage and imply that data was saved.
 
-应用标识统一为 `com.plus.samewave`，UserDefaults 和 Keychain 使用该身份，语音模型缓存位于 `Application Support/SameWave/SpeechLanguageModel`。新版不读取或迁移旧身份下的设置、词表、密钥和模型缓存；安装后需重新配置，系统权限可能需要重新授权。现有数据文件不会被主动删除，历史记录的 SwiftData 模型与存储实现不变。
+The bundle ID is `com.plus.samewave`, shared by the UserDefaults and Keychain namespaces. Speech models are cached under `Application Support/SameWave/SpeechLanguageModel`. Settings, vocabulary, keys, and model caches from an older app identity are not read or migrated; moving from that identity requires reconfiguration and may require permissions again. Existing data files are not deleted, and the SwiftData history model and storage implementation are unchanged. The English display-name change retains the current bundle ID and storage namespaces.
 
-## 仓库结构
+## Repository layout
 
 ```text
 .
 ├── Sources/
-│   ├── App/          # 应用入口、主窗口、设置导航与 macOS 窗口装配
-│   ├── AI/           # 全应用 AI 配置、服务商、请求与响应解析
-│   ├── Capture/      # 系统音频、麦克风与 Apple Speech I/O
-│   ├── Meeting/      # 实时会话、Section 状态与翻译
-│   ├── History/      # SwiftData 历史、详情与导出
-│   ├── Insights/     # 洞察、优化、标题与词表生成等 AI 用例
-│   ├── Shared/       # 跨领域共享的小型基础能力
-│   └── Resources/    # Asset Catalog、Info.plist 与 entitlements
-├── Tests/        # 状态机、翻译调度、持久化与 AI 纯逻辑测试
-├── doc/          # 架构、流水线、数据、AI、决策和开发指南
-├── AGENTS.md     # 仓库内协作与验证约束
-├── project.yml  # XcodeGen 工程声明，是构建配置的事实来源
-└── build.sh     # 本机签名、安装与启动脚本
+│   ├── App/          # App entry, main window, settings navigation, macOS integration
+│   ├── AI/           # Shared AI configuration, providers, requests, response parsing
+│   ├── Capture/      # System audio, microphone, and Apple Speech I/O
+│   ├── Meeting/      # Live sessions, Section state, and translation
+│   ├── History/      # SwiftData history, details, and export
+│   ├── Insights/     # Insights, refinement, titles, and vocabulary generation
+│   ├── Shared/       # Small utilities shared across domains
+│   └── Resources/    # Asset Catalog, Info.plist, and entitlements
+├── Tests/            # State machines, translation scheduling, persistence, AI logic
+├── doc/              # Architecture, pipelines, data, AI, decisions, development
+├── AGENTS.md         # Collaboration and validation rules
+├── project.yml       # XcodeGen declaration; build configuration source of truth
+└── build.sh          # Local signing, installation, and launch
 ```
 
-`SameWave.xcodeproj` 由 XcodeGen 生成且不纳入版本控制。源码级架构、状态机、数据模型和验证方式见 [项目文档索引](doc/README.md)。
+`SameWave.xcodeproj` is generated by XcodeGen and excluded from version control. See the [documentation index](doc/README.md) for architecture, state machines, data models, and validation.
 
-## 当前边界
+## Current boundaries
 
-- 一对一场景通过双物理通道区分“我/对方”；多个远端参与者不会被进一步分离。
-- ScreenCaptureKit 捕获除本应用外的全部系统输出，不提供按会议应用筛选。
-- 当前语言范围固定为“英语”和“简体中文”，支持两个翻译方向及两种同语言直显组合。
-- 单元测试覆盖可确定执行的领域逻辑；真实音频、权限、Speech 和 Translation 仍需在已签名应用中做人工 smoke test。
+- Two physical channels distinguish you from the other participant in one-on-one meetings; multiple remote participants are not separated.
+- ScreenCaptureKit captures all system output except this app, without a meeting-app selector.
+- The language set is English and Simplified Chinese, supporting both translation directions and both same-language combinations.
+- Unit tests cover deterministic domain logic. Real audio, permissions, Speech, and Translation still require manual smoke tests in the signed app.

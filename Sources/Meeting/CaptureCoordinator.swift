@@ -77,7 +77,7 @@ final class CaptureCoordinator {
         translation.onFailed = { [weak self] request in
             guard let self, request.sessionID == self.sessionID else { return }
             self.store.failTranslation(id: request.sectionId, generation: request.generation)
-            self.statusMessage = "翻译暂时失败，已保留原文"
+            self.statusMessage = "Translation is temporarily unavailable. Source text has been kept."
             self.persistTranslationIfPaused()
         }
     }
@@ -87,7 +87,7 @@ final class CaptureCoordinator {
     func startGlobal() async {
         guard sessionState == .idle else { return }
         guard let history else {
-            statusMessage = "历史数据库不可用，无法开始会议"
+            statusMessage = "Cannot start a meeting because the history database is unavailable"
             return
         }
 
@@ -107,7 +107,7 @@ final class CaptureCoordinator {
             do {
                 try discardEmptyActiveRecord()
             } catch {
-                message += "；空记录清理失败：\(error.localizedDescription)"
+                message += "; could not remove the empty record: \(error.localizedDescription)"
             }
             resetSession(keepingTranscript: false)
             statusMessage = message
@@ -120,15 +120,15 @@ final class CaptureCoordinator {
             } catch {
                 guard sessionID == expectedSessionID, sessionState == .starting else { return }
                 if !(error is CancellationError) {
-                    statusMessage = "麦克风不可用，仅记录系统音频：\(error.localizedDescription)"
+                    statusMessage = "Microphone unavailable; recording system audio only: \(error.localizedDescription)"
                 }
             }
         }
 
         guard sessionID == expectedSessionID, sessionState == .starting else { return }
         sessionState = .recording
-        if statusMessage == "启动中…" || statusMessage == "模型就绪" {
-            statusMessage = "聆听系统音频…"
+        if statusMessage == "Starting…" || statusMessage == "Model ready" {
+            statusMessage = "Listening to system audio…"
         }
         startAutosave()
     }
@@ -138,7 +138,7 @@ final class CaptureCoordinator {
         guard sessionState == .recording else { return false }
         freezeElapsedTime()
         sessionState = .pausing
-        statusMessage = "正在暂停…"
+        statusMessage = "Pausing…"
 
         await tearDownPipelines()
         sealOpenTurn()
@@ -148,10 +148,10 @@ final class CaptureCoordinator {
         sessionState = .paused
         do {
             try persistActiveRecord(status: .paused)
-            statusMessage = translationsFinished ? "已暂停" : "已暂停，部分译文尚未完成"
+            statusMessage = translationsFinished ? "Paused" : "Paused; some translations are incomplete"
             return true
         } catch {
-            statusMessage = "已暂停，但保存失败：\(error.localizedDescription)"
+            statusMessage = "Paused, but saving failed: \(error.localizedDescription)"
             return false
         }
     }
@@ -161,7 +161,7 @@ final class CaptureCoordinator {
         activeVocabulary = sourceLanguage == .english ? speechVocabularySettings.phrases : []
         sessionState = .starting
         sessionStartedAt = Date()
-        statusMessage = "启动中…"
+        statusMessage = "Starting…"
         let expectedSessionID = sessionID
 
         do {
@@ -175,10 +175,10 @@ final class CaptureCoordinator {
             do {
                 try history?.setStatus(activeRecord, .paused)
             } catch {
-                statusMessage = "恢复失败且无法保存暂停状态：\(error.localizedDescription)"
+                statusMessage = "Could not resume or save the paused state: \(error.localizedDescription)"
                 return
             }
-            statusMessage = "恢复失败：\(error.localizedDescription)"
+            statusMessage = "Could not resume: \(error.localizedDescription)"
             return
         }
 
@@ -188,14 +188,14 @@ final class CaptureCoordinator {
             } catch {
                 guard sessionID == expectedSessionID, sessionState == .starting else { return }
                 if !(error is CancellationError) {
-                    statusMessage = "麦克风不可用，仅记录系统音频：\(error.localizedDescription)"
+                    statusMessage = "Microphone unavailable; recording system audio only: \(error.localizedDescription)"
                 }
             }
         }
         guard sessionID == expectedSessionID, sessionState == .starting else { return }
         sessionState = .recording
-        if statusMessage == "启动中…" || statusMessage == "模型就绪" {
-            statusMessage = "聆听系统音频…"
+        if statusMessage == "Starting…" || statusMessage == "Model ready" {
+            statusMessage = "Listening to system audio…"
         }
         startAutosave()
     }
@@ -204,7 +204,7 @@ final class CaptureCoordinator {
         guard sessionState.hasActiveSession, sessionState != .stopping else { return }
         if sessionStartedAt != nil { freezeElapsedTime() }
         sessionState = .stopping
-        statusMessage = "正在收尾…"
+        statusMessage = "Finishing…"
 
         await tearDownPipelines()
         sealOpenTurn()
@@ -219,14 +219,14 @@ final class CaptureCoordinator {
             try history.finish(record, sections: store.sections, endedAt: endedAt)
         } catch {
             sessionState = .paused
-            statusMessage = "会议保存失败，可重试结束：\(error.localizedDescription)"
+            statusMessage = "Could not save the meeting. Try ending it again: \(error.localizedDescription)"
             return
         }
 
         let hasTranscript = record.lineCount > 0
         selectedHistoryRecord = hasTranscript ? record : nil
         resetSession(keepingTranscript: true)
-        statusMessage = translationsFinished ? "" : "已保存原文，部分译文未完成"
+        statusMessage = translationsFinished ? "" : "Source text saved; some translations are incomplete"
     }
 
     func startNewMeeting() async {
@@ -242,7 +242,7 @@ final class CaptureCoordinator {
             try mountPaused(record)
             selectedHistoryRecord = nil
         } catch {
-            statusMessage = "会议恢复失败：\(error.localizedDescription)"
+            statusMessage = "Could not restore the meeting: \(error.localizedDescription)"
         }
     }
 
@@ -267,7 +267,7 @@ final class CaptureCoordinator {
                 try mountPaused(record)
             }
         } catch {
-            statusMessage = "上次会议恢复失败：\(error.localizedDescription)"
+            statusMessage = "Could not restore the previous meeting: \(error.localizedDescription)"
         }
     }
 
@@ -278,7 +278,7 @@ final class CaptureCoordinator {
             try history.delete(record)
             if wasSelected { selectedHistoryRecord = nil }
         } catch {
-            statusMessage = "删除失败：\(error.localizedDescription)"
+            statusMessage = "Could not delete: \(error.localizedDescription)"
         }
     }
 
@@ -286,7 +286,7 @@ final class CaptureCoordinator {
         do {
             try persistActiveRecord(status: sessionState == .recording ? .recording : .paused)
         } catch {
-            statusMessage = "保存失败：\(error.localizedDescription)"
+            statusMessage = "Could not save: \(error.localizedDescription)"
         }
     }
 
@@ -399,7 +399,7 @@ final class CaptureCoordinator {
                 guard sessionID == expectedSessionID else { return }
                 captionMyMic = false
                 if !(error is CancellationError) {
-                    statusMessage = "麦克风不可用：\(error.localizedDescription)"
+                    statusMessage = "Microphone unavailable: \(error.localizedDescription)"
                 }
             }
         } else {
@@ -447,9 +447,9 @@ final class CaptureCoordinator {
         guard sessionID == expectedSessionID else { return }
         guard sessionState == .recording || sessionState == .starting else { return }
         if speaker == .remote {
-            statusMessage = "系统音频错误：\(error.localizedDescription)"
+            statusMessage = "System audio error: \(error.localizedDescription)"
         } else {
-            statusMessage = "麦克风错误，已停止麦克风字幕：\(error.localizedDescription)"
+            statusMessage = "Microphone error; microphone captions stopped: \(error.localizedDescription)"
             captionMyMic = false
             await stopMicrophonePipeline()
         }
@@ -540,7 +540,7 @@ final class CaptureCoordinator {
         meetingStartedAt = now
         pausedElapsed = 0
         sessionState = .starting
-        statusMessage = "启动中…"
+        statusMessage = "Starting…"
     }
 
     private func freezeElapsedTime() {
@@ -565,7 +565,7 @@ final class CaptureCoordinator {
                 do {
                     try self.persistActiveRecord(status: .recording)
                 } catch {
-                    self.statusMessage = "自动保存失败：\(error.localizedDescription)"
+                    self.statusMessage = "Autosave failed: \(error.localizedDescription)"
                 }
             }
         }
@@ -586,7 +586,7 @@ final class CaptureCoordinator {
         do {
             try persistActiveRecord(status: .paused)
         } catch {
-            statusMessage = "译文保存失败：\(error.localizedDescription)"
+            statusMessage = "Could not save translations: \(error.localizedDescription)"
         }
     }
 
@@ -600,7 +600,7 @@ final class CaptureCoordinator {
             do {
                 try persistActiveRecord(status: .paused)
             } catch {
-                statusMessage = "会议保存失败：\(error.localizedDescription)"
+                statusMessage = "Could not save the meeting: \(error.localizedDescription)"
                 return false
             }
         case .idle:
@@ -630,7 +630,7 @@ final class CaptureCoordinator {
         sessionStartedAt = nil
         activeRecord = record
         sessionState = .paused
-        statusMessage = "已暂停"
+        statusMessage = "Paused"
     }
 
     private func persistSelection() {

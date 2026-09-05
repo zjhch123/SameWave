@@ -36,8 +36,9 @@ struct InsightInspector: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("智能洞察")
+            Text("AI Insights")
                 .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
             if isGenerating { ProgressView().controlSize(.small) }
             Spacer()
             if selectedRecord != nil { generationButton }
@@ -47,8 +48,8 @@ struct InsightInspector: View {
                     .foregroundStyle(CaptionsView.muted)
             }
             .buttonStyle(.plain)
-            .help("AI 服务设置")
-            .accessibilityLabel("AI 服务设置")
+            .help("AI Service Settings")
+            .accessibilityLabel("AI Service Settings")
         }
         .frame(height: 48)
         .padding(.horizontal, 16)
@@ -100,26 +101,30 @@ struct InsightInspector: View {
         } else if case .failed(let message) = generationState {
             centeredHint(message, color: CaptionsView.danger)
         } else {
-            centeredHint("点击右上「生成洞察」，提炼话题、待办与决策。", color: CaptionsView.muted)
+            centeredHint("Use the sparkle button above to summarize topics, action items, and decisions.", color: CaptionsView.muted)
         }
     }
 
     private var generationButton: some View {
         let hasResult = historyInsight?.isEmpty == false
+        let label = !aiSettings.isConfigured
+            ? "Configure AI Services"
+            : hasResult ? "Regenerate" : "Generate Insights"
         return Button {
             if aiSettings.isConfigured { generateHistoryInsight() }
             else { openAISettings() }
         } label: {
             Label(
-                !aiSettings.isConfigured
-                    ? "配置 AI 服务"
-                    : hasResult ? "重新生成" : "生成洞察",
+                label,
                 systemImage: hasResult ? "arrow.clockwise" : "sparkles"
             )
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(CaptionsView.accent)
         }
+        .labelStyle(.iconOnly)
         .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
         .disabled(generationState == .generating)
     }
 
@@ -171,7 +176,7 @@ struct InsightInspector: View {
                 return
             } catch let error as LLMError {
                 guard generationToken == token else { return }
-                generationState = .failed(error.errorDescription ?? "生成失败")
+                generationState = .failed(error.errorDescription ?? "Generation failed")
             } catch {
                 guard generationToken == token else { return }
                 generationState = .failed(error.localizedDescription)

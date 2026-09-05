@@ -5,7 +5,7 @@ import Foundation
 @MainActor
 enum TranscriptExporter {
 
-    private static let header = "# 会议字幕纪要\n\n"
+    private static let header = "# Meeting Transcript\n\n"
 
     // MARK: - Markdown
 
@@ -15,11 +15,11 @@ enum TranscriptExporter {
     static func markdown(store: CaptionStore, showsSourceEcho: Bool) -> String {
         let entries = store.sections
         var md = header
-        md += "> 由 同频 本地生成 · 共 \(entries.count) 段\n\n---\n\n"
+        md += "> Generated locally by SameWave · Sections: \(entries.count)\n\n---\n\n"
         for (i, sec) in entries.enumerated() {
             let target = sec.targetText.trimmed
-            let who = sec.speaker == .mine ? "我" : "对方"
-            if !target.isEmpty { md += "**\(i + 1). \(who)：** \(target)\n\n" }
+            let who = sec.speaker == .mine ? "Me" : "Other party"
+            if !target.isEmpty { md += "**\(i + 1). \(who):** \(target)\n\n" }
             appendSourceEcho(&md, source: sec.sourceText, target: target, enabled: showsSourceEcho)
         }
         return md
@@ -32,47 +32,47 @@ enum TranscriptExporter {
         let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
         let refined = record.hasRefinement
         var md = header
-        let refinedNote = refined ? " · AI 优化版" : ""
-        md += "> 由 同频 本地生成 · \(record.displayDate) · 共 \(lines.count) 段 · \(record.durationText)\(refinedNote)\n\n---\n\n"
+        let refinedNote = refined ? " · AI-refined" : ""
+        md += "> Generated locally by SameWave · \(record.displayDate) · Sections: \(lines.count) · \(record.durationText)\(refinedNote)\n\n---\n\n"
         // Lead with the cached AI insight (if the user generated one) so a shared minute
         // opens with the summary before the full transcript.
         appendInsight(&md, record.insight)
         for (i, line) in lines.enumerated() {
             let target = line.displayTarget(refined: refined).trimmed
             let source = line.displaySource(refined: refined)
-            let who = line.isMine ? "我" : "对方"
+            let who = line.isMine ? "Me" : "Other party"
             let head = target.isEmpty ? source : target
-            md += "**\(i + 1). [\(line.timeText)] \(who)：** \(head)\n\n"
+            md += "**\(i + 1). [\(line.timeText)] \(who):** \(head)\n\n"
             appendSourceEcho(&md, source: source, target: target,
                              enabled: record.showsSourceEcho)
         }
         return md
     }
 
-    /// Append the cached insight as a "## 智能洞察" section (topic / suggestions / todos /
+    /// Append the cached insight as a "## AI Insights" section (topic / suggestions / todos /
     /// decisions). No-op when there's no cached insight, so exports of un-analyzed
     /// meetings are unchanged.
     private static func appendInsight(_ md: inout String, _ insight: InsightResult?) {
         guard let insight, !insight.isEmpty else { return }
-        md += "## 智能洞察\n\n"
+        md += "## AI Insights\n\n"
         if !insight.topic.trimmed.isEmpty {
-            md += "**话题：** \(insight.topic)\n\n"
+            md += "**Topic:** \(insight.topic)\n\n"
         }
         if let answer = insight.answer?.trimmed, !answer.isEmpty {
-            md += "**参考回答：** \(answer)\n\n"
+            md += "**Suggested Answer:** \(answer)\n\n"
         }
         if !insight.suggestions.isEmpty {
-            md += "**建议：**\n\n"
+            md += "**Suggestions:**\n\n"
             for s in insight.suggestions { md += "- \(s)\n" }
             md += "\n"
         }
         if !insight.todos.isEmpty {
-            md += "**待办：**\n\n"
-            for t in insight.todos { md += "- \(t.who)：\(t.what)\n" }
+            md += "**Action Items:**\n\n"
+            for t in insight.todos { md += "- \(t.who): \(t.what)\n" }
             md += "\n"
         }
         if !insight.decisions.isEmpty {
-            md += "**决定：**\n\n"
+            md += "**Decisions:**\n\n"
             for d in insight.decisions { md += "- \(d)\n" }
             md += "\n"
         }
@@ -106,16 +106,16 @@ enum TranscriptExporter {
     private static func presentSavePanel(markdown md: String) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "md")!]
-        panel.nameFieldStringValue = "会议纪要-\(DateFormat.fileStamp.string(from: Date())).md"
+        panel.nameFieldStringValue = "meeting-transcript-\(DateFormat.fileStamp.string(from: Date())).md"
         panel.canCreateDirectories = true
-        panel.title = "导出会议纪要"
+        panel.title = "Export Meeting Transcript"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             do {
                 try md.write(to: url, atomically: true, encoding: .utf8)
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "导出失败"
+                alert.messageText = "Export Failed"
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
             }

@@ -37,7 +37,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             throw LLMError.notConfigured
         }
         guard let url = OpenAIEndpointResolver.chatCompletionsURL(from: apiAddress) else {
-            throw LLMError.network("无效的服务地址")
+            throw LLMError.network("Invalid service URL")
         }
 
         // Clamp temperature to the vendor's ceiling (Kimi caps at 1). Low temp keeps the
@@ -78,7 +78,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?
                 .error.message.trimmed
             throw LLMError.invalidRequest(
-                message.flatMap { $0.isEmpty ? nil : $0 } ?? "请求参数或 JSON Schema 不被支持"
+                message.flatMap { $0.isEmpty ? nil : $0 } ?? "Unsupported request parameters or JSON Schema"
             )
         default:        throw LLMError.server(http.statusCode)
         }
@@ -95,7 +95,7 @@ struct OpenAICompatibleProvider: LLMProvider {
         switch choice.finishReason {
         case "stop": break
         case "length": throw LLMError.truncated
-        case "content_filter": throw LLMError.refused("内容安全策略阻止了输出")
+        case "content_filter": throw LLMError.refused("The content safety policy blocked the response")
         default: throw LLMError.badResponse
         }
         guard let content = choice.message.content else { throw LLMError.emptyContent }
@@ -127,7 +127,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             throw LLMError.notConfigured
         }
         guard let url = OpenAIEndpointResolver.modelsURL(from: apiAddress) else {
-            throw LLMError.network("无效的服务地址")
+            throw LLMError.network("Invalid service URL")
         }
 
         var req = URLRequest(url: url)

@@ -19,9 +19,9 @@ final class MicrophoneCapture {
         var errorDescription: String? {
             switch self {
             case .notAuthorized:
-                "需要在「系统设置 › 隐私与安全性 › 麦克风」中允许同频"
+                "Allow SameWave in System Settings › Privacy & Security › Microphone"
             case .engineStart(let error):
-                "麦克风启动失败：\(error.localizedDescription)"
+                "Could not start the microphone: \(error.localizedDescription)"
             }
         }
     }

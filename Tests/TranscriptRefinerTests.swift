@@ -1,5 +1,5 @@
 import XCTest
-@testable import 同频
+@testable import SameWave
 
 @MainActor
 final class TranscriptRefinerTests: XCTestCase {
@@ -37,14 +37,14 @@ final class TranscriptRefinerTests: XCTestCase {
             glossary: []
         )
 
-        XCTAssertTrue(prompt.contains("源语言是简体中文，目标语言是英语"))
-        XCTAssertTrue(prompt.contains("target 必须使用英语"))
-        XCTAssertTrue(prompt.contains("JSON 对象"))
+        XCTAssertTrue(prompt.contains("The source language is Simplified Chinese and the target language is English"))
+        XCTAssertTrue(prompt.contains("target must be in English"))
+        XCTAssertTrue(prompt.contains("JSON object"))
         XCTAssertTrue(prompt.contains("glossary"))
         XCTAssertTrue(prompt.contains("lines"))
         XCTAssertTrue(prompt.contains("- XPay"))
         XCTAssertTrue(prompt.contains("- M365 Copilot"))
-        XCTAssertTrue(prompt.contains("不得强行植入未出现的词"))
+        XCTAssertTrue(prompt.contains("do not insert terms absent from the conversation"))
     }
 
     func testSameLanguagePromptExplicitlyDisablesTranslation() {
@@ -54,10 +54,26 @@ final class TranscriptRefinerTests: XCTestCase {
             glossary: []
         )
 
-        XCTAssertTrue(prompt.contains("源语言和目标语言相同，不要翻译"))
-        XCTAssertTrue(prompt.contains("target 返回 null"))
-        XCTAssertFalse(prompt.contains("重新翻译"))
-        XCTAssertTrue(prompt.contains("（暂无用户词表）"))
+        XCTAssertTrue(prompt.contains("The source and target languages are the same; do not translate"))
+        XCTAssertTrue(prompt.contains("Return null for target"))
+        XCTAssertFalse(prompt.contains("translate it again"))
+        XCTAssertTrue(prompt.contains("(No user vocabulary)"))
+    }
+
+    func testEnglishPromptsPreserveEveryMeetingLanguagePair() {
+        for source in MeetingLanguage.allCases {
+            for target in MeetingLanguage.allCases {
+                let pair = MeetingLanguagePair(source: source, target: target)
+                let prompt = TranscriptRefiner.prompt(languagePair: pair, configuredVocabulary: [], glossary: [])
+                XCTAssertTrue(prompt.contains("source must remain in \(source.label)"))
+                if pair.needsTranslation {
+                    XCTAssertTrue(prompt.contains("target must be in \(target.label)"))
+                } else {
+                    XCTAssertTrue(prompt.contains("do not translate"))
+                    XCTAssertTrue(prompt.contains("Return null for target"))
+                }
+            }
+        }
     }
 
     func testDecodedLineStripsEchoedSpeakerPrefixes() throws {

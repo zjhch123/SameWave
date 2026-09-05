@@ -21,10 +21,10 @@ struct VocabularyImportWindow: View {
                 emptyState
             } else {
                 HStack {
-                    Text("审核新词").font(.headline)
+                    Text("Review New Terms").font(.headline)
                     Spacer()
-                    Button("全选") { controller.selectAll(true) }
-                    Button("全不选") { controller.selectAll(false) }
+                    Button("Select All") { controller.selectAll(true) }
+                    Button("Deselect All") { controller.selectAll(false) }
                 }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
@@ -48,27 +48,27 @@ struct VocabularyImportWindow: View {
             allowedContentTypes: Self.markdownContentTypes,
             allowsMultipleSelection: true
         ) { controller.handleFileSelection($0) }
-        .confirmationDialog("放弃本次未保存的新词和进度，选择其他文件？",
+        .confirmationDialog("Discard unsaved terms and progress, and choose other files?",
                             isPresented: $isConfirmingReplacement) {
-            Button("选择其他文件", role: .destructive) { isChoosingMarkdown = true }
+            Button("Choose Other Files", role: .destructive) { isChoosingMarkdown = true }
         } message: {
-            Text("已保存到词表的内容不会受影响；取消文件选择仍会保留本次结果。")
+            Text("Saved vocabulary is unaffected. Cancelling the file picker keeps the current results.")
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(controller.state == .idle ? "从 Markdown 生成词表" : "生成与审核")
+                Text(controller.state == .idle ? "Generate Vocabulary from Markdown" : "Generate and Review")
                     .font(.title2.weight(.semibold))
                 Spacer()
-                if controller.isRunning { Button("停止") { controller.stop() } }
+                if controller.isRunning { Button("Stop") { controller.stop() } }
             }
             if controller.state == .preparing {
-                Text("正在读取文件…").foregroundStyle(.secondary)
+                Text("Reading files…").foregroundStyle(.secondary)
                 ProgressView().controlSize(.small)
             } else if !controller.requests.isEmpty {
-                Text("已完成 \(controller.completedCount)/\(controller.requests.count)，发现 \(controller.discoveredCount) 个新词")
+                Text("Completed \(controller.completedCount)/\(controller.requests.count) · New terms: \(controller.discoveredCount)")
                     .foregroundStyle(.secondary)
                 if controller.isRunning {
                     ProgressView(value: Double(controller.completedCount), total: Double(controller.requests.count))
@@ -77,8 +77,8 @@ struct VocabularyImportWindow: View {
                     }
                 } else if controller.incompleteCount > 0 {
                     Text(controller.failedCount > 0
-                         ? "\(controller.failedCount) 个请求失败，已生成的新词仍可保存。"
-                         : "已停止，已生成的新词仍可保存。")
+                         ? "Failed requests: \(controller.failedCount). You can still save the generated terms."
+                         : "Stopped. You can still save the generated terms.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
             }
@@ -92,14 +92,14 @@ struct VocabularyImportWindow: View {
         VStack(spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 30)).foregroundStyle(.secondary)
-            Text(controller.isRunning ? "新词会陆续显示在这里" :
-                    (controller.state == .idle ? "选择文件，提取专有名词" : "暂无待审核的新词"))
+            Text(controller.isRunning ? "New terms will appear here" :
+                    (controller.state == .idle ? "Choose files to extract proper names" : "No new terms to review"))
                 .font(.headline)
-            Text(controller.isRunning ? "可以边生成边审核，不必等全部完成。" :
-                    "只展示与现有词表去重后的结果。")
+            Text(controller.isRunning ? "You can review terms while generation continues." :
+                    "Only terms absent from your saved vocabulary are shown.")
                 .foregroundStyle(.secondary)
             if controller.state == .idle {
-                Text("文件正文会发送到当前配置的 AI 服务。")
+                Text("File contents will be sent to your configured AI service.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -114,7 +114,7 @@ struct VocabularyImportWindow: View {
             }
             HStack(spacing: 10) {
                 if !controller.isRunning {
-                    Button(controller.requests.isEmpty ? "选择文件" : "选择其他文件") {
+                    Button(controller.requests.isEmpty ? "Choose Files" : "Choose Other Files") {
                         if !controller.candidates.isEmpty || controller.incompleteCount > 0 {
                             isConfirmingReplacement = true
                         } else {
@@ -124,10 +124,10 @@ struct VocabularyImportWindow: View {
                     .disabled(!controller.isConfigured)
                 }
                 if controller.canRetry {
-                    Button("重试未完成部分") { controller.retryIncomplete() }
+                    Button("Retry Incomplete Requests") { controller.retryIncomplete() }
                 }
                 Spacer()
-                Button("添加并保存 \(controller.selectedPhrases.count) 个词") {
+                Button("Add and Save (\(controller.selectedPhrases.count))") {
                     controller.saveSelected()
                 }
                 .buttonStyle(.borderedProminent)
@@ -137,7 +137,7 @@ struct VocabularyImportWindow: View {
     }
 
     private var diagnostics: some View {
-        DisclosureGroup("请求详情") {
+        DisclosureGroup("Request Details") {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(controller.attempts) { attempt in
@@ -148,7 +148,7 @@ struct VocabularyImportWindow: View {
                 .padding(.vertical, 6)
             }
             .frame(maxHeight: 140)
-            Text("耗时从请求发起计至完整响应及校验结束，包含网络与服务端处理。")
+            Text("Timing runs from request start through the complete response and validation, including network and server processing.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .font(.caption)
@@ -156,11 +156,11 @@ struct VocabularyImportWindow: View {
 
     private func attemptStatus(_ attempt: VocabularyAttempt) -> String {
         if case .failed = attempt.outcome, attempt.number <= VocabularyGenerator.maximumRetriesPerBatch {
-            return "请求 \(attempt.batchNumber) 未成功，准备第 \(attempt.number)/2 次重试…"
+            return "Request \(attempt.batchNumber) failed. Preparing retry \(attempt.number)/2…"
         }
         return attempt.number == 1
-            ? "正在处理请求 \(attempt.batchNumber)…"
-            : "正在重试请求 \(attempt.batchNumber)（\(attempt.number - 1)/2）…"
+            ? "Processing request \(attempt.batchNumber)…"
+            : "Retrying request \(attempt.batchNumber) (\(attempt.number - 1)/2)…"
     }
 }
 
@@ -170,23 +170,23 @@ private struct VocabularyCandidateRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Toggle("选择 \(candidate.text)", isOn: $candidate.isSelected)
+                Toggle("Select \(candidate.text)", isOn: $candidate.isSelected)
                     .toggleStyle(.checkbox).labelsHidden()
-                TextField("词条", text: $candidate.text)
+                TextField("Term", text: $candidate.text)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("编辑 \(candidate.originalPhrase)")
+                    .accessibilityLabel("Edit \(candidate.originalPhrase)")
             }
             if candidate.isSelected && !VocabularyGenerator.isValidPhrase(candidate.text) {
-                Text("请输入 1–100 字符的单行词条。")
+                Text("Enter a single-line term of 1–100 characters.")
                     .font(.caption).foregroundStyle(.red)
             }
-            DisclosureGroup("来源") {
+            DisclosureGroup("Source") {
                 VStack(alignment: .leading, spacing: 6) {
                     if candidate.text != candidate.originalPhrase {
-                        Text("原始提取：\(candidate.originalPhrase)").font(.caption)
+                        Text("Extracted term: \(candidate.originalPhrase)").font(.caption)
                     }
                     if candidate.sources.isEmpty {
-                        Text("原文中未找到此拼写，请核对。")
+                        Text("This spelling was not found in the source. Please verify it.")
                     }
                     ForEach(candidate.sources, id: \.self) { source in
                         Text(source.fileName).font(.caption.weight(.medium))
@@ -207,21 +207,21 @@ private struct VocabularyAttemptRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text("请求 \(attempt.batchNumber) · \(attempt.number == 1 ? "首次" : "重试 \(attempt.number - 1)/2")")
+                Text("Request \(attempt.batchNumber) · \(attempt.number == 1 ? "Initial" : "Retry \(attempt.number - 1)/2")")
                 Spacer()
                 if let duration = attempt.duration {
-                    Text(String(format: "%.1f 秒", duration)).monospacedDigit()
+                    Text(String(format: "%.1f s", duration)).monospacedDigit()
                 } else {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(String(format: "%.0f 秒…", max(0, context.date.timeIntervalSince(attempt.startedAt))))
+                        Text(String(format: "%.0f s…", max(0, context.date.timeIntervalSince(attempt.startedAt))))
                             .monospacedDigit()
                     }
                 }
             }
             switch attempt.outcome {
-            case .running: Text("等待完整响应").foregroundStyle(.secondary)
-            case .succeeded: Text("成功").foregroundStyle(.secondary)
-            case .cancelled: Text("已停止").foregroundStyle(.secondary)
+            case .running: Text("Waiting for the complete response").foregroundStyle(.secondary)
+            case .succeeded: Text("Succeeded").foregroundStyle(.secondary)
+            case .cancelled: Text("Stopped").foregroundStyle(.secondary)
             case .failed(let message): Text(message).foregroundStyle(.orange).textSelection(.enabled)
             }
         }

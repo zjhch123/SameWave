@@ -9,7 +9,7 @@ struct MeetingSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear.frame(height: 48)
-            Text("会议记录")
+            Text("Meetings")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(CaptionsView.muted)
                 .padding(.horizontal, 16)
@@ -45,10 +45,10 @@ struct MeetingSidebar: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 22))
                 .foregroundStyle(CaptionsView.meta.opacity(0.5))
-            Text("还没有历史记录")
+            Text("No meeting history yet")
                 .font(.system(size: 12))
                 .foregroundStyle(CaptionsView.muted)
-            Text("结束一次会议后会自动保存")
+            Text("Meetings are saved automatically when they end")
                 .font(.system(size: 11))
                 .foregroundStyle(CaptionsView.muted.opacity(0.7))
             Spacer()
@@ -65,7 +65,7 @@ struct MeetingSidebar: View {
                     await coordinator.startNewMeeting()
                 }
             } label: {
-                Label("开启新会议", systemImage: "plus.circle.fill")
+                Label("Start a New Meeting", systemImage: "plus.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
                         activelyRecording ? CaptionsView.muted.opacity(0.5) : CaptionsView.accent
@@ -85,7 +85,7 @@ struct MeetingSidebar: View {
 
     private var newMeetingPlaceholder: some View {
         Button { selectedRecord = nil } label: {
-            sidebarRow(title: "新会议", subtitle: "尚未开始", highlighted: true, selected: true)
+            sidebarRow(title: "New Meeting", subtitle: "Not started", highlighted: true, selected: true)
         }
         .buttonStyle(.plain)
     }
@@ -98,7 +98,7 @@ struct MeetingSidebar: View {
         let subtitle: String
         let detail: String?
         if isUnfinished {
-            subtitle = isRecording ? "录制中…" : "已暂停"
+            subtitle = isRecording ? "Recording…" : "Paused"
             detail = nil
         } else if record.hasAITitle {
             subtitle = record.displayDate
@@ -131,7 +131,7 @@ struct MeetingSidebar: View {
         .buttonStyle(.plain)
         .contextMenu {
             if !isCurrent {
-                Button("删除", systemImage: "trash", role: .destructive) {
+                Button("Delete", systemImage: "trash", role: .destructive) {
                     coordinator.delete(record)
                 }
             }

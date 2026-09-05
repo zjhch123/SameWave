@@ -172,21 +172,21 @@ final class TranscriptRefiner {
     private static func input(batch: [TranscriptLine], context: [TranscriptLine]) -> String {
         var value = ""
         if !context.isEmpty {
-            value += "[上文（仅供参考，不要输出）]\n"
+            value += "[Previous context (reference only; do not include in output)]\n"
             for line in context {
-                value += "\(line.isMine ? "我" : "对方")：\(line.sourceText.trimmed)\n"
+                value += "\(line.isMine ? "Me" : "Other party"): \(line.sourceText.trimmed)\n"
             }
-            value += "\n[需要优化的内容]\n"
+            value += "\n[Text to refine]\n"
         }
         for line in batch {
-            value += "[\(line.orderIndex)] \(line.isMine ? "我" : "对方")：\(line.sourceText.trimmed)\n"
+            value += "[\(line.orderIndex)] \(line.isMine ? "Me" : "Other party"): \(line.sourceText.trimmed)\n"
         }
         return value
     }
 
     /// The prompt labels input lines so the model can preserve speaker context. Some
     /// models echo that label into `source` or `target`; strip only an anchored label
-    /// followed by a colon so ordinary sentences such as "我觉得…" remain untouched.
+    /// followed by a colon so ordinary first-person sentences remain untouched.
     nonisolated static func strippingSpeakerPrefix(from value: String) -> String {
         var result = value.trimmed
         let labels = ["Other party", "对方", "Me", "我"]
@@ -214,38 +214,38 @@ final class TranscriptRefiner {
                        configuredVocabulary: [String],
                        glossary: [GlossaryTerm]) -> String {
         let configuredVocabularyText = configuredVocabulary.isEmpty
-            ? "（暂无用户词表）"
+            ? "(No user vocabulary)"
             : configuredVocabulary.map { "- \($0)" }.joined(separator: "\n")
         let glossaryText = glossary.isEmpty
-            ? "（暂无上次优化术语表）"
+            ? "(No previous refinement glossary)"
             : glossary.map { "- \($0.term) → \($0.target)" }.joined(separator: "\n")
         let source = languagePair.source.label
         let target = languagePair.target.label
         if languagePair.needsTranslation {
             return """
-            你是会议记录校对与翻译助手。源语言是\(source)，目标语言是\(target)。请逐行保守清理原文并重新翻译。
-            输出必须是一个 JSON 对象：glossary 是术语数组，每项包含 term 和 target；lines 是逐行结果数组，每项包含输入序号 i、校对后的 source 和\(target)译文 target。
+            You are a meeting transcript proofreader and translator. The source language is \(source) and the target language is \(target). Conservatively clean up each source line and translate it again.
+            Return a JSON object: glossary is an array of terms with term and target; lines is an array of results with the input index i, corrected source, and the \(target) translation in target.
 
-            用户词表（仅在对话内容匹配时使用；source 采用词条的精确拼写，不得强行植入未出现的词）：
+            User vocabulary (use only when the conversation matches; preserve exact spelling in source and do not insert terms absent from the conversation):
             \(configuredVocabularyText)
 
-            上次优化术语表（翻译映射优先于自行判断）：
+            Previous refinement glossary (prefer these translation mappings over your own choices):
             \(glossaryText)
 
-            每行都必须返回，i 与输入序号一致，不得合并或改序。source 和 target 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只删口水词、根据上下文和用户词表修正明显识别错误并补标点；不增删事实，不改写含义。target 必须使用\(target)，忠实原文和术语表；品牌、产品、人名和缩写没有既定翻译时保留原文。
+            Return every line with its original index i. Do not merge or reorder lines. source and target must contain only the text, without speaker labels such as "Me" or "Other party". source must remain in \(source): only remove filler words, correct obvious recognition errors using context and user vocabulary, and add punctuation. Do not add or remove facts or change meaning. target must be in \(target), faithful to the source and glossary. Keep brands, products, personal names, and acronyms in their original form when no established translation exists.
             """
         }
         return """
-        你是\(source)会议记录整理编辑。源语言和目标语言相同，不要翻译。请逐行补标点、删口水词和明显重复。
-        输出必须是一个 JSON 对象：glossary 是术语数组，每项包含 term 和 target；lines 是逐行结果数组，每项包含输入序号 i、整理后的 source 和值为 null 的 target。
+        You are an editor of \(source) meeting transcripts. The source and target languages are the same; do not translate. Add punctuation and remove filler words and obvious repetition line by line.
+        Return a JSON object: glossary is an array of terms with term and target; lines is an array of results with the input index i, edited source, and target set to null.
 
-        用户词表（仅在对话内容匹配时使用；source 采用词条的精确拼写，不得强行植入未出现的词）：
+        User vocabulary (use only when the conversation matches; preserve exact spelling in source and do not insert terms absent from the conversation):
         \(configuredVocabularyText)
 
-        上次优化术语表：
+        Previous refinement glossary:
         \(glossaryText)
 
-        每行都必须返回，i 与输入序号一致，不得合并或改序。source 只包含正文，不要重复“我/对方”等说话人标签。source 必须保持\(source)，只在上下文匹配时采用用户词表的精确拼写，target 返回 null；不确定的内容保留原样，不得虚构事实、观点、数字或人名。
+        Return every line with its original index i. Do not merge or reorder lines. source must contain only the text, without speaker labels such as "Me" or "Other party". source must remain in \(source); use the exact spelling of user vocabulary only where the context matches. Return null for target. Leave uncertain content unchanged. Do not invent facts, opinions, numbers, or names.
         """
     }
 

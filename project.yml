@@ -25,17 +25,19 @@ targets:
     info:
       path: Sources/Resources/Info.plist
       properties:
-        CFBundleName: 同频
-        CFBundleDisplayName: 同频
+        CFBundleName: SameWave
+        CFBundleDisplayName: SameWave
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en]
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "26.0"
         # Regular app: shows a Dock icon and a main window.
         LSUIElement: false
         CFBundleIconName: AppIcon
-        NSAudioCaptureUsageDescription: "同频 taps the audio of your meeting app to transcribe and translate it on-device."
+        NSAudioCaptureUsageDescription: "SameWave taps the audio of your meeting app to transcribe and translate it on-device."
         NSMicrophoneUsageDescription: "Used only if you choose to caption your own microphone."
-        NSSpeechRecognitionUsageDescription: "同频 uses on-device speech recognition to transcribe meeting audio."
+        NSSpeechRecognitionUsageDescription: "SameWave uses on-device speech recognition to transcribe meeting audio."
         # App Transport Security: allow cleartext HTTP ONLY to local/loopback hosts
         # (127.0.0.1, localhost, *.local, private IPs) so a user can point the insight
         # provider at a self-hosted OpenAI-compatible server. External domains still
@@ -45,10 +47,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.plus.samewave
-        # The built app is named 同频.app / the process shows as 同频. The Xcode target
-        # and scheme stay ASCII "SameWave" (safe for build tooling); only the
-        # user-visible product name is Chinese.
-        PRODUCT_NAME: "同频"
+        # The app, executable, Swift module, target, and scheme share the English name.
+        PRODUCT_NAME: "SameWave"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
@@ -75,7 +75,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.plus.samewave.tests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/同频.app/Contents/MacOS/同频"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SameWave.app/Contents/MacOS/SameWave"
         BUNDLE_LOADER: "$(TEST_HOST)"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete

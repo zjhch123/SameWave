@@ -31,8 +31,8 @@ final class MeetingRecord {
     var aiTitle: String?
 
     /// When the transcript was last LLM-refined (source cleaned + translation redone),
-    /// or nil if never. Drives the "优化译文/重新优化" button label and whether the
-    /// 原始/优化 toggle appears. The refined text itself lives per-line (additive, never
+    /// or nil if never. Drives the "Refine Translation/Refine Again" button label and whether the
+    /// Original/Refined toggle appears. The refined text itself lives per-line (additive, never
     /// overwriting the originals) — see `TranscriptLine.refinedSource/refinedTarget`.
     var refinedAt: Date?
     /// Cached glossary (term → suggested Chinese / keep-original) from the last refine,
@@ -64,7 +64,7 @@ final class MeetingRecord {
 
     var durationSec: Int { max(0, Int(endedAt.timeIntervalSince(startedAt))) }
 
-    /// "2026年7月7日 18:27" — the row/header title.
+    /// "Jul 7, 2026 at 18:27" — the row/header title.
     var displayDate: String { DateFormat.dayTime.string(from: startedAt) }
 
     /// The AI title when available, otherwise the deterministic meeting date.
@@ -77,11 +77,11 @@ final class MeetingRecord {
 
     var durationText: String {
         let s = durationSec, m = s / 60, r = s % 60
-        return m > 0 ? "\(m) 分 \(r) 秒" : "\(r) 秒"
+        return m > 0 ? "\(m)m \(r)s" : "\(r)s"
     }
 
-    /// "N 段 · 时长" — the one-line summary shown in the sidebar row and stage header.
-    var metaText: String { "\(lineCount) 段 · \(durationText)" }
+    /// "N sections · duration" — the one-line summary shown in the sidebar row and stage header.
+    var metaText: String { "\(lineCount) \(lineCount == 1 ? "section" : "sections") · \(durationText)" }
 
     /// Keep the original date visible as secondary metadata after an AI title replaces it.
     var displayMetaText: String {
@@ -99,7 +99,7 @@ final class MeetingRecord {
     var insight: InsightResult? { InsightResult.decode(from: insightJSON) }
 
     /// Whether this meeting has an LLM-refined version (source cleaned + translation
-    /// redone). Gates the 原始/优化 toggle and picks refined text for export.
+    /// redone). Gates the Original/Refined toggle and picks refined text for export.
     var hasRefinement: Bool { refinedAt != nil }
 
     /// The persisted source/target pair used by recognition, translation, refinement,
@@ -169,9 +169,9 @@ final class TranscriptLine {
     /// "18:27" — the per-line spoken time.
     var timeText: String { DateFormat.clock.string(from: spokenAt) }
 
-    /// Source to display given the 原始/优化 toggle: the refined original when asked and
+    /// Source to display given the Original/Refined toggle: the refined original when asked and
     /// available, else the raw original. Falling back to the original means a page-wide
-    /// "优化" toggle still shows every line (even ones the LLM happened to skip).
+    /// "Refined" toggle still shows every line (even ones the LLM happened to skip).
     func displaySource(refined: Bool) -> String {
         if refined, let r = refinedSource?.trimmed, !r.isEmpty { return r }
         return sourceText

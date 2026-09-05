@@ -61,23 +61,27 @@ private struct StageHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             if !sidebarOpen { Color.clear.frame(width: 64) }
-            iconButton("sidebar.left", help: "切换边栏") { sidebarOpen.toggle() }
+            iconButton("sidebar.left", help: "Toggle Sidebar") { sidebarOpen.toggle() }
 
             if let record = selectedRecord {
-                HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(record.displayTitle)
                         .font(.system(size: 15, weight: .semibold))
+                        .help(record.displayTitle)
                     Text(record.displayMetaText)
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                         .foregroundStyle(CaptionsView.meta)
+                        .help(record.displayMetaText)
                 }
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 10)
-                Spacer()
+                .padding(.trailing, 8)
 
                 if record.hasRefinement {
                     Picker("", selection: $showRefined) {
-                        Text("优化").tag(true)
-                        Text("原始").tag(false)
+                        Text("Refined").tag(true)
+                        Text("Original").tag(false)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -85,7 +89,7 @@ private struct StageHeader: View {
                     .padding(.trailing, 4)
                 }
                 refineButton(record)
-                iconButton("square.and.arrow.up", help: "导出这次会议") {
+                iconButton("square.and.arrow.up", help: "Export Meeting") {
                     TranscriptExporter.exportRecord(record)
                 }
             } else {
@@ -94,7 +98,7 @@ private struct StageHeader: View {
                     liveStatus
                 }
                 Spacer()
-                iconButton("square.and.arrow.up", help: "导出全文") {
+                iconButton("square.and.arrow.up", help: "Export Transcript") {
                     TranscriptExporter.exportWithPanel(
                         store: coordinator.store,
                         showsSourceEcho: coordinator.languagePair.needsTranslation
@@ -104,8 +108,8 @@ private struct StageHeader: View {
             }
         }
         .padding(.horizontal, 16)
-        .alert("操作失败", isPresented: showsSaveError) {
-            Button("好") { saveError = nil }
+        .alert("Operation Failed", isPresented: showsSaveError) {
+            Button("OK") { saveError = nil }
         } message: {
             Text(saveError ?? "")
         }
@@ -131,7 +135,7 @@ private struct StageHeader: View {
             }
             MeetingTimer(coordinator: coordinator)
             if coordinator.isPaused {
-                Text("已暂停")
+                Text("Paused")
                     .font(.system(size: 11))
                     .foregroundStyle(CaptionsView.muted)
             }
@@ -164,12 +168,12 @@ private struct StageHeader: View {
         let busy: Bool = if case .refining = state { true } else { false }
         let failed: Bool = if case .error = state { true } else { false }
         let label: String = switch state {
-        case .refining(let done, let total): "优化中 \(done)/\(total)"
-        case .error: "优化失败，重试"
+        case .refining(let done, let total): "Refining \(done)/\(total)"
+        case .error: "Refinement Failed — Retry"
         case .idle:
-            if !configured { "配置 AI 服务" }
-            else if record.hasRefinement { "重新优化" }
-            else { record.languagePair.needsTranslation ? "优化译文" : "优化原文" }
+            if !configured { "Configure AI Services" }
+            else if record.hasRefinement { "Refine Again" }
+            else { record.languagePair.needsTranslation ? "Refine Translation" : "Refine Transcript" }
         }
 
         return Button {
@@ -179,17 +183,19 @@ private struct StageHeader: View {
                 settingsNavigation.openAISettings { openSettings() }
             }
         } label: {
-            HStack(spacing: 5) {
+            Group {
                 if busy {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: failed ? "exclamationmark.arrow.circlepath" : "wand.and.stars")
                 }
-                Text(label).font(.system(size: 12, weight: .medium))
             }
+            .frame(width: 28, height: 28)
             .foregroundStyle(failed ? CaptionsView.danger : CaptionsView.accent)
         }
         .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
         .disabled(busy)
         .padding(.trailing, 6)
     }
@@ -219,10 +225,10 @@ private struct StageHeader: View {
                     return
                 } catch let error as LLMError {
                     guard refinementToken == token else { return }
-                    saveError = "标题生成失败，译文优化不受影响。\n\(error.errorDescription ?? "未知错误")"
+                    saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.errorDescription ?? "Unknown error")"
                 } catch {
                     guard refinementToken == token else { return }
-                    saveError = "标题生成失败，译文优化不受影响。\n\(error.localizedDescription)"
+                    saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.localizedDescription)"
                 }
             }
         }
@@ -294,10 +300,34 @@ private struct MeetingControlDock: View {
     let coordinator: CaptureCoordinator
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                languages
+                divider
+                captureControls
+            }
+            .fixedSize()
+            VStack(spacing: 6) {
+                languages
+                captureControls
+            }
+            .fixedSize()
+        }
+        .padding(6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26))
+        .overlay(RoundedRectangle(cornerRadius: 26).stroke(.black.opacity(0.08), lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+        .padding(.horizontal, 12)
+        .disabled(coordinator.isTransitioning)
+    }
+
+    private var languages: some View {
+        LanguagePicker(coordinator: coordinator)
+            .disabled(coordinator.isRunning)
+    }
+
+    private var captureControls: some View {
         HStack(spacing: 6) {
-            LanguagePicker(coordinator: coordinator)
-                .disabled(coordinator.isRunning)
-            divider
             Button {
                 Task { await coordinator.setCaptionMyMic(!coordinator.captionMyMic) }
             } label: {
@@ -324,20 +354,15 @@ private struct MeetingControlDock: View {
                 .buttonStyle(.plain)
                 .disabled(!coordinator.sessionState.acceptsCaptureControls)
 
-                primaryButton(icon: "stop.fill", label: "结束", color: CaptionsView.fg) {
+                primaryButton(icon: "stop.fill", label: "End", color: CaptionsView.fg) {
                     Task { await coordinator.stop() }
                 }
             } else {
-                primaryButton(icon: "play.fill", label: "开始", color: CaptionsView.accent) {
+                primaryButton(icon: "play.fill", label: "Start", color: CaptionsView.accent) {
                     Task { await coordinator.startGlobal() }
                 }
             }
         }
-        .padding(6)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.black.opacity(0.08), lineWidth: 1))
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
-        .disabled(coordinator.isTransitioning)
     }
 
     private var divider: some View {
@@ -367,7 +392,7 @@ private struct LanguagePicker: View {
         HStack(spacing: 5) {
             languageMenu(
                 selection: coordinator.sourceLanguage,
-                accessibilityLabel: "源语言"
+                accessibilityLabel: "Source Language"
             ) { coordinator.sourceLanguage = $0 }
 
             Image(systemName: "arrow.right")
@@ -376,7 +401,7 @@ private struct LanguagePicker: View {
 
             languageMenu(
                 selection: coordinator.targetLanguage,
-                accessibilityLabel: "目标语言"
+                accessibilityLabel: "Target Language"
             ) { coordinator.targetLanguage = $0 }
         }
         .fixedSize()
@@ -415,7 +440,7 @@ private struct LanguagePicker: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("\(accessibilityLabel)：\(selection.label)")
+        .help("\(accessibilityLabel): \(selection.label)")
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(selection.label)
     }

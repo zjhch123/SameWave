@@ -24,15 +24,15 @@ actor NativeSpeechEngine {
         var errorDescription: String? {
             switch self {
             case .notAuthorized:
-                "需要在「系统设置 › 隐私与安全性 › 语音识别」中允许同频"
+                "Allow SameWave in System Settings › Privacy & Security › Speech Recognition"
             case .assetInstallation(let error):
-                "语音模型准备失败：\(error.localizedDescription)"
+                "Could not prepare the speech model: \(error.localizedDescription)"
             case .customLanguageModel(let error):
-                "词表模型准备失败：\(error.localizedDescription)"
+                "Could not prepare the vocabulary model: \(error.localizedDescription)"
             case .noCompatibleAudioFormat:
-                "语音识别器没有可用的音频格式"
+                "The speech recognizer has no available audio format"
             case .analyzerStart(let error):
-                "语音识别启动失败：\(error.localizedDescription)"
+                "Could not start speech recognition: \(error.localizedDescription)"
             }
         }
     }
@@ -78,7 +78,7 @@ actor NativeSpeechEngine {
     }
 
     func load() async throws {
-        await onStatus("请求语音识别权限…")
+        await onStatus("Requesting speech recognition permission…")
         await MainActor.run { NSApp.activate(ignoringOtherApps: true) }
         guard await Self.requestAuthorization() else { throw EngineError.notAuthorized }
 
@@ -87,7 +87,7 @@ actor NativeSpeechEngine {
         if localeID == "en-US" {
             var preset = DictationTranscriber.Preset.progressiveLongDictation
             if !contextualStrings.isEmpty {
-                await onStatus("准备词表模型…")
+                await onStatus("Preparing vocabulary model…")
                 let modelConfiguration: SFSpeechLanguageModel.Configuration
                 do {
                     modelConfiguration = try await CustomSpeechLanguageModel.shared.configuration(
@@ -124,7 +124,7 @@ actor NativeSpeechEngine {
             if let request = try await AssetInventory.assetInstallationRequest(
                 supporting: modules
             ) {
-                await onStatus("首次使用，下载语音模型…")
+                await onStatus("Downloading the speech model for first use…")
                 try await request.downloadAndInstall()
             }
         } catch {
@@ -157,7 +157,7 @@ actor NativeSpeechEngine {
         do {
             try await analyzer.setContext(analysisContext)
             try await analyzer.start(inputSequence: inputPair.stream)
-            await onStatus("模型就绪")
+            await onStatus("Model ready")
         } catch {
             throw EngineError.analyzerStart(error)
         }
@@ -177,7 +177,7 @@ actor NativeSpeechEngine {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             } catch {
                 resultsTask?.cancel()
-                await onStatus("识别收尾失败：\(error.localizedDescription)")
+                await onStatus("Could not finalize speech recognition: \(error.localizedDescription)")
             }
         }
         await resultsTask?.value
@@ -210,7 +210,7 @@ actor NativeSpeechEngine {
             } catch is CancellationError {
                 return
             } catch {
-                await onStatus("识别错误：\(error.localizedDescription)")
+                await onStatus("Speech recognition error: \(error.localizedDescription)")
             }
         }
     }
@@ -233,7 +233,7 @@ actor NativeSpeechEngine {
             } catch is CancellationError {
                 return
             } catch {
-                await onStatus("识别错误：\(error.localizedDescription)")
+                await onStatus("Speech recognition error: \(error.localizedDescription)")
             }
         }
     }
@@ -296,8 +296,8 @@ actor NativeSpeechEngine {
             }
         }
         if status == .error {
-            let detail = conversionError?.localizedDescription ?? "未知错误"
-            await onStatus("音频格式转换失败：\(detail)")
+            let detail = conversionError?.localizedDescription ?? "Unknown error"
+            await onStatus("Audio format conversion failed: \(detail)")
             return
         }
         guard outputBuffer.frameLength > 0 else { return }

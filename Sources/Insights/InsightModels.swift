@@ -103,17 +103,17 @@ extension InsightResult {
             "properties": .object([
                 "topic": .object([
                     "type": .string("string"),
-                    "description": .string("用一两句话概括当前话题，没有时返回空字符串")
+                    "description": .string("Summarize the current topic in one or two English sentences, or return an empty string")
                 ]),
                 "suggestions": .object([
                     "type": .string("array"),
-                    "description": .string("给使用者的下一步建议或追问"),
+                    "description": .string("Suggested next steps or follow-up questions for the user, in English"),
                     "items": .object(["type": .string("string")]),
                     "maxItems": .integer(3)
                 ]),
                 "answer": .object([
                     "type": .array([.string("string"), .string("null")]),
-                    "description": .string("对方刚提问时的参考回答，否则返回 null")
+                    "description": .string("A suggested answer in English if the other participant just asked a question; otherwise null")
                 ]),
                 "todos": .object([
                     "type": .string("array"),

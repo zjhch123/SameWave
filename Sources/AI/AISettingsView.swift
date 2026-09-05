@@ -58,7 +58,7 @@ struct AISettingsView: View {
             && modelDiscoveryState != .loading
     }
 
-    /// Whether the draft differs from the saved settings (enables Save / 取消).
+    /// Whether the draft differs from the saved settings (enables Save / Cancel).
     private var isDirty: Bool {
         providerID != settings.selectedProviderID
             || apiKey != settings.apiKey
@@ -71,16 +71,16 @@ struct AISettingsView: View {
             Form {
                 SwiftUI.Section {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("同频的 AI 服务")
+                        Text("AI Services for SameWave")
                             .font(.headline)
-                        Text("统一用于智能洞察、会后优化、会议标题和 Markdown 词表生成。配置并保存后，各项 AI 功能即可使用。")
+                        Text("One configuration for insights, transcript refinement, meeting titles, and Markdown vocabulary generation. Configure and save to enable all AI features.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 SwiftUI.Section {
-                    Picker("AI 服务商", selection: $providerID) {
+                    Picker("AI Provider", selection: $providerID) {
                         ForEach(LLMProviderConfig.builtIn) { cfg in
                             Text(cfg.displayName).tag(cfg.id)
                         }
@@ -94,7 +94,7 @@ struct AISettingsView: View {
                     // Custom services accept whatever address the provider documents. The
                     // resolved request URL makes the normalization visible and predictable.
                     if draftConfig.isCustom {
-                        TextField("API 地址", text: $customAPIAddress,
+                        TextField("API URL", text: $customAPIAddress,
                                   prompt: Text("https://api.example.com"))
                             .onChange(of: customAPIAddress) { _, _ in
                                 connectionDetailsChanged()
@@ -103,7 +103,7 @@ struct AISettingsView: View {
                         if let resolved = OpenAIEndpointResolver.chatCompletionsURL(
                             from: customAPIAddress
                         ) {
-                            LabeledContent("实际请求") {
+                            LabeledContent("Request URL") {
                                 Text(resolved.absoluteString)
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(CaptionsView.meta)
@@ -113,12 +113,12 @@ struct AISettingsView: View {
                         }
 
                         HStack(spacing: 10) {
-                            TextField("模型 ID", text: $customModel,
-                                      prompt: Text("获取后选择，或手动填写"))
+                            TextField("Model ID", text: $customModel,
+                                      prompt: Text("Fetch models or enter an ID"))
                                 .onChange(of: customModel) { _, _ in editingChanged() }
 
                             if !availableModels.isEmpty {
-                                Menu("选择模型") {
+                                Menu("Select Model") {
                                     ForEach(availableModels) { model in
                                         Button(modelLabel(model)) {
                                             customModel = model.id
@@ -128,7 +128,7 @@ struct AISettingsView: View {
                                 }
                             }
 
-                            Button(availableModels.isEmpty ? "获取模型" : "刷新列表") {
+                            Button(availableModels.isEmpty ? "Fetch Models" : "Refresh List") {
                                 fetchModels()
                             }
                             .disabled(!canFetchModels)
@@ -137,10 +137,10 @@ struct AISettingsView: View {
                         modelDiscoveryStatus
                     }
                 } header: {
-                    Text("连接配置")
+                    Text("Connection")
                 } footer: {
                     if draftConfig.isCustom {
-                        Text("API 地址可填写域名、带 /v1 的地址或完整 /chat/completions 地址。请使用支持结构化输出的模型，可先测试连接再保存。")
+                        Text("Enter a domain, an address ending in /v1, or a full /chat/completions URL. Use a model that supports Structured Outputs. You can test the connection before saving.")
                             .font(.system(size: 11))
                             .foregroundStyle(CaptionsView.meta)
                     }
@@ -148,12 +148,12 @@ struct AISettingsView: View {
 
                 SwiftUI.Section {
                     HStack(spacing: 10) {
-                        Button("测试连接") { runTest() }
+                        Button("Test Connection") { runTest() }
                             .disabled(!draftConfigured || testState == .testing)
                         testStatus
                     }
                 } footer: {
-                    Text("使用 AI 功能时，会议文字或所选 Markdown 正文会发送给该服务商。会后优化会附带完整词表，洞察仅附带命中的词条，标题不附带词表。音频不上传；实时字幕、翻译和手动编辑词表在本地完成，无需配置 AI。")
+                    Text("AI features send meeting text or selected Markdown content to this provider. Refinement includes your full vocabulary; insights include only matching terms; titles include none. Audio is never uploaded. Live captions, translation, and manual vocabulary editing run locally without AI configuration.")
                         .font(.system(size: 11))
                         .foregroundStyle(CaptionsView.meta)
                 }
@@ -164,19 +164,19 @@ struct AISettingsView: View {
             Divider()
             HStack(spacing: 10) {
                 if justSaved {
-                    Label("已保存", systemImage: "checkmark.circle.fill")
+                    Label("Saved", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.green)
                 } else if isDirty {
-                    Text("有未保存的更改")
+                    Text("Unsaved changes")
                         .font(.system(size: 12))
                         .foregroundStyle(CaptionsView.meta)
                 }
                 Spacer()
-                Button("取消") { revert() }
+                Button("Cancel") { revert() }
                     .keyboardShortcut(.cancelAction)
                     .disabled(!isDirty)
-                Button("保存") { save() }
+                Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(!isDirty)
@@ -192,10 +192,10 @@ struct AISettingsView: View {
         case .testing:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("测试中…").font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
+                Text("Testing…").font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
             }
         case .ok:
-            Label("连接成功", systemImage: "checkmark.circle.fill")
+            Label("Connected", systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.green)
         case .failed(let msg):
@@ -213,12 +213,12 @@ struct AISettingsView: View {
         case .loading:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text("正在获取模型…")
+                Text("Fetching models…")
                     .font(.system(size: 11))
                     .foregroundStyle(CaptionsView.muted)
             }
         case .loaded(let count):
-            Label("已获取 \(count) 个模型", systemImage: "checkmark.circle.fill")
+            Label("Models found: \(count)", systemImage: "checkmark.circle.fill")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.green)
         case .failed(let message):
@@ -231,7 +231,7 @@ struct AISettingsView: View {
 
     // MARK: - Actions
 
-    /// Any field edit invalidates a prior test result and clears the "已保存" flash.
+    /// Any field edit invalidates a prior test result and clears the "Saved" flash.
     private func editingChanged() {
         testState = .idle
         justSaved = false
@@ -254,7 +254,7 @@ struct AISettingsView: View {
         settings.apiKey = apiKey            // triggers the Keychain write
         testState = .idle
         justSaved = true
-        // Clear the "已保存" flash the next time the user edits anything.
+        // Clear the "Saved" flash the next time the user edits anything.
     }
 
     /// Discard the draft, restoring the last saved values.
@@ -282,7 +282,7 @@ struct AISettingsView: View {
         Task { @MainActor in
             do {
                 let raw = try await provider.complete(
-                    system: "你是连接测试助手。输出一个 JSON 对象：status.ok 为 true，values 为 [1, 2]。",
+                    system: "You are a connection test assistant. Return a JSON object with status.ok set to true and values set to [1, 2].",
                     user: "ping",
                     schema: .connectionTest
                 )
@@ -293,7 +293,7 @@ struct AISettingsView: View {
                 else { throw LLMError.schemaViolation }
                 testState = .ok
             } catch let e as LLMError {
-                testState = .failed(e.errorDescription ?? "连接失败")
+                testState = .failed(e.errorDescription ?? "Connection failed")
             } catch {
                 testState = .failed(error.localizedDescription)
             }
@@ -327,7 +327,7 @@ struct AISettingsView: View {
             } catch let error as LLMError {
                 guard modelDiscoveryToken == token else { return }
                 availableModels = []
-                modelDiscoveryState = .failed(error.errorDescription ?? "获取模型失败")
+                modelDiscoveryState = .failed(error.errorDescription ?? "Could not fetch models")
             } catch {
                 guard modelDiscoveryToken == token else { return }
                 availableModels = []

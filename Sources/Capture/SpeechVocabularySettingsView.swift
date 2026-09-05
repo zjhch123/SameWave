@@ -15,7 +15,7 @@ struct SpeechVocabularySettingsView: View {
 
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("每行一个词或短语")
+                Text("One word or phrase per line")
                     .font(.headline)
 
                 TextEditor(text: $draft.text)
@@ -33,9 +33,9 @@ struct SpeechVocabularySettingsView: View {
                     .onChange(of: draft.text) { _, _ in justSaved = false }
 
                 HStack {
-                    Text("\(draft.phrases.count) 个词条")
+                    Text("Terms: \(draft.phrases.count)")
                     Spacer()
-                    Text("空行和重复词条会在保存时移除")
+                    Text("Blank lines and duplicates are removed when you save")
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(CaptionsView.meta)
@@ -48,22 +48,22 @@ struct SpeechVocabularySettingsView: View {
                             isChoosingMarkdown = true
                         }
                     } label: {
-                        Label("从 Markdown 生成", systemImage: "doc.badge.plus")
+                        Label("Generate from Markdown", systemImage: "doc.badge.plus")
                     }
                     .disabled(!importController.canStartOrResume)
 
                     if !importController.isConfigured {
-                        Button("配置 AI 服务") {
+                        Button("Configure AI Services") {
                             settingsNavigation.selectedTab = .ai
                         }
                         .buttonStyle(.link)
                         .font(.system(size: 11))
-                        .help("从 Markdown 生成词表需要先配置 AI 服务")
+                        .help("Configure AI services to generate vocabulary from Markdown")
                     }
                     Spacer()
                 }
 
-                Text("词表用于英文识别，在下次开始或恢复会议时生效。AI 生成与审核会在独立窗口中完成。")
+                Text("Vocabulary helps English speech recognition and takes effect when you next start or resume a meeting. AI generation and review open in a separate window.")
                     .font(.system(size: 11))
                     .foregroundStyle(CaptionsView.meta)
             }
@@ -72,22 +72,22 @@ struct SpeechVocabularySettingsView: View {
             Divider()
             HStack(spacing: 10) {
                 if justSaved {
-                    Label("已保存", systemImage: "checkmark.circle.fill")
+                    Label("Saved", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.green)
                 } else if draft.isDirty {
-                    Text("有未保存的更改")
+                    Text("Unsaved changes")
                         .font(.system(size: 12))
                         .foregroundStyle(CaptionsView.meta)
                 }
                 Spacer()
-                Button("取消") {
+                Button("Cancel") {
                     draft.revert()
                     justSaved = false
                 }
                 .keyboardShortcut(.cancelAction)
                 .disabled(!draft.isDirty)
-                Button("保存") {
+                Button("Save") {
                     draft.save()
                     justSaved = true
                 }

@@ -15,9 +15,9 @@ final class SystemAudioCaptureSCK: NSObject, SCStreamDelegate, SCStreamOutput {
         case captureStartFailed(Error)
         var errorDescription: String? {
             switch self {
-            case .permissionDenied: return "需要「屏幕录制」权限：系统设置 › 隐私与安全性 › 屏幕录制，勾选 同频"
-            case .noDisplayFound:   return "找不到可捕获的显示器"
-            case .captureStartFailed(let e): return "系统音频捕获启动失败：\(e.localizedDescription)"
+            case .permissionDenied: return "Allow SameWave in System Settings › Privacy & Security › Screen & System Audio Recording"
+            case .noDisplayFound:   return "No display is available for capture"
+            case .captureStartFailed(let e): return "Could not start system audio capture: \(e.localizedDescription)"
             }
         }
     }
