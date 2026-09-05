@@ -66,11 +66,11 @@ final class SpeechVocabularySettings {
         defaults.set(normalized, forKey: Keys.phrases)
     }
 
-    static func phrases(from text: String) -> [String] {
+    nonisolated static func phrases(from text: String) -> [String] {
         normalized(text.components(separatedBy: .newlines))
     }
 
-    static func normalized(_ phrases: [String]) -> [String] {
+    nonisolated static func normalized(_ phrases: [String]) -> [String] {
         var seen: Set<String> = []
         return phrases.compactMap { rawPhrase in
             let phrase = rawPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -83,5 +83,51 @@ final class SpeechVocabularySettings {
 
     private enum Keys {
         static let phrases = "speech.vocabulary.phrases"
+    }
+}
+
+@MainActor
+@Observable
+final class SpeechVocabularyDraft {
+    var text: String
+
+    private let settings: SpeechVocabularySettings
+
+    init(settings: SpeechVocabularySettings) {
+        self.settings = settings
+        text = settings.phrases.joined(separator: "\n")
+    }
+
+    var phrases: [String] {
+        SpeechVocabularySettings.phrases(from: text)
+    }
+
+    var isDirty: Bool {
+        phrases != settings.phrases
+    }
+
+    var existingPhrases: [String] {
+        SpeechVocabularySettings.normalized(settings.phrases + phrases)
+    }
+
+    @discardableResult
+    func saveImported(_ phrases: [String]) -> Int {
+        let additions = VocabularyCandidateReview.newPhrases(from: phrases, excluding: existingPhrases)
+        guard !additions.isEmpty else { return 0 }
+        settings.save(settings.phrases + additions)
+        // Append without rewriting the manual draft: pending deletions, edits and
+        // whitespace remain untouched, and cancelling Settings cannot undo this save.
+        if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
+        text += additions.joined(separator: "\n")
+        return additions.count
+    }
+
+    func save() {
+        settings.save(phrases)
+        text = settings.phrases.joined(separator: "\n")
+    }
+
+    func revert() {
+        text = settings.phrases.joined(separator: "\n")
     }
 }

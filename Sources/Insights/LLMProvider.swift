@@ -77,7 +77,7 @@ enum JSONValue: Encodable, Sendable {
 /// A user-readable failure, mapped from HTTP status / transport errors so the UI can
 /// show something actionable instead of a raw NSError — mirroring the app's existing
 /// habit of surfacing capture problems in `statusMessage` rather than swallowing them.
-enum LLMError: Error, LocalizedError, Equatable {
+enum LLMError: Error, LocalizedError, Equatable, Sendable {
     case notConfigured          // no provider/key set up yet
     case unauthorized           // 401/403 — bad or missing key
     case rateLimited            // 429 — too many requests / quota

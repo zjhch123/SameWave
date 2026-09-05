@@ -8,6 +8,8 @@ import Foundation
 /// Non-streaming: one request, await the whole JSON blob, return its content. An insight
 /// pass is a short object, so streaming would add complexity for no felt benefit.
 struct OpenAICompatibleProvider: InsightProvider {
+    static let completionTimeout: TimeInterval = 60
+
     let config: LLMProviderConfig
     let apiKey: String
     /// Effective API address: the config's, or the user-supplied one for the custom row.
@@ -47,7 +49,7 @@ struct OpenAICompatibleProvider: InsightProvider {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey.trimmed)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 30
+        req.timeoutInterval = Self.completionTimeout
         do {
             req.httpBody = try Self.makeRequestBody(
                 model: model,
