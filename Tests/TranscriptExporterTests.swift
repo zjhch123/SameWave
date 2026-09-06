@@ -30,23 +30,28 @@ final class TranscriptExporterTests: XCTestCase {
         let line = TranscriptLine(speaker: .mine, sourceText: "原始内容", targetText: "Original content",
                                   spokenAt: now, orderIndex: 0, sectionId: 0,
                                   refinedSource: "整理后的内容", refinedTarget: "Refined content")
-        let insight = InsightResult(topic: "Delivery", suggestions: ["Confirm the date"],
-                                    answer: "Friday works", todos: [.init(who: "Me", what: "Send the plan")],
-                                    decisions: ["Ship Friday"])
         let record = MeetingRecord(startedAt: now, endedAt: now.addingTimeInterval(65),
                                    languagePair: .simplifiedChineseToEnglish, lineCount: 1, status: .ended,
-                                   insightJSON: try XCTUnwrap(insight.encoded()), refinedAt: now, lines: [line])
+                                   refinedAt: now, lines: [line])
+        let insight = InsightResult(conclusion: "Delivery", points: [], summary: Phase2Fixture.summary)
+        let input = InsightInput(meetingID: record.id, configuration: .summary, kind: .summary,
+                                 requestedAt: now, elapsedSeconds: 65,
+                                 sources: InsightSource.capture(record.lines), vocabulary: [],
+                                 additionalInstructions: [], providerModel: "Test", contextTokenBudget: 32_768)
+        record.insightSnapshots = [try InsightSnapshot(InsightSnapshotValue(
+            id: UUID(), input: input, completedAt: now, result: insight))]
 
         let markdown = TranscriptExporter.markdown(record: record)
 
-        for heading in ["## AI Insights", "**Topic:**", "**Suggested Answer:**", "**Suggestions:**",
-                        "**Action Items:**", "**Decisions:**"] {
-            XCTAssertTrue(markdown.contains(heading), heading)
-        }
+        XCTAssertTrue(markdown.contains("## AI Insight History"))
+        XCTAssertTrue(markdown.contains("Meeting Insights"))
         XCTAssertTrue(markdown.contains("1m 5s · AI-refined"))
         XCTAssertTrue(markdown.contains("Me:** Refined content"))
         XCTAssertTrue(markdown.contains("> 整理后的内容"))
-        XCTAssertTrue(markdown.contains("- Me: Send the plan"))
+        for part in Phase2Fixture.summary.parts {
+            XCTAssertTrue(markdown.contains("#### \(part.title)"))
+            for item in part.items { XCTAssertTrue(markdown.contains("- \(item)")) }
+        }
         XCTAssertFalse(markdown.contains("原始内容"))
         XCTAssertEqual(line.sourceText, "原始内容")
     }

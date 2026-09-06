@@ -34,9 +34,7 @@ enum TranscriptExporter {
         var md = header
         let refinedNote = refined ? " · AI-refined" : ""
         md += "> Generated locally by SameWave · \(record.displayDate) · Sections: \(lines.count) · \(record.durationText)\(refinedNote)\n\n---\n\n"
-        // Lead with the cached AI insight (if the user generated one) so a shared minute
-        // opens with the summary before the full transcript.
-        appendInsight(&md, record.insight)
+        appendInsights(&md, record.insightSnapshots)
         for (i, line) in lines.enumerated() {
             let target = line.displayTarget(refined: refined).trimmed
             let source = line.displaySource(refined: refined)
@@ -49,32 +47,29 @@ enum TranscriptExporter {
         return md
     }
 
-    /// Append the cached insight as a "## AI Insights" section (topic / suggestions / todos /
-    /// decisions). No-op when there's no cached insight, so exports of un-analyzed
-    /// meetings are unchanged.
-    private static func appendInsight(_ md: inout String, _ insight: InsightResult?) {
-        guard let insight, !insight.isEmpty else { return }
-        md += "## AI Insights\n\n"
-        if !insight.topic.trimmed.isEmpty {
-            md += "**Topic:** \(insight.topic)\n\n"
-        }
-        if let answer = insight.answer?.trimmed, !answer.isEmpty {
-            md += "**Suggested Answer:** \(answer)\n\n"
-        }
-        if !insight.suggestions.isEmpty {
-            md += "**Suggestions:**\n\n"
-            for s in insight.suggestions { md += "- \(s)\n" }
-            md += "\n"
-        }
-        if !insight.todos.isEmpty {
-            md += "**Action Items:**\n\n"
-            for t in insight.todos { md += "- \(t.who): \(t.what)\n" }
-            md += "\n"
-        }
-        if !insight.decisions.isEmpty {
-            md += "**Decisions:**\n\n"
-            for d in insight.decisions { md += "- \(d)\n" }
-            md += "\n"
+    private static func appendInsights(_ md: inout String, _ snapshots: [InsightSnapshot]) {
+        guard !snapshots.isEmpty else { return }
+        md += "## AI Insight History\n\n"
+        for snapshot in snapshots.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            do {
+                let value = try snapshot.decoded()
+                md += "### \(value.input.configuration.title) · \(value.input.kind.label)\n\n"
+                md += "> Cutoff: \(DateFormat.insightTimestamp.string(from: value.input.requestedAt)) · All original source through cutoff · \(value.input.sources.count) sections\n\n"
+                if value.input.containsProvisional { md += "> Includes provisional recognition.\n\n" }
+                md += value.result.conclusion + "\n\n"
+                for point in value.result.points { md += "- \(point)\n" }
+                md += "\n"
+                if let summary = value.result.summary {
+                    for part in summary.parts {
+                        md += "#### \(part.title)\n\n"
+                        if part.items.isEmpty { md += part.emptyMessage + "\n" }
+                        for item in part.items { md += "- \(item)\n" }
+                        md += "\n"
+                    }
+                }
+            } catch {
+                md += "Saved insight could not be decoded: \(error.localizedDescription)\n\n"
+            }
         }
         md += "---\n\n"
     }

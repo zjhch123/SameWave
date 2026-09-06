@@ -5,8 +5,118 @@ import XCTest
 
 @MainActor
 final class VocabularyImportControllerTests: XCTestCase {
-    func testNativeWindowHideKeepsWorkAndCloseCancelsAndDiscards() async throws {
-        let (_, _, controller) = makeController()
+    func testMeetingReviewSurvivesSheetClosureAndAttachmentRemovalDuringExtraction() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let other = try history.createDraft(languagePair: .englishToEnglish)
+        let urls = try files(["XPay", "SwiftData"])
+        try history.attach([.init(fileName: "source-1.md", content: "XPay"),
+                            .init(fileName: "source-2.md", content: "SwiftData")], to: record)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let editor = coordinator.vocabularyEditor(for: record, settings: settings)
+        let controller = editor.importer
+        let provider = ControlledVocabularyProvider([
+            .content(#"{"phrases":["XPay"]}"#), .held(#"{"phrases":["SwiftData"]}"#)
+        ])
+        addTeardownBlock { await provider.release() }
+        defer { controller.reset() }
+        let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 540),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView:
+            MeetingVocabularyView(record: record, editor: editor, manageContext: {})
+                .environment(navigation))
+        controller.start(from: urls, using: provider)
+        try await waitUntil { await provider.count == 2 }
+        controller.candidates[0].text = "XPay Pro"
+        controller.candidates[0].isSelected = false
+        window.contentView = nil
+        window.close()
+        await Task.yield()
+        XCTAssertTrue(controller.isRunning)
+        XCTAssertEqual(controller.completedCount, 1)
+        for document in record.documents { try history.removeAttachment(document) }
+        XCTAssertTrue(record.documents.isEmpty)
+        let reopened = coordinator.vocabularyEditor(for: record, settings: settings).importer
+        XCTAssertTrue(reopened === controller)
+        XCTAssertFalse(coordinator.vocabularyEditor(for: other, settings: settings).importer === controller)
+        XCTAssertEqual(reopened.candidates[0].text, "XPay Pro")
+        XCTAssertFalse(reopened.candidates[0].isSelected)
+        await provider.release()
+        try await waitUntil { !reopened.isRunning }
+        XCTAssertEqual(reopened.candidates.map(\.text), ["XPay Pro", "SwiftData"])
+        reopened.saveSelected()
+        XCTAssertEqual(record.confirmedVocabulary, ["SwiftData"])
+        XCTAssertTrue(record.documents.isEmpty)
+        XCTAssertTrue(other.confirmedVocabulary.isEmpty)
+        XCTAssertEqual(reopened.candidates.map(\.text), ["XPay Pro"])
+    }
+
+    func testDeletingMeetingCancelsExtractionAndRejectsLateResult() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let meetingID = record.id
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let controller = coordinator.vocabularyEditor(for: record, settings: AISettings(defaults: defaults)).importer
+        let provider = ControlledVocabularyProvider([.held(#"{"phrases":["LateResult"]}"#)])
+        addTeardownBlock { await provider.release() }
+        controller.start(from: try files(["LateResult"]), using: provider)
+        try await waitUntil { await provider.count == 1 }
+        coordinator.delete(record)
+        XCTAssertNil(try history.record(id: meetingID))
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertTrue(controller.requests.isEmpty)
+        await provider.release()
+        try await waitUntil { await provider.active == 0 }
+        XCTAssertTrue(controller.candidates.isEmpty)
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    func testMeetingSaveFailureKeepsSelectionAndDoesNotStopGeneration() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let personal = SpeechVocabularySettings(defaults: defaults)
+        personal.save([])
+        var failSave = true
+        let editor = VocabularyEditorStore(scope: .meeting, aiSettings: AISettings(defaults: defaults),
+            readPhrases: { record.confirmedVocabulary }, replacePhrases: { phrases in
+                if failSave { throw CocoaError(.fileWriteOutOfSpace) }
+                try history.replaceVocabulary(phrases, in: record)
+            })
+        let controller = editor.importer
+        let provider = ControlledVocabularyProvider([
+            .content(#"{"phrases":["XPay"]}"#), .held(#"{"phrases":["SwiftData"]}"#)
+        ])
+        defer { controller.reset() }
+        addTeardownBlock { await provider.release() }
+        controller.start(from: try files(["XPay", "SwiftData"]), using: provider)
+        try await waitUntil { await provider.count == 2 }
+        controller.saveSelected()
+        XCTAssertNotNil(controller.saveError)
+        XCTAssertTrue(controller.isRunning)
+        XCTAssertEqual(controller.candidates.first?.text, "XPay")
+        failSave = false
+        controller.saveSelected()
+        XCTAssertNil(controller.saveError)
+        XCTAssertTrue(controller.isRunning)
+        XCTAssertEqual(record.confirmedVocabulary, ["XPay"])
+        XCTAssertTrue(personal.phrases.isEmpty)
+        await provider.release()
+        try await waitUntil { !controller.isRunning }
+        XCTAssertEqual(controller.candidates.map(\.text), ["SwiftData"])
+    }
+
+    func testEmbeddedVocabularyKeepsExtractionAcrossTabSwitchAndSettingsClosure() async throws {
+        let (_, editor, controller) = makeController()
+        editor.manualText = "Uncommitted"
+        editor.isAddingTerms = true
         let provider = ControlledVocabularyProvider([
             .content(#"{"phrases":["XPay","SwiftData"]}"#), .held(#"{"phrases":["Later"]}"#)
         ])
@@ -14,14 +124,21 @@ final class VocabularyImportControllerTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 520),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: VocabularyImportWindow(controller: controller)
-            .background(Color(nsColor: .windowBackgroundColor)))
-        window.contentView = host
-        defer { window.close(); controller.close() }
+        let defaults = Phase2Fixture.defaults(self)
+        let navigation = SettingsNavigation(aiSettings: AISettings(defaults: defaults), vocabularyEditor: editor)
+        window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
+            .modifier(SettingsSheet()).environment(navigation))
+        defer { window.close(); controller.reset() }
+        window.orderFront(nil)
+        navigation.selectedTab = .vocabulary
+        navigation.openSettings()
+        try await waitUntil { window.attachedSheet != nil }
+        let settingsSheet = try XCTUnwrap(window.attachedSheet)
+        XCTAssertNil(settingsSheet.attachedSheet)
+        let host = try XCTUnwrap(settingsSheet.contentView)
         controller.start(from: try files(["XPay SwiftData", "Later"]), using: provider)
         try await waitUntil { await provider.count == 2 }
         host.layoutSubtreeIfNeeded()
-        window.orderOut(nil)
         XCTAssertTrue(controller.isRunning)
         XCTAssertEqual(controller.candidates.count, 2)
 
@@ -34,26 +151,47 @@ final class VocabularyImportControllerTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
 
-        window.close()
-        XCTAssertEqual(controller.state, .idle)
-        XCTAssertTrue(controller.candidates.isEmpty)
-        XCTAssertTrue(controller.requests.isEmpty)
+        navigation.openAISettings()
+        await Task.yield()
+        XCTAssertNil(settingsSheet.attachedSheet)
+        XCTAssertTrue(window.attachedSheet === settingsSheet)
+        XCTAssertTrue(controller.isRunning)
+        navigation.presentedHost = nil
+        try await waitUntil { window.attachedSheet == nil }
+        XCTAssertTrue(controller.isRunning)
+        XCTAssertEqual(editor.manualText, "Uncommitted")
+        XCTAssertEqual(controller.candidates.count, 2)
         await provider.release()
+        try await waitUntil { !controller.isRunning }
+        XCTAssertEqual(controller.candidates.map(\.text), ["XPay", "SwiftData", "Later"])
+        navigation.openSettings()
+        try await waitUntil { window.attachedSheet != nil }
+        let reopened = try XCTUnwrap(window.attachedSheet)
+        XCTAssertNil(reopened.attachedSheet)
+        navigation.selectedTab = .vocabulary
+        await Task.yield()
+        XCTAssertTrue(window.attachedSheet === reopened)
+        XCTAssertNil(reopened.attachedSheet)
+        XCTAssertEqual(editor.manualText, "Uncommitted")
+        XCTAssertEqual(controller.candidates.map(\.text), ["XPay", "SwiftData", "Later"])
+        navigation.presentedHost = nil
+        try await waitUntil { window.attachedSheet == nil }
     }
 
-    func testProgressiveReviewPreservesEditsSelectionsAndMergesLocalSources() async throws {
+    func testProgressiveReviewPreservesEditsSelectionsAndIdentityAcrossDuplicateTerms() async throws {
         let (_, _, controller) = makeController()
         let provider = ControlledVocabularyProvider([
             .content(#"{"phrases":["XPay"]}"#),
             .held(#"{"phrases":["xpay","SwiftData"]}"#),
         ])
-        defer { controller.close() }
+        defer { controller.reset() }
         addTeardownBlock { await provider.release() }
         controller.start(from: try files(["XPay", "XPay SwiftData"]), using: provider)
         try await waitUntil { await provider.count == 2 }
 
         XCTAssertEqual(controller.state, .generating)
         XCTAssertEqual(controller.completedCount, 1)
+        XCTAssertEqual(controller.currentAttempt, VocabularyAttempt(batchNumber: 2, number: 1))
         XCTAssertEqual(controller.candidates.map(\.text), ["XPay"])
         let originalID = controller.candidates[0].id
         controller.candidates[0].text = "XPay Pro"
@@ -64,8 +202,8 @@ final class VocabularyImportControllerTests: XCTestCase {
         XCTAssertEqual(controller.candidates.map(\.text), ["XPay Pro", "SwiftData"])
         XCTAssertEqual(controller.candidates[0].id, originalID)
         XCTAssertFalse(controller.candidates[0].isSelected)
-        XCTAssertEqual(controller.candidates[0].sources.map(\.fileName), ["source-1.md", "source-2.md"])
         XCTAssertEqual(controller.discoveredCount, 2)
+        XCTAssertNil(controller.currentAttempt)
     }
 
     func testStopKeepsResultsAndRetryWaitsForCancellationThenSkipsSuccess() async throws {
@@ -76,7 +214,7 @@ final class VocabularyImportControllerTests: XCTestCase {
             .content(#"{"phrases":["RetryWord"]}"#),
             .content(#"{"phrases":["LastWord"]}"#),
         ])
-        defer { controller.close() }
+        defer { controller.reset() }
         addTeardownBlock { await provider.release() }
         controller.start(from: try files(["XPay", "RetryWord", "LastWord"]), using: provider)
         try await waitUntil { await provider.count == 2 }
@@ -86,8 +224,7 @@ final class VocabularyImportControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.state, .reviewing)
         XCTAssertEqual(controller.incompleteCount, 2)
-        XCTAssertEqual(controller.attempts.last?.outcome, .cancelled)
-        XCTAssertNotNil(controller.attempts.last?.duration)
+        XCTAssertNil(controller.currentAttempt)
         controller.retryIncomplete()
         await Task.yield()
         let beforeRelease = await provider.count
@@ -97,7 +234,10 @@ final class VocabularyImportControllerTests: XCTestCase {
 
         XCTAssertEqual(controller.candidates.map(\.text), ["Edited", "RetryWord", "LastWord"])
         XCTAssertFalse(controller.candidates[0].isSelected)
-        XCTAssertEqual(controller.attempts.map(\.batchNumber), [1, 2, 2, 3])
+        let bodies = await provider.requestBodies
+        XCTAssertEqual(bodies.count, 4)
+        XCTAssertEqual(bodies[1], bodies[2])
+        XCTAssertNil(controller.currentAttempt)
         XCTAssertEqual(controller.incompleteCount, 0)
         let maxActive = await provider.maximumActive
         XCTAssertEqual(maxActive, 1)
@@ -111,12 +251,13 @@ final class VocabularyImportControllerTests: XCTestCase {
             .content(#"{"phrases":["SwiftData"]}"#),
             .content(#"{"phrases":["Recovered"]}"#),
         ])
-        defer { controller.close() }
+        defer { controller.reset() }
         controller.start(from: try files(["XPay", "Recovered", "SwiftData"]), using: provider)
         try await waitUntil { !controller.isRunning }
 
-        XCTAssertEqual(controller.failedCount, 1)
+        XCTAssertEqual(controller.incompleteCount, 1)
         XCTAssertEqual(controller.completedCount, 3)
+        XCTAssertEqual(controller.generationError, LLMError.server(503).localizedDescription)
         XCTAssertEqual(controller.candidates.map(\.text), ["XPay", "SwiftData"])
         controller.candidates[0].text = "Edited"
         controller.selectAll(false)
@@ -126,31 +267,43 @@ final class VocabularyImportControllerTests: XCTestCase {
         XCTAssertEqual(controller.candidates.map(\.text), ["Edited", "SwiftData", "Recovered"])
         XCTAssertFalse(controller.candidates[0].isSelected)
         XCTAssertFalse(controller.candidates[1].isSelected)
-        XCTAssertEqual(controller.attempts.map(\.batchNumber), [1, 2, 2, 2, 3, 2])
-        XCTAssertEqual(controller.failedCount, 0)
+        let bodies = await provider.requestBodies
+        XCTAssertEqual(bodies.count, 6)
+        XCTAssertEqual(bodies[1], bodies[5])
+        XCTAssertNil(controller.generationError)
+        XCTAssertEqual(controller.incompleteCount, 0)
     }
 
     func testAllFailuresRemainRetryableWithoutReselectingFiles() async throws {
         let (_, _, controller) = makeController()
         let provider = ControlledVocabularyProvider([
-            .failure, .failure, .failure, .content(#"{"phrases":["Recovered"]}"#)
+            .failure, .failure, .failure, .held(#"{"phrases":["Recovered"]}"#)
         ])
-        defer { controller.close() }
+        defer { controller.reset() }
+        addTeardownBlock { await provider.release() }
         controller.start(from: try files(["Recovered"]), using: provider)
         try await waitUntil { !controller.isRunning }
         XCTAssertTrue(controller.canRetry)
-        XCTAssertEqual(controller.failedCount, 1)
-        XCTAssertEqual(controller.attempts.map(\.number), [1, 2, 3])
+        XCTAssertEqual(controller.incompleteCount, 1)
+        XCTAssertEqual(controller.generationError, LLMError.server(503).localizedDescription)
+        XCTAssertNil(controller.currentAttempt)
+        let count = await provider.count
+        XCTAssertEqual(count, 3)
         controller.retryIncomplete()
+        try await waitUntil { await provider.count == 4 }
+        XCTAssertEqual(controller.currentAttempt, VocabularyAttempt(batchNumber: 1, number: 1))
+        XCTAssertNil(controller.generationError)
+        await provider.release()
         try await waitUntil { !controller.isRunning }
         XCTAssertEqual(controller.candidates.map(\.text), ["Recovered"])
         XCTAssertFalse(controller.canRetry)
+        XCTAssertNil(controller.currentAttempt)
     }
 
     func testStopBeforeFirstResultReturnsToSelectionAndRetainsIncompleteWork() async throws {
         let (_, _, controller) = makeController()
         let provider = ControlledVocabularyProvider([.held(#"{"phrases":["Late"]}"#)])
-        defer { controller.close() }
+        defer { controller.reset() }
         addTeardownBlock { await provider.release() }
         controller.start(from: try files(["Late"]), using: provider)
         try await waitUntil { await provider.count == 1 }
@@ -163,39 +316,39 @@ final class VocabularyImportControllerTests: XCTestCase {
         XCTAssertTrue(controller.candidates.isEmpty)
     }
 
-    func testCloseDiscardsReviewAndLateResponsesCannotLeakIntoNewRun() async throws {
+    func testResetDiscardsReviewAndLateResponsesCannotLeakIntoNewRun() async throws {
         let (settings, _, controller) = makeController()
         let oldProvider = ControlledVocabularyProvider([
             .content(#"{"phrases":["Unsaved"]}"#), .held(#"{"phrases":["Late"]}"#)
         ])
         let newProvider = ControlledVocabularyProvider([.content(#"{"phrases":["Fresh"]}"#)])
-        defer { controller.close() }
+        defer { controller.reset() }
         addTeardownBlock { await oldProvider.release() }
         controller.start(from: try files(["Unsaved", "Late"]), using: oldProvider)
         try await waitUntil { await oldProvider.count == 2 }
-        controller.close()
+        controller.reset()
         XCTAssertEqual(controller.state, .idle)
         XCTAssertTrue(controller.candidates.isEmpty)
         XCTAssertTrue(controller.requests.isEmpty)
-        XCTAssertTrue(controller.attempts.isEmpty)
-        XCTAssertFalse(controller.hasActiveWorkflow)
+        XCTAssertNil(controller.currentAttempt)
         XCTAssertTrue(settings.phrases.isEmpty)
 
         controller.start(from: try files(["Fresh"]), using: newProvider)
         await oldProvider.release()
         try await waitUntil { !controller.isRunning }
         XCTAssertEqual(controller.candidates.map(\.text), ["Fresh"])
-        XCTAssertEqual(controller.attempts.count, 1)
+        XCTAssertEqual(controller.requests.count, 1)
+        XCTAssertNil(controller.currentAttempt)
     }
 
     func testSaveDuringGenerationPersistsSelectedOnlyWithoutSavingManualDraft() async throws {
-        let (settings, draft, controller) = makeController(saved: ["Existing", "Deleted"])
-        draft.text = "Existing\nManual"
+        let (settings, editor, controller) = makeController(saved: ["Existing", "Deleted"])
+        editor.manualText = "Existing\nManual"
         let provider = ControlledVocabularyProvider([
-            .content(#"{"phrases":["Existing","Deleted","Manual","XPay","SwiftData"]}"#),
+            .content(#"{"phrases":["Existing","Deleted","XPay","SwiftData"]}"#),
             .held(#"{"phrases":["XPay","More"]}"#),
         ])
-        defer { controller.close() }
+        defer { controller.reset() }
         addTeardownBlock { await provider.release() }
         controller.start(from: try files(["XPay SwiftData", "XPay More"]), using: provider)
         try await waitUntil { await provider.count == 2 }
@@ -204,8 +357,7 @@ final class VocabularyImportControllerTests: XCTestCase {
         controller.saveSelected()
 
         XCTAssertEqual(settings.phrases, ["Existing", "Deleted", "XPay"])
-        XCTAssertEqual(draft.phrases, ["Existing", "Manual", "XPay"])
-        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(editor.manualText, "Existing\nManual")
         XCTAssertEqual(controller.candidates.map(\.text), ["SwiftData"])
         XCTAssertEqual(controller.savedMessage, "New terms saved: 1")
         XCTAssertTrue(controller.isRunning)
@@ -213,22 +365,21 @@ final class VocabularyImportControllerTests: XCTestCase {
         try await waitUntil { !controller.isRunning }
         XCTAssertEqual(controller.candidates.map(\.text), ["SwiftData", "More"])
         XCTAssertFalse(controller.candidates[0].isSelected)
-        controller.close()
-        draft.revert()
-        XCTAssertEqual(draft.phrases, ["Existing", "Deleted", "XPay"])
+        controller.reset()
+        XCTAssertEqual(editor.manualText, "Existing\nManual")
+        XCTAssertEqual(settings.phrases, ["Existing", "Deleted", "XPay"])
     }
 
-    func testEditedDuplicatesAndConcurrentSettingsSaveAreDeduplicatedAgain() async throws {
-        let (settings, draft, controller) = makeController()
+    func testEditedDuplicatesAndManualSaveAreDeduplicatedAgain() async throws {
+        let (settings, editor, controller) = makeController()
         let provider = ControlledVocabularyProvider([.content(#"{"phrases":["XPay","SwiftData"]}"#)])
-        defer { controller.close() }
+        defer { controller.reset() }
         controller.start(from: try files(["XPay SwiftData"]), using: provider)
         try await waitUntil { !controller.isRunning }
         controller.candidates[1].text = " xpay "
-        XCTAssertEqual(controller.selectedPhrases, ["XPay"])
-        draft.text = "XPay"
-        draft.save()
-        XCTAssertTrue(controller.selectedPhrases.isEmpty)
+        XCTAssertEqual(controller.candidates.first?.text, "XPay")
+        editor.manualText = "XPay"
+        editor.addTerms()
         controller.saveSelected()
         XCTAssertEqual(settings.phrases, ["XPay"])
         XCTAssertTrue(controller.candidates.isEmpty)
@@ -238,7 +389,7 @@ final class VocabularyImportControllerTests: XCTestCase {
     func testInvalidEditedSelectionCannotBeSaved() async throws {
         let (settings, _, controller) = makeController()
         let provider = ControlledVocabularyProvider([.content(#"{"phrases":["XPay"]}"#)])
-        defer { controller.close() }
+        defer { controller.reset() }
         controller.start(from: try files(["XPay"]), using: provider)
         try await waitUntil { !controller.isRunning }
         controller.candidates[0].text = "first\nsecond"
@@ -249,14 +400,14 @@ final class VocabularyImportControllerTests: XCTestCase {
     }
 
     private func makeController(saved: [String] = [])
-        -> (SpeechVocabularySettings, SpeechVocabularyDraft, VocabularyImportController) {
+        -> (SpeechVocabularySettings, VocabularyEditorStore, VocabularyImportController) {
         let suite = "VocabularyImportControllerTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let settings = SpeechVocabularySettings(defaults: defaults)
         settings.save(saved)
-        let draft = SpeechVocabularyDraft(settings: settings)
-        return (settings, draft, VocabularyImportController(aiSettings: AISettings(), vocabularyDraft: draft))
+        let editor = VocabularyEditorStore(aiSettings: AISettings(defaults: defaults), settings: settings)
+        return (settings, editor, editor.importer)
     }
 
     private func files(_ prefixes: [String]) throws -> [URL] {
@@ -282,7 +433,7 @@ final class VocabularyImportControllerTests: XCTestCase {
     }
 }
 
-private actor ControlledVocabularyProvider: LLMProvider {
+actor ControlledVocabularyProvider: LLMProvider {
     enum Response: Sendable {
         case content(String), held(String), failure
     }
@@ -290,11 +441,13 @@ private actor ControlledVocabularyProvider: LLMProvider {
     private(set) var count = 0
     private(set) var active = 0
     private(set) var maximumActive = 0
+    private(set) var requestBodies: [String] = []
     private var continuation: CheckedContinuation<Void, Never>?
 
     init(_ responses: [Response]) { self.responses = responses }
 
     func complete(system: String, user: String, schema: LLMResponseSchema) async throws -> String {
+        requestBodies.append(user)
         let index = count
         count += 1
         active += 1

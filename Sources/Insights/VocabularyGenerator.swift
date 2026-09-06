@@ -1,75 +1,24 @@
 import Foundation
 
-struct VocabularySourceDocument: Equatable, Sendable {
+struct VocabularySourceDocument: Hashable, Sendable {
     let fileName: String
     let content: String
-}
-
-struct VocabularySourceExcerpt: Equatable, Hashable, Sendable {
-    let fileName: String
-    let text: String
 }
 
 struct VocabularyBatch: Equatable, Sendable {
     let number: Int
     let content: String
-    let sources: [VocabularySourceDocument]
-
-    func excerpts(for phrase: String) -> [VocabularySourceExcerpt] {
-        var seen: Set<VocabularySourceExcerpt> = []
-        return sources.compactMap { source in
-            guard let range = source.content.range(of: phrase, options: .caseInsensitive) else {
-                return nil
-            }
-            let start = source.content.index(range.lowerBound, offsetBy: -70,
-                                             limitedBy: source.content.startIndex)
-                ?? source.content.startIndex
-            let end = source.content.index(range.upperBound, offsetBy: 70,
-                                           limitedBy: source.content.endIndex)
-                ?? source.content.endIndex
-            let excerpt = VocabularySourceExcerpt(
-                fileName: source.fileName, text: String(source.content[start..<end])
-            )
-            return seen.insert(excerpt).inserted ? excerpt : nil
-        }
-    }
 }
 
-struct VocabularyAttempt: Equatable, Identifiable, Sendable {
-    enum Outcome: Equatable, Sendable {
-        case running, succeeded, failed(String), cancelled
-    }
-
-    let id = UUID()
+struct VocabularyAttempt: Equatable, Sendable {
     let batchNumber: Int
     let number: Int
-    let startedAt = Date()
-    private let started = ContinuousClock.now
-    private(set) var duration: TimeInterval?
-    private(set) var outcome: Outcome = .running
-
-    mutating func finish(_ outcome: Outcome) {
-        let elapsed = started.duration(to: .now).components
-        duration = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
-        self.outcome = outcome
-    }
 }
 
 enum VocabularyGenerationEvent: Sendable {
     case attempt(VocabularyAttempt)
     case succeeded(batch: Int, phrases: [String])
     case failed(batch: Int, message: String)
-}
-
-enum VocabularyCandidateReview {
-    static func newPhrases(
-        from generated: [String],
-        excluding existing: [String]
-    ) -> [String] {
-        let normalizedExisting = SpeechVocabularySettings.normalized(existing)
-        let merged = SpeechVocabularySettings.normalized(normalizedExisting + generated)
-        return Array(merged.dropFirst(normalizedExisting.count))
-    }
 }
 
 enum VocabularyImportError: Error, LocalizedError, Equatable, Sendable {
@@ -107,6 +56,20 @@ enum VocabularyDocumentLoader {
     static let maximumSelectionMegabytes = 30
     static let maximumSelectionBytes = maximumSelectionMegabytes * 1_000_000
     private static let supportedExtensions: Set<String> = ["md", "markdown"]
+
+    /// Shared destination rule: validate distinct additions before mutating either scope.
+    static func merging(_ additions: [VocabularySourceDocument], into existing: [VocabularySourceDocument]) throws -> [VocabularySourceDocument] {
+        var merged = existing
+        var seen = Set(existing)
+        var bytes = existing.reduce(0) { $0 + $1.content.utf8.count }
+        for document in additions where seen.insert(document).inserted {
+            let size = document.content.utf8.count
+            try validateFileSize(size, selectedBytes: bytes, fileName: document.fileName)
+            merged.append(document)
+            bytes += size
+        }
+        return merged
+    }
 
     static func load(_ urls: [URL]) async throws -> [VocabularySourceDocument] {
         let task = Task.detached(priority: .userInitiated) {
@@ -278,8 +241,7 @@ struct VocabularyGenerator {
 
         for attempt in 0...Self.maximumRetriesPerBatch {
             try Task.checkCancellation()
-            var timing = VocabularyAttempt(batchNumber: batch.number, number: attempt + 1)
-            onEvent(.attempt(timing))
+            onEvent(.attempt(VocabularyAttempt(batchNumber: batch.number, number: attempt + 1)))
             do {
                 let raw = try await provider.complete(
                     system: Self.systemPrompt,
@@ -299,17 +261,11 @@ struct VocabularyGenerator {
                 else {
                     throw LLMError.schemaViolation
                 }
-                timing.finish(.succeeded)
-                onEvent(.attempt(timing))
                 return response.phrases
             } catch {
                 if error is CancellationError || Task.isCancelled {
-                    timing.finish(.cancelled)
-                    onEvent(.attempt(timing))
                     throw CancellationError()
                 }
-                timing.finish(.failed(Self.failureMessage(for: error)))
-                onEvent(.attempt(timing))
                 lastError = error
                 if attempt < Self.maximumRetriesPerBatch {
                     try await Task.sleep(for: .milliseconds(500 * (attempt + 1)))
@@ -334,12 +290,10 @@ struct VocabularyGenerator {
     static func makeBatches(from documents: [VocabularySourceDocument]) throws -> [VocabularyBatch] {
         var batches: [VocabularyBatch] = []
         var current = ""
-        var sources: [VocabularySourceDocument] = []
         func appendCurrent() {
             guard !current.isEmpty else { return }
-            batches.append(VocabularyBatch(number: batches.count + 1, content: current, sources: sources))
+            batches.append(VocabularyBatch(number: batches.count + 1, content: current))
             current = ""
-            sources = []
         }
         for (documentIndex, document) in documents.enumerated() {
             try Task.checkCancellation()
@@ -357,7 +311,6 @@ struct VocabularyGenerator {
                 } else {
                     current = candidate
                 }
-                sources.append(VocabularySourceDocument(fileName: document.fileName, content: fragment))
             }
         }
         appendCurrent()

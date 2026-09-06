@@ -1,263 +1,261 @@
 import Foundation
 import Observation
 
-/// Generates rolling and one-shot structured insights. Refining transcript text is
-/// intentionally handled by `TranscriptRefiner`, which has a different batching and
-/// failure model.
+/// Pure scheduling policy. Every item retains just its last dispatched cutoff.
+struct AutomaticInsightSchedule {
+    static let interval: TimeInterval = 45
+    static let minimumNewCharacters = 80
+    struct Stamp { let date: Date; let characters: Int }
+    var startedAt: Date
+    var initialCharacters: Int
+    private(set) var dispatched: [UUID: Stamp] = [:]
+
+    func isDue(_ id: UUID, now: Date, finalizedCharacters: Int) -> Bool {
+        let previous = dispatched[id] ?? Stamp(date: startedAt, characters: initialCharacters)
+        return now.timeIntervalSince(previous.date) >= Self.interval
+            && finalizedCharacters - previous.characters >= Self.minimumNewCharacters
+    }
+
+    mutating func noteDispatch(_ id: UUID, now: Date, finalizedCharacters: Int) {
+        dispatched[id] = Stamp(date: now, characters: finalizedCharacters)
+    }
+}
+
+struct InsightKey: Hashable {
+    let meetingID: UUID
+    let definitionID: UUID
+}
+
 @MainActor
 @Observable
 final class InsightEngine {
+    static let maximumConcurrentRequests = 6
+
     enum State: Equatable {
-        case idle
+        case queued
         case generating
-        case done
-        case error(LLMError)
+        case saved
+        case failed(String)
+        case cancelled
+        case unsaved(String)
     }
 
-    private(set) var current: InsightResult = .empty
-    private(set) var state: State = .idle
-
+    private(set) var states: [InsightKey: State] = [:]
+    private(set) var unsaved: [UUID: InsightSnapshotValue] = [:]
+    private(set) var batchMeetingID: UUID?
     private let settings: AISettings
-    private let vocabularySettings: SpeechVocabularySettings
-    private let sentencesPerRefresh = 6
-    private var sentencesSinceGeneration = 0
-    private var lastSpeaker: Speaker?
-    private var isGenerating = false
-    private var changedWhileGenerating = false
-    private var latestTranscript = ""
-    private var liveTask: Task<Void, Never>?
-    private var liveToken = UUID()
+    private let history: MeetingHistoryStore
+    private let providerFactory: () -> (any LLMProvider)?
+    private let saveSnapshot: (InsightSnapshotValue) throws -> Void
+    @ObservationIgnored private var tasks: [InsightKey: Task<Void, Never>] = [:]
+    @ObservationIgnored private var inputs: [InsightKey: InsightInput] = [:]
+    @ObservationIgnored private var tokens: [InsightKey: UUID] = [:]
+    @ObservationIgnored private var recordingID: UUID?
+    @ObservationIgnored private var schedule: AutomaticInsightSchedule?
+    @ObservationIgnored private var batchQueue: [InsightInput] = []
+    @ObservationIgnored private var batchProvider: (any LLMProvider)?
 
-    /// Fixed to fit the smallest built-in 8K context after prompt and output space.
-    static let contextCharacterLimit = 6_000
-
-    init(settings: AISettings, vocabularySettings: SpeechVocabularySettings) {
+    init(settings: AISettings, history: MeetingHistoryStore,
+         providerFactory: (() -> (any LLMProvider)?)? = nil,
+         saveSnapshot: ((InsightSnapshotValue) throws -> Void)? = nil) {
         self.settings = settings
-        self.vocabularySettings = vocabularySettings
+        self.history = history
+        self.providerFactory = providerFactory ?? { settings.makeProvider() }
+        self.saveSnapshot = saveSnapshot ?? { try history.appendInsight($0) }
     }
 
-    func reset() {
-        liveTask?.cancel()
-        liveTask = nil
-        liveToken = UUID()
-        current = .empty
-        state = .idle
-        sentencesSinceGeneration = 0
-        lastSpeaker = nil
-        isGenerating = false
-        changedWhileGenerating = false
-        latestTranscript = ""
+    func startRecording(_ record: MeetingRecord, sections: [Section], now: Date = .now) {
+        recordingID = record.id
+        schedule = AutomaticInsightSchedule(startedAt: now,
+            initialCharacters: InsightSource.capture(sections, includingProvisional: false).reduce(0) { $0 + $1.text.count })
     }
 
-    func noteNewFinalContent(sections: [Section], speaker: Speaker?) {
-        guard settings.isConfigured else { return }
-        latestTranscript = Self.recentContext(
-            from: Self.flatten(sections: sections),
-            limit: Self.contextCharacterLimit
-        )
-        guard !latestTranscript.isEmpty else { return }
-
-        var shouldGenerate = false
-        if let speaker, let lastSpeaker, speaker != lastSpeaker {
-            shouldGenerate = true
+    func automaticTick(record: MeetingRecord, sections: [Section], vocabulary: [String],
+                       elapsedSeconds: TimeInterval, now: Date = .now) {
+        guard record.id == recordingID, record.meetingStatus == .recording,
+              inputs.count < Self.maximumConcurrentRequests,
+              let schedule, !inputs.values.contains(where: { $0.kind == .automatic }) else { return }
+        let sources = InsightSource.capture(sections, includingProvisional: false)
+        let characters = sources.reduce(0) { $0 + $1.text.count }
+        let due = record.orderedDefinitions.filter {
+            let key = InsightKey(meetingID: record.id, definitionID: $0.id)
+            return $0.automaticallyUpdates && tasks[key] == nil && states[key] != .queued
+                && !unsaved.values.contains { $0.input.meetingID == record.id && $0.input.configuration.id == key.definitionID }
+                && schedule.isDue($0.id, now: now, finalizedCharacters: characters)
+        }.sorted {
+            (schedule.dispatched[$0.id]?.date ?? schedule.startedAt)
+                < (schedule.dispatched[$1.id]?.date ?? schedule.startedAt)
         }
-        if let speaker { lastSpeaker = speaker }
-        sentencesSinceGeneration += 1
-        if sentencesSinceGeneration >= sentencesPerRefresh { shouldGenerate = true }
-        if shouldGenerate { triggerLiveGeneration() }
+        guard let definition = due.first, providerFactory() != nil else { return }
+        generate(record: record, configuration: definition.configuration, kind: .automatic,
+                 sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
     }
 
-    func generateOnce(transcript: String) async throws -> InsightResult {
-        guard let provider = settings.makeProvider() else { throw LLMError.notConfigured }
-        let input = Self.recentContext(from: transcript, limit: Self.contextCharacterLimit)
-        guard !input.isEmpty else { return .empty }
-        let relevantVocabulary = Self.relevantVocabulary(
-            from: input,
-            configuredVocabulary: vocabularySettings.phrases
-        )
-        let raw = try await provider.complete(
-            system: Self.systemPrompt(relevantVocabulary: relevantVocabulary),
-            user: input,
-            schema: InsightResult.responseSchema
-        )
-        guard let result = Self.parse(raw) else { throw LLMError.schemaViolation }
-        return result
+    private func makeInput(record: MeetingRecord, configuration: InsightConfiguration, kind: InsightKind,
+                   sources: [InsightSource], vocabulary: [String], elapsedSeconds: TimeInterval,
+                   now: Date = .now) -> InsightInput {
+        InsightInput(meetingID: record.id, configuration: configuration, kind: kind, requestedAt: now,
+                     elapsedSeconds: elapsedSeconds, sources: sources, vocabulary: vocabulary,
+                     additionalInstructions: kind == .summary ? record.orderedDefinitions.map(\.configuration) : [],
+                     providerModel: settings.modelIdentity, contextTokenBudget: settings.insightContextTokenBudget)
     }
 
-    private func triggerLiveGeneration() {
-        sentencesSinceGeneration = 0
-        if isGenerating {
-            changedWhileGenerating = true
-            return
-        }
-        guard let provider = settings.makeProvider() else { return }
-
-        isGenerating = true
-        changedWhileGenerating = false
-        state = .generating
-        let transcript = latestTranscript
-        let relevantVocabulary = Self.relevantVocabulary(
-            from: transcript,
-            configuredVocabulary: vocabularySettings.phrases
-        )
-        let token = liveToken
-
-        liveTask = Task { @MainActor [weak self] in
-            let outcome = await Self.perform(
-                provider: provider,
-                transcript: transcript,
-                relevantVocabulary: relevantVocabulary
-            )
-            guard let self, self.liveToken == token else { return }
-            self.isGenerating = false
-            switch outcome {
-            case .success(let result):
-                self.current = result
-                self.state = .done
-            case .failure(let error):
-                self.state = .error(error)
-            }
-            if self.changedWhileGenerating, self.settings.isConfigured {
-                self.changedWhileGenerating = false
-                self.triggerLiveGeneration()
+    func generate(record: MeetingRecord, configuration: InsightConfiguration, kind: InsightKind,
+                  sources: [InsightSource], vocabulary: [String], elapsedSeconds: TimeInterval,
+                  now: Date = .now) {
+        if kind == .automatic && inputs.count >= Self.maximumConcurrentRequests { return }
+        let input = makeInput(record: record, configuration: configuration, kind: kind,
+                              sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
+        let key = InsightKey(meetingID: record.id, definitionID: configuration.id)
+        if let existing = inputs[key], input.analyzesSameContent(as: existing) { return }
+        // A standalone manual selection supersedes older manual work. Generate All
+        // instead fills the shared request capacity with independent batch items.
+        if kind != .automatic {
+            cancelBatch()
+            for (otherKey, otherInput) in Array(inputs) where otherInput.kind != .automatic || otherKey == key {
+                cancel(otherKey)
             }
         }
+        cancel(key)
+        dispatch(input, now: now)
     }
 
-    private static func perform(
-        provider: LLMProvider,
-        transcript: String,
-        relevantVocabulary: [String]
-    ) async -> Result<InsightResult, LLMError> {
+    func canGenerateAll(_ record: MeetingRecord) -> Bool {
+        let ids = Set(record.definitions.map(\.id))
+        return batchMeetingID == nil && record.meetingStatus != .draft && !ids.isEmpty
+            && !unsaved.values.contains { $0.input.meetingID == record.id && ids.contains($0.input.configuration.id) }
+    }
+
+    func generateAll(record: MeetingRecord, sources: [InsightSource], vocabulary: [String],
+                     elapsedSeconds: TimeInterval, now: Date = .now) {
+        guard canGenerateAll(record) else { return }
+        for (key, input) in Array(inputs) where input.kind != .automatic { cancel(key) }
+        let requests = record.insightReadingOrder.map {
+            makeInput(record: record, configuration: $0.configuration, kind: .manual,
+                      sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
+        }
+        for input in requests { cancel(InsightKey(meetingID: record.id, definitionID: input.configuration.id)) }
+        batchQueue = requests
+        batchMeetingID = record.id
+        batchProvider = providerFactory()
+        for input in requests { states[InsightKey(meetingID: record.id, definitionID: input.configuration.id)] = .queued }
+        dispatchBatch(now: now)
+    }
+
+    func cancelBatch() {
+        guard let meetingID = batchMeetingID else { return }
+        batchMeetingID = nil
+        batchProvider = nil
+        for input in batchQueue {
+            states[InsightKey(meetingID: meetingID, definitionID: input.configuration.id)] = .cancelled
+        }
+        batchQueue.removeAll()
+        for (key, input) in Array(inputs) where key.meetingID == meetingID && input.kind != .automatic { cancel(key) }
+    }
+
+    private func dispatchBatch(now: Date = .now) {
+        guard let meetingID = batchMeetingID else { return }
+        while !batchQueue.isEmpty && inputs.count < Self.maximumConcurrentRequests {
+            dispatch(batchQueue.removeFirst(), now: now)
+        }
+        if batchQueue.isEmpty && !inputs.values.contains(where: { $0.meetingID == meetingID && $0.kind == .manual }) {
+            batchMeetingID = nil
+            batchProvider = nil
+        }
+    }
+
+    private func dispatch(_ input: InsightInput, now: Date) {
+        let key = InsightKey(meetingID: input.meetingID, definitionID: input.configuration.id)
+        schedule?.noteDispatch(input.configuration.id, now: now,
+                               finalizedCharacters: input.sources.reduce(0) { $0 + $1.text.count })
         do {
-            let raw = try await provider.complete(
-                system: systemPrompt(relevantVocabulary: relevantVocabulary),
-                user: transcript,
-                schema: InsightResult.responseSchema
-            )
-            guard let result = parse(raw) else { return .failure(.schemaViolation) }
-            return .success(result)
-        } catch let error as LLMError {
-            return .failure(error)
-        } catch {
-            return .failure(.network(error.localizedDescription))
-        }
-    }
-
-    static func flatten(sections: [Section]) -> String {
-        sections.compactMap { section in
-            let text = section.sourceText.trimmed
-            guard !text.isEmpty else { return nil }
-            return "\(section.speaker == .mine ? "Me" : "Other party"): \(text)"
-        }
-        .joined(separator: "\n")
-    }
-
-    static func flatten(
-        lines: [TranscriptLine],
-        preferringRefinedSource: Bool
-    ) -> String {
-        lines.sorted { $0.orderIndex < $1.orderIndex }
-            .compactMap { line in
-                let refinedSource = line.refinedSource?.trimmed
-                let text = if preferringRefinedSource,
-                              let refinedSource,
-                              !refinedSource.isEmpty {
-                    refinedSource
-                } else {
-                    line.sourceText.trimmed
+            guard let owner = try history.record(id: input.meetingID),
+                  input.kind == .summary || owner.definitions.contains(where: { $0.id == input.configuration.id }) else {
+                throw LLMError.invalidRequest("This meeting or insight item has been deleted.")
+            }
+            guard input.kind != .summary || owner.meetingStatus == .ended else {
+                throw LLMError.invalidRequest("End the meeting before generating a full summary.")
+            }
+            let selectedProvider = input.kind == .manual && batchMeetingID == input.meetingID
+                ? batchProvider : providerFactory()
+            guard let provider = selectedProvider else { throw LLMError.notConfigured }
+            let user = try InsightRequest.prepare(input)
+            let token = UUID()
+            tokens[key] = token
+            inputs[key] = input
+            states[key] = .generating
+            tasks[key] = Task { @MainActor [weak self] in
+                do {
+                    let raw = try await provider.complete(system: InsightRequest.systemPrompt,
+                                                          user: user, schema: InsightResult.responseSchema)
+                    try Task.checkCancellation()
+                    let result = try InsightResult.parse(raw, kind: input.kind)
+                    guard let self, self.tokens[key] == token else { return }
+                    guard let owner = try self.history.record(id: input.meetingID),
+                          input.kind == .summary || owner.definitions.contains(where: { $0.id == input.configuration.id }) else {
+                        self.cancel(key)
+                        return
+                    }
+                    let value = InsightSnapshotValue(id: token, input: input, completedAt: Date(), result: result)
+                    self.persist(value, key: key)
+                    self.finish(key, token: token)
+                } catch {
+                    guard let self, self.tokens[key] == token else { return }
+                    self.states[key] = error is CancellationError ? .cancelled : .failed(error.localizedDescription)
+                    self.finish(key, token: token)
                 }
-                guard !text.isEmpty else { return nil }
-                return "\(line.isMine ? "Me" : "Other party"): \(text)"
             }
-            .joined(separator: "\n")
-    }
-
-    /// Keeps complete newest lines until the character budget is full. If a single
-    /// line exceeds the budget, its newest suffix is retained rather than sending an
-    /// oversized request.
-    static func recentContext(from transcript: String, limit: Int) -> String {
-        guard limit > 0 else { return "" }
-        let trimmed = transcript.trimmed
-        guard trimmed.count > limit else { return trimmed }
-
-        var selected: [String] = []
-        var count = 0
-        for line in trimmed.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
-            let value = String(line)
-            let additional = value.count + (selected.isEmpty ? 0 : 1)
-            if additional + count > limit {
-                if selected.isEmpty { return String(value.suffix(limit)) }
-                break
-            }
-            selected.append(value)
-            count += additional
-        }
-        return selected.reversed().joined(separator: "\n")
-    }
-
-    /// Returns configured terms that occur in the request context. Alphanumeric
-    /// terms must match at word boundaries so a short entry such as "PR" does not
-    /// match inside "project". Original configuration order and spelling are kept.
-    static func relevantVocabulary(
-        from transcript: String,
-        configuredVocabulary: [String]
-    ) -> [String] {
-        guard !transcript.isEmpty else { return [] }
-        let locale = Locale(identifier: "en_US_POSIX")
-
-        return configuredVocabulary.filter { phrase in
-            guard !phrase.isEmpty else { return false }
-            let needsLeadingBoundary = phrase.first.map(Self.isLetterOrNumber) ?? false
-            let needsTrailingBoundary = phrase.last.map(Self.isLetterOrNumber) ?? false
-            var searchStart = transcript.startIndex
-
-            while searchStart < transcript.endIndex,
-                  let range = transcript.range(
-                    of: phrase,
-                    options: [.caseInsensitive, .literal],
-                    range: searchStart..<transcript.endIndex,
-                    locale: locale
-                  ) {
-                let leadingBoundaryMatches = !needsLeadingBoundary
-                    || range.lowerBound == transcript.startIndex
-                    || !Self.isLetterOrNumber(
-                        transcript[transcript.index(before: range.lowerBound)]
-                    )
-                let trailingBoundaryMatches = !needsTrailingBoundary
-                    || range.upperBound == transcript.endIndex
-                    || !Self.isLetterOrNumber(transcript[range.upperBound])
-
-                if leadingBoundaryMatches, trailingBoundaryMatches { return true }
-                searchStart = transcript.index(after: range.lowerBound)
-            }
-            return false
+        } catch {
+            states[key] = .failed(error.localizedDescription)
         }
     }
 
-    private static func isLetterOrNumber(_ character: Character) -> Bool {
-        character.isLetter || character.isNumber
+    func retrySave(_ id: UUID) {
+        guard let value = unsaved[id] else { return }
+        persist(value, key: InsightKey(meetingID: value.input.meetingID,
+                                      definitionID: value.input.configuration.id))
     }
 
-    static func systemPrompt(relevantVocabulary: [String]) -> String {
-        let base = """
-        You are a live meeting assistant. The input is the latest conversation: "Me" is the user and "Other party" is the other participant.
-        Return a JSON object: topic is the current topic, suggestions is an array of 1–3 suggested next steps, answer is a suggested answer or null, todos is an array of action items with who and what, and decisions is an array of agreed decisions.
-        Write all content in English. Limit suggestions to 1–3 items. Use only information present in the conversation. Return null when no suggested answer is appropriate, and empty strings or arrays for other fields without content. Do not invent information.
-        """
-        guard !relevantVocabulary.isEmpty else { return base }
-
-        let terms = relevantVocabulary.map { "- \($0)" }.joined(separator: "\n")
-        return """
-        \(base)
-
-        User vocabulary matched in the current context:
-        \(terms)
-        When referring to these terms, preserve their exact spelling. Do not introduce information absent from the conversation.
-        """
+    func cancelMeeting(_ id: UUID, deleting: Bool = false) {
+        if batchMeetingID == id { cancelBatch() }
+        for key in Array(tasks.keys) where key.meetingID == id { cancel(key) }
+        if recordingID == id { recordingID = nil; schedule = nil }
+        if deleting {
+            unsaved = unsaved.filter { $0.value.input.meetingID != id }
+            states = states.filter { $0.key.meetingID != id }
+        }
     }
 
-    static func parse(_ raw: String) -> InsightResult? {
-        JSONResponseParser.decode(InsightResult.self, from: raw)
+    func cancel(_ key: InsightKey) {
+        if states[key] == .queued {
+            batchQueue.removeAll { $0.meetingID == key.meetingID && $0.configuration.id == key.definitionID }
+            states[key] = .cancelled
+        }
+        if let task = tasks.removeValue(forKey: key) {
+            task.cancel()
+            inputs[key] = nil
+            tokens[key] = nil
+            states[key] = .cancelled
+        }
+        dispatchBatch()
+    }
+
+    private func persist(_ value: InsightSnapshotValue, key: InsightKey) {
+        do {
+            try saveSnapshot(value)
+            unsaved[value.id] = nil
+            states[key] = .saved
+        } catch {
+            unsaved[value.id] = value
+            states[key] = .unsaved("Generated but not saved. Retry Save before quitting. \(error.localizedDescription)")
+        }
+    }
+
+    private func finish(_ key: InsightKey, token: UUID) {
+        guard tokens[key] == token else { return }
+        tasks[key] = nil
+        inputs[key] = nil
+        tokens[key] = nil
+        dispatchBatch()
     }
 }

@@ -43,21 +43,22 @@ final class MeetingSelectionTests: XCTestCase {
         XCTAssertEqual(newer.meetingStatus, .paused)
     }
 
-    func testNoSavedSelectionOpensNewMeetingAndKeepsUnfinishedRecords() throws {
+    func testNoSavedSelectionRestoresMostRecentMeetingWithoutStartingCapture() throws {
         let (history, defaults) = try makeStorage()
         let interrupted = try makeRecord(history, status: .recording)
         let reopened = makeCoordinator(history, defaults)
 
         reopened.restoreSelection()
 
-        XCTAssertNil(reopened.selectedRecordID)
-        XCTAssertEqual(reopened.sessionState, .idle)
-        XCTAssertTrue(reopened.store.sections.isEmpty)
+        XCTAssertEqual(reopened.selectedRecordID, interrupted.id)
+        XCTAssertEqual(reopened.sessionState, .paused)
+        XCTAssertEqual(reopened.store.sections.first?.sourceText, "Hello")
+        XCTAssertEqual(defaults.string(forKey: "selectedMeetingID"), interrupted.id.uuidString)
         XCTAssertEqual(try history.unfinishedRecords().map(\.id), [interrupted.id])
         XCTAssertEqual(interrupted.meetingStatus, .paused)
     }
 
-    func testChoosingNewMeetingClearsSavedHistoryAndMountedSelections() async throws {
+    func testChoosingNewMeetingPersistsANewDraftAndKeepsPreviousMeetings() async throws {
         let (history, defaults) = try makeStorage()
         let paused = try makeRecord(history, status: .paused)
         let ended = try makeRecord(history, status: .ended)
@@ -65,20 +66,23 @@ final class MeetingSelectionTests: XCTestCase {
 
         await coordinator.loadSession(paused)
         await coordinator.startNewMeeting()
-        XCTAssertNil(defaults.string(forKey: "selectedMeetingID"))
+        let firstDraftID = try XCTUnwrap(coordinator.activeRecordID)
+        XCTAssertEqual(defaults.string(forKey: "selectedMeetingID"), firstDraftID.uuidString)
         coordinator.selectedHistoryRecord = ended
         await coordinator.startNewMeeting()
 
         let reopened = makeCoordinator(history, defaults)
         reopened.restoreSelection()
-        XCTAssertNil(reopened.selectedRecordID)
+        XCTAssertEqual(reopened.selectedRecordID, coordinator.activeRecordID)
+        XCTAssertNotEqual(reopened.selectedRecordID, firstDraftID)
+        XCTAssertEqual(reopened.workspaceRecord?.meetingStatus, .draft)
         XCTAssertEqual(reopened.sessionState, .idle)
         XCTAssertTrue(reopened.store.sections.isEmpty)
         XCTAssertNotNil(try history.record(id: paused.id))
         XCTAssertNotNil(try history.record(id: ended.id))
     }
 
-    func testMissingOrInvalidSavedSelectionOpensNewMeetingAndClearsPreference() throws {
+    func testMissingOrInvalidSavedSelectionLeavesEmptyStoreUnselected() throws {
         let (history, defaults) = try makeStorage()
         let deleted = try makeRecord(history, status: .ended)
         let deletedID = deleted.id
@@ -93,6 +97,112 @@ final class MeetingSelectionTests: XCTestCase {
             XCTAssertEqual(reopened.sessionState, .idle)
             XCTAssertNil(defaults.string(forKey: "selectedMeetingID"))
         }
+    }
+
+    func testMissingOrInvalidSavedSelectionChoosesMostRecentExistingMeeting() throws {
+        let (history, defaults) = try makeStorage()
+        let older = try history.createDraft(languagePair: .englishToEnglish, now: Date(timeIntervalSince1970: 100))
+        let latest = try history.createDraft(languagePair: .englishToEnglish, now: Date(timeIntervalSince1970: 200))
+        for value in [UUID().uuidString, "not-a-uuid"] {
+            defaults.set(value, forKey: "selectedMeetingID")
+            let reopened = makeCoordinator(history, defaults)
+            reopened.restoreSelection()
+
+            XCTAssertEqual(reopened.selectedRecordID, latest.id)
+            XCTAssertEqual(reopened.workspaceRecord?.meetingStatus, .draft)
+            XCTAssertEqual(reopened.sessionState, .idle)
+            XCTAssertEqual(defaults.string(forKey: "selectedMeetingID"), latest.id.uuidString)
+            XCTAssertNotNil(try history.record(id: older.id))
+        }
+    }
+
+    func testDeletingSelectedDraftSelectsLatestHistoryAndPersistsIt() async throws {
+        let (history, defaults) = try makeStorage()
+        _ = try history.createDraft(languagePair: .englishToEnglish, now: Date(timeIntervalSince1970: 100))
+        let latest = try makeRecord(history, status: .ended)
+        let coordinator = makeCoordinator(history, defaults)
+        await coordinator.startNewMeeting()
+        let draft = try XCTUnwrap(coordinator.workspaceRecord)
+        let deletedID = draft.id
+
+        coordinator.delete(draft)
+
+        XCTAssertNil(try history.record(id: deletedID))
+        XCTAssertEqual(coordinator.selectedHistoryRecord?.id, latest.id)
+        XCTAssertNil(coordinator.activeRecordID)
+        XCTAssertEqual(coordinator.sessionState, .idle)
+        XCTAssertTrue(coordinator.store.sections.isEmpty)
+        let reopened = makeCoordinator(history, defaults)
+        reopened.restoreSelection()
+        XCTAssertEqual(reopened.selectedRecordID, latest.id)
+    }
+
+    func testDeletingSelectedDraftSelectsAnotherDraftWithoutCreatingOne() async throws {
+        let (history, defaults) = try makeStorage()
+        let remaining = try history.createDraft(languagePair: .simplifiedChineseToSimplifiedChinese)
+        let coordinator = makeCoordinator(history, defaults)
+        await coordinator.startNewMeeting()
+        coordinator.delete(try XCTUnwrap(coordinator.workspaceRecord))
+
+        XCTAssertEqual(coordinator.workspaceRecord?.id, remaining.id)
+        XCTAssertEqual(coordinator.languagePair, remaining.languagePair)
+        XCTAssertEqual(coordinator.sessionState, .idle)
+        XCTAssertEqual(try history.unfinishedRecords().map(\.id), [remaining.id])
+    }
+
+    func testDeletingSelectedHistoryRestoresPausedMeetingAndItsTranscript() throws {
+        let (history, defaults) = try makeStorage()
+        let paused = try makeRecord(history, status: .paused)
+        let selected = try makeRecord(history, status: .ended)
+        let coordinator = makeCoordinator(history, defaults)
+        coordinator.selectedHistoryRecord = selected
+
+        coordinator.delete(selected)
+
+        XCTAssertEqual(coordinator.activeRecordID, paused.id)
+        XCTAssertNil(coordinator.selectedHistoryRecord)
+        XCTAssertEqual(coordinator.sessionState, .paused)
+        XCTAssertEqual(coordinator.elapsedSeconds, 30)
+        XCTAssertEqual(coordinator.store.sections.first?.sourceText, "Hello")
+        let reopened = makeCoordinator(history, defaults)
+        reopened.restoreSelection()
+        XCTAssertEqual(reopened.activeRecordID, paused.id)
+    }
+
+    func testDeletingLastDraftLeavesEmptyWorkspaceUntilNewMeetingIsChosen() async throws {
+        let (history, defaults) = try makeStorage()
+        let coordinator = makeCoordinator(history, defaults)
+        await coordinator.startNewMeeting()
+        coordinator.delete(try XCTUnwrap(coordinator.workspaceRecord))
+
+        XCTAssertNil(coordinator.workspaceRecord)
+        XCTAssertNil(coordinator.selectedRecordID)
+        XCTAssertNil(defaults.string(forKey: "selectedMeetingID"))
+        XCTAssertEqual(coordinator.sessionState, .idle)
+        XCTAssertTrue(coordinator.store.sections.isEmpty)
+        XCTAssertNil(try history.mostRecentRecord())
+        let reopened = makeCoordinator(history, defaults)
+        reopened.restoreSelection()
+        XCTAssertNil(reopened.selectedRecordID)
+
+        await reopened.startNewMeeting()
+        XCTAssertEqual(reopened.workspaceRecord?.meetingStatus, .draft)
+    }
+
+    func testDeletingLastEndedMeetingClearsRetainedLiveTranscript() async throws {
+        let (history, defaults) = try makeStorage()
+        let record = try makeRecord(history, status: .paused)
+        let coordinator = makeCoordinator(history, defaults)
+        await coordinator.loadSession(record)
+        await coordinator.stop()
+        XCTAssertTrue(coordinator.store.hasContent)
+
+        coordinator.delete(record)
+
+        XCTAssertNil(coordinator.workspaceRecord)
+        XCTAssertFalse(coordinator.store.hasContent)
+        XCTAssertEqual(coordinator.sessionState, .idle)
+        XCTAssertNil(try history.mostRecentRecord())
     }
 
     func testSwitchingMountedMeetingsPersistsSelectionWithoutAHistorySelectionChange() async throws {
@@ -165,20 +275,21 @@ final class MeetingSelectionTests: XCTestCase {
         XCTAssertEqual(reopened.selectedHistoryRecord?.id, record.id)
     }
 
-    func testStoppingEmptyMeetingClearsSelectionOnReopen() async throws {
+    func testStoppingEmptyMeetingRetainsWorkspaceOnReopen() async throws {
         let (history, defaults) = try makeStorage()
-        let record = try history.beginRecord(startedAt: .now, languagePair: .englishToEnglish)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
         let id = record.id
+        try history.setStatus(record, .paused)
         let coordinator = makeCoordinator(history, defaults)
         await coordinator.loadSession(record)
 
         await coordinator.stop()
 
-        XCTAssertNil(coordinator.selectedRecordID)
-        XCTAssertNil(try history.record(id: id))
+        XCTAssertEqual(coordinator.selectedRecordID, id)
+        XCTAssertNotNil(try history.record(id: id))
         let reopened = makeCoordinator(history, defaults)
         reopened.restoreSelection()
-        XCTAssertNil(reopened.selectedRecordID)
+        XCTAssertEqual(reopened.selectedRecordID, id)
         XCTAssertEqual(reopened.sessionState, .idle)
     }
 
@@ -199,7 +310,7 @@ final class MeetingSelectionTests: XCTestCase {
     }
 
     private func makeRecord(_ history: MeetingHistoryStore, status: MeetingStatus) throws -> MeetingRecord {
-        let record = try history.beginRecord(startedAt: .now, languagePair: .englishToEnglish)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
         var section = Section(id: 7, speaker: .remote)
         section.committedSource = ["Hello"]
         try history.sync(

@@ -22,7 +22,7 @@ struct MainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             InspectorResizeHandle(width: $inspectorWidth, minWidth: 240, maxWidth: 620)
-            InsightInspector(coordinator: coordinator, selectedRecord: $coordinator.selectedHistoryRecord)
+            InsightInspector(coordinator: coordinator)
                 .frame(width: inspectorWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -82,7 +82,7 @@ struct CaptionsView: View {
                 .frame(maxWidth: .infinity)               // center the 800pt column
                 .padding(.horizontal, 40)
                 .padding(.top, 24)
-                .padding(.bottom, 16)                     // dock band is reserved via safeAreaInset
+                .padding(.bottom, 16)                     // the dock occupies its own layout row
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Self.bg)

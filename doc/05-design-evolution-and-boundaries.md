@@ -13,7 +13,7 @@ This trades product breadth for simpler, more deterministic implementation.
 Two paths share this pattern:
 
 - Translation replaces pending requests within a Section with its latest generation.
-- Insights coalesce all changes during a request into one dirty flag.
+- Insights keep one automatic request and evaluate the latest complete input after interval/content gates. Manual generation takes priority; explicit batches fill available slots under a shared cap of six active insight requests.
 
 Interim ASR is volatile. Replaying every hypothesis in order adds latency without value; resources should catch up with the user's current view.
 
@@ -32,7 +32,7 @@ AI refinement writes only `refinedSource/refinedTarget`, leaving ASR and live tr
 
 ### 1.5 Save from the start
 
-A record is created at start, not after End. Stable Section IDs support incremental SwiftData upsert, letting pause, crash recovery, and multiple unfinished meetings share one model.
+A record is created before recording, so preparation has the same persistent owner as later transcripts and insights. Stable Section IDs support incremental SwiftData upsert, letting pause, crash recovery, and multiple unfinished meetings share one model.
 
 ### 1.6 Let platform frameworks handle common complexity
 
@@ -52,12 +52,13 @@ The product has grown from a caption utility into a meeting workspace with trans
 | WhisperKit / multiple engines | Two Apple SpeechAnalyzers | Unified ASR; remove third-party model dependency |
 | Menu bar + floating NSPanel | Dock + menu bar + three-column window | One workspace for history, captions, insights |
 | Live captions/export only | Incremental SwiftData history and recovery | Persistent meeting records |
+| Single overwritten insight | Meeting-owned immutable input/result snapshots | Persistent live history and full summaries |
 | Simple translation queue | Per-Section mailbox + generation | Avoid interim backlog and stale writes |
 | Local caption utility | Optional strict JSON Schema insights/refinement | In-meeting assistance and post-meeting cleanup |
 | Boolean lifecycle + 900 ms save delay | Explicit state + awaitable finalization | Avoid illegal transitions, lost final words, stale-session writes |
 | Unsafe Sendable + minimal checking | Actor/MainActor isolation + complete checking | Compiler-checked capture/recognition boundaries |
 | No test target | XCTest domain regressions | Protect Sections, scheduling, persistence, AI logic |
-| One all-purpose insight object | `InsightEngine` + `TranscriptRefiner` + `MeetingTitleGenerator` | Separate live single-flight, post-meeting batches, and one-shot titles |
+| One all-purpose insight object | `InsightEngine` + `TranscriptRefiner` + `MeetingTitleGenerator` | Separate bounded insight concurrency, serial refinement batches, and one-shot titles |
 
 Old implementations are no longer selectable paths. [`Sources/`](../Sources/) and [`project.yml`](../project.yml) define the current architecture.
 
@@ -87,12 +88,12 @@ Strict compliance with the baseline requires more than another enum in `CaptionS
 
 ### 4.2 Engineering
 
-- Unit tests cover `CaptionStore`, `TranslationBridge`, SwiftData upsert/empty-record deletion, AI context, and parsing. Real Speech, Translation, permissions, and full UI flows still lack automated integration coverage.
+- Unit tests cover `CaptionStore`, `TranslationBridge`, SwiftData upsert/draft retention and artifact ownership, AI context, and parsing. Real Speech, Translation, permissions, and full UI flows still lack automated integration coverage.
 - Both Swift 6 targets use `SWIFT_STRICT_CONCURRENCY=complete`. `NativeSpeechEngine` is an actor; capture and coordination use MainActor. No `@unchecked Sendable` or `nonisolated(unsafe)`.
 - The main window is split into container, sidebar, stage, and Inspector. `CaptureCoordinator` remains the vertical session orchestrator. Split further only for new independent I/O/state responsibilities, not to reduce line count with more indirection.
 - `build.sh` hardcodes a personal Apple Development certificate and is not directly portable to other developers.
 - Translation drain waits at most five seconds, prioritizing ending and source persistence over complete slow translations.
-- Live AI uses a provider-independent 6,000-character budget, not exact token counting; long meetings prioritize recent topics.
+- Insights use a configured full-input budget with conservative byte-based preflight. Oversized meetings fail explicitly; no recent-only excerpt is mislabeled complete. Title generation alone retains its recent 6,000-character limit.
 - App termination can synchronously save the store snapshot but cannot drain audio still in Speech.
 
 ### 4.3 Repository and documentation
@@ -109,5 +110,5 @@ Follow the existing approach of a small complete workflow before another layer:
 2. Does it change Section invariants? Write transition examples/tests before UI changes.
 3. Does it require every intermediate event or only the latest snapshot? Prefer coalescing in real-time paths.
 4. Does it modify factual data? Keep AI-derived results additive.
-5. Does it affect crash recovery? Validate the full lifecycle from start-time persistence, not only a successful stop.
+5. Does it affect crash recovery? Validate the full lifecycle from draft creation and start-time persistence, not only a successful stop.
 6. Does it send more data off-device? Reflect that explicitly in settings and product copy.

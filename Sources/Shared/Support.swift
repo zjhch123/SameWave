@@ -28,6 +28,7 @@ enum DateFormat {
     static let dayTime: DateFormatter = make("MMM d, yyyy 'at' HH:mm")
     /// "18:27" — a per-line spoken time.
     static let clock: DateFormatter = make("HH:mm")
+    static let insightTimestamp: DateFormatter = make("MMM d, yyyy HH:mm:ss")
     /// "20260707-1827" — a filename-safe export stamp.
     static let fileStamp: DateFormatter = make("yyyyMMdd-HHmm")
 

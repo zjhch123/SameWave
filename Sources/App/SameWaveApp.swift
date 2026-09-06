@@ -18,6 +18,7 @@ struct SameWaveApp: App {
                     .background(TrafficLightConfigurator(headerHeight: 48))
                     .modelContainer(history.container)
                     .environment(delegate.aiSettings)
+                    .modifier(SettingsSheet())
                     .environment(delegate.settingsNavigation)
             } else {
                 StorageFailureView(message: delegate.storageError ?? "Unknown error")
@@ -26,22 +27,7 @@ struct SameWaveApp: App {
         }
         .windowStyle(.hiddenTitleBar)
 
-        // App-wide AI and speech-vocabulary configuration (⌘,). SwiftUI wires this
-        // to the standard "SameWave ▸ Settings…" menu item automatically.
-        Settings {
-            SettingsView(
-                aiSettings: delegate.aiSettings,
-                speechVocabularyDraft: delegate.speechVocabularyDraft,
-                vocabularyImportController: delegate.vocabularyImportController
-            )
-            .environment(delegate.settingsNavigation)
-        }
-
-        Window("Generate Vocabulary from Markdown", id: VocabularyImportWindow.windowID) {
-            VocabularyImportWindow(controller: delegate.vocabularyImportController)
-        }
-        .defaultSize(width: 560, height: 460)
-        .defaultLaunchBehavior(.suppressed)
+        .commands { SettingsCommands(navigation: delegate.settingsNavigation) }
 
         // Lightweight menu-bar icon for quick access / quit.
         MenuBarExtra("SameWave", systemImage: "captions.bubble") {
@@ -62,30 +48,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let storageError: String?
     /// Shared AI configuration used by every AI feature.
     let aiSettings: AISettings
-    let settingsNavigation = SettingsNavigation()
+    let settingsNavigation: SettingsNavigation
     /// User-managed local vocabulary for English speech recognition.
     let speechVocabularySettings: SpeechVocabularySettings
-    /// App-lifetime edit draft shared by Settings and the standalone import window.
-    let speechVocabularyDraft: SpeechVocabularyDraft
-    /// Owns Markdown import work independently of the Settings scene lifecycle.
-    let vocabularyImportController: VocabularyImportController
+    /// Owns personal vocabulary editing and extraction for this app session.
+    let vocabularyEditor: VocabularyEditorStore
 
     override init() {
         let aiSettings = AISettings()
         self.aiSettings = aiSettings
         let speechVocabularySettings = SpeechVocabularySettings()
         self.speechVocabularySettings = speechVocabularySettings
-        let speechVocabularyDraft = SpeechVocabularyDraft(settings: speechVocabularySettings)
-        self.speechVocabularyDraft = speechVocabularyDraft
-        vocabularyImportController = VocabularyImportController(
-            aiSettings: aiSettings,
-            vocabularyDraft: speechVocabularyDraft
-        )
+        vocabularyEditor = VocabularyEditorStore(aiSettings: aiSettings, settings: speechVocabularySettings)
+        settingsNavigation = SettingsNavigation(aiSettings: aiSettings, vocabularyEditor: vocabularyEditor)
         coordinator = CaptureCoordinator(
             speechVocabularySettings: speechVocabularySettings
         )
         do {
-            history = try MeetingHistoryStore()
+            history = try MeetingHistoryStore(configuration:
+                ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+                    ? .init(isStoredInMemoryOnly: true) : nil
+            )
             storageError = nil
         } catch {
             history = nil
@@ -95,10 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.history = history
         // Wire the insight engine with the user's settings so live captions can be
         // summarized (and history meetings generated on demand).
-        coordinator.insights = InsightEngine(
-            settings: aiSettings,
-            vocabularySettings: speechVocabularySettings
-        )
+        if let history {
+            coordinator.insights = InsightEngine(settings: aiSettings, history: history)
+        }
         coordinator.refiner = TranscriptRefiner(
             settings: aiSettings,
             vocabularySettings: speechVocabularySettings
@@ -108,6 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)   // show in Dock; app has a main window
+
+        // Hosted domain tests own their fixtures and must not restore real meetings
+        // or request capture permissions from the unsigned test application.
+        guard ProcessInfo.processInfo.environment["XCTestBundlePath"] == nil else { return }
 
         // Restore the last selection; interrupted meetings remain paused until resumed.
         coordinator.restoreSelection()

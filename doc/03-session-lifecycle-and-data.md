@@ -1,140 +1,74 @@
 # Session Lifecycle and Data
 
-> Main implementation: [`CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift), [`MeetingHistory.swift`](../Sources/History/MeetingHistory.swift), [`TranscriptExporter.swift`](../Sources/History/TranscriptExporter.swift).
+> Main implementation: [CaptureCoordinator](../Sources/Meeting/CaptureCoordinator.swift), [MeetingHistory](../Sources/History/MeetingHistory.swift), [MeetingWorkspace](../Sources/History/MeetingWorkspace.swift), [InsightSnapshot](../Sources/History/InsightSnapshot.swift), [TranscriptExporter](../Sources/History/TranscriptExporter.swift).
 
-## 1. Explicit session state
+## 1. Persistent meetings and transient capture
 
-[`MeetingSessionState`](../Sources/Meeting/MeetingModels.swift) is the sole source of lifecycle state:
+A meeting owns preparation before capture begins. Its persisted status is `draft`, `recording`, `paused`, or `ended`. The coordinator independently uses `idle`, `starting`, `recording`, `pausing`, `paused`, and `stopping` for resource transitions. An idle coordinator may have a draft mounted; attaching documents does not start recording.
 
-| State | Meaning | Main transitions |
-|---|---|---|
-| `idle` | No mounted session | `startGlobal` or `mountPaused` |
-| `starting` | Opening recognition/capture resources | `recording`, or `idle/paused` on failure |
-| `recording` | Receiving both audio streams | `pausing` or `stopping` |
-| `pausing` | Draining capture, ASR, translation | `paused` |
-| `paused` | Session mounted without capture | `starting`, `stopping`, or unmount |
-| `stopping` | Final drain and save | `idle`, or `paused` if saving fails |
+New Meeting saves a draft immediately, selects it, and displays preparation. Quick Start creates the same draft before starting capture, without requiring documents, custom prompts, or AI. Drafts include an editable Meeting Overview insight with automatic updates initially off.
 
-`isRunning`, `isPaused`, and `isTransitioning` derive from this enum rather than combining booleans in `CaptionStore`. `sessionStartedAt` and `pausedElapsed` track time only; `activeRecord` owns the current persistent object only.
+`createdAt` records workspace creation. `startedAt` is set when capture is requested; for drafts it is not a recording timestamp. `endedAt = startedAt + elapsedSeconds` remains the duration endpoint, excluding pauses. Insight cutoffs and completions are independent wall-clock dates; their recorded-time offsets exclude pauses.
 
-## 2. Lifecycle
+## 2. Lifecycle and selection
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Starting: startGlobal
-    Paused --> Starting: resume
-    Starting --> Recording: Required system audio pipeline ready
-    Starting --> Idle: New meeting startup fails
-    Starting --> Paused: Mounted meeting resume fails
-    Recording --> Pausing: pause
-    Pausing --> Paused: ASR / translation drain + save
-    Recording --> Stopping: stop
-    Paused --> Stopping: stop
-    Stopping --> Idle: finish succeeds
-    Stopping --> Paused: finish fails; retry available
-    Paused --> Idle: Unmount after saving
-```
+### Start and failure
 
-### 2.1 Start
+Start saves the selected draft's language pair and recording start/status before opening system audio and both recognizers. The local caption store and timing initialize for this recording. Required system-audio startup failure tears down resources and returns the same meeting to draft status, retaining documents, terms, title, and definitions. It no longer deletes empty meetings. An initial microphone failure remains visible while allowing system audio to continue.
 
-`startGlobal` enters `starting`, clears the live store, resets insights and timing, and immediately creates a `MeetingRecord` with `status=recording`. System audio is required: failure tears down resources, deletes the empty record, and returns to `idle`. An initial microphone failure is displayed but allows system audio to continue. Only after required resources are ready does the session enter `recording` and begin four-second autosave.
+### Pause and resume
 
-Creating the disk record before waiting for the first utterance is fundamental to crash recovery.
+Pause cancels pending insights, accumulates active recording time, stops capture and autosave, drains ASR callbacks, seals the floor, and waits at most five seconds for translation. It then saves the transcript and paused status. A failed save retains the mounted transcript for retry and prevents switching.
 
-### 2.2 Pause
+Resume freezes the current combined meeting/personal vocabulary for both English recognizers, preserves prior Sections and elapsed time, and rebuilds capture. Failure returns to paused. Automatic insight scheduling starts a fresh interval/content baseline at successful start/resume; it does not generate merely because old transcript text exists.
 
-`pause` is awaitable:
+### End
 
-1. Accumulate the current recording segment's duration.
-2. Stop autosave and capture, drain queued audio, and await Speech finalization and store callbacks.
-3. Seal the current floor and schedule final translation.
-4. Wait up to five seconds for translation idle.
-5. Sync text and set the record to `paused`, retaining Sections and the active record.
+End cancels outstanding insight requests and follows the same capture/ASR/translation drain. Final text and ended status save together. Empty meetings remain saved. Successful completion selects the same meeting's history; live insight snapshots remain available. End does not request or relabel a full summary. A failed final save leaves the meeting paused with its source in memory and an explicit retry message.
 
-If persistence fails, keep the session mounted and show the error. Session-switching callers do not discard unsaved memory state.
+### Switching and recovery
 
-### 2.3 Resume
+- Selecting another draft, paused meeting, or ended meeting suspends and saves the mounted recording first. Ended-history navigation uses the same coordinator boundary.
+- Only one recording is mounted. Drafts mount without capture; paused records restore sealed Sections and resume IDs above the maximum saved Section ID.
+- Persist the displayed meeting UUID in UserDefaults `selectedMeetingID` whenever selection changes. History selection takes precedence over a mounted record.
+- On launch, interrupted `recording` records become paused. Drafts remain drafts. Restore the saved UUID; missing/invalid/deleted selections choose the most recently created stored meeting. Selection never starts capture.
+- Deleting the displayed meeting selects another mounted meeting if present, otherwise the most recently created remaining meeting. Deleting another meeting preserves selection. The selected UUID persists immediately. When no meetings remain, clear the transcript and show a real empty state without a capture dock or synthetic sidebar row; New Meeting explicitly creates a draft.
+- A normal quit synchronously saves visible source already received; a crash retains the latest four-second autosave. Neither can recover audio still inside recognition because audio is never stored.
 
-`resume` enters `starting`, marks the record recording, and rebuilds capture/recognizers. A required-pipeline failure rolls back to paused while retaining text and elapsed time. Restored Sections are sealed/done; new speech opens a new Section.
+## 3. Ownership and preparation
 
-### 2.4 End
+`MeetingRecord` owns cascade relationships to:
 
-`stop` shares the deterministic pause cleanup path: stop capture → drain audio → finalize Speech → seal → wait up to five seconds for translation → `finish`. It does not use a fixed sleep.
+| Model | Saved content |
+|---|---|
+| `TranscriptLine` | Section ID/order, speaker, spoken date, original source/translation, additive refined variants |
+| `MeetingDocument` | UUID, original filename, managed UTF-8 Markdown text copy, import date |
+| `MeetingVocabularyTerm` | Confirmed spelling |
+| `InsightDefinition` | Stable UUID, title, prompt, scope, automatic-update choice, creation time |
+| `InsightSnapshot` | Immutable result payload, exact input/configuration, owner, kind, request/completion dates |
 
-A translation timeout saves available source and best translation, immediately replaces the session token, and rejects late writes into later meetings. If `finish` fails, retain all memory state in paused mode so the user can retry. Unmount only after success.
+The meeting also stores user title, AI title, language pair, creation/recording dates, cached line count, refinement date, and glossary. A nonblank user title always wins. Save or Return commits the title in Preparation; unsaved typing is a local field draft. The saved title survives capture and reopening. Automatic title generation during refinement is skipped when the saved user title is nonblank, and a late response cannot be applied after a user title has been saved.
 
-### 2.5 Switch sessions
+Markdown attachments are local text copies, up to 3 MB per file and 30 MB per meeting. The original file can move or disappear. `VocabularyDocumentLoader.merging` validates and deduplicates additions for both meeting attachments and personal temporary files, preserving order and counting each distinct filename/content pair once. Changed content becomes a distinct attachment. Remove the previous attachment explicitly when replacing it. Removal preserves confirmed terms; deleting the meeting cascades through all artifacts. No document text is sent merely by attachment. Extract Vocabulary is a separate explicit AI action.
 
-Multiple paused sessions may exist, but only one is mounted in memory:
+Preparation separates Context attachment management from Vocabulary editing. Title, term, and insight actions save explicitly; language choices persist on change. The coordinator retains one VocabularyEditorStore per meeting, including manual drafts, row edits, source-independent extraction, candidates, selection, and reading state. Closing preparation or switching meetings preserves that session. The meeting sheet and Settings Vocabulary tab reuse VocabularyEditorView. Personal editing stays within the fixed-size Settings sheet; switching tabs or closing Settings preserves its app-owned editor state. Suggested Terms owns its selection, Add to Vocabulary, Discard, and feedback; selected saves leave unchecked candidates and unrelated manual edits intact. Saved-row edits and removal use the same explicit destination transaction. A failed vocabulary write restores its affected rows without rolling back unrelated model edits. Done dismisses without saving or cancelling. Stop retains partial results, while Discard clears suggestions/progress when stopped. Retry uses the original extraction input. Successful meeting deletion invalidates its editor and rejects late results. Confirmed preparation persists across relaunch; pending edits and suggestions last only until app exit. Vocabulary previews up to twelve saved terms in wrapping chips and shows the remaining count. Its extraction card lists every Context filename and byte size in the same stable import order, read-only. Context shows filename, size, and direct removal without content previews; returning from Vocabulary focuses that existing card rather than opening another sheet.
 
-- Leaving a recording session pauses and saves it first.
-- Leaving a paused session syncs again and keeps it paused.
-- Selecting another unfinished record rebuilds the store from SwiftData.
-- Start a New Meeting unmounts the current session and shows a blank stage without starting capture.
-- Pause/sync failure aborts switching and retains the current session.
+## 4. Incremental transcript and snapshot writes
 
-`CaptureCoordinator.selectedHistoryRecord` represents read-only history being viewed. With no history selection, show the mounted session, or a new meeting if none is mounted. Sidebar, stage, and insights bind to this same selection. Whenever history selection or mounted record changes, persist the displayed meeting UUID to UserDefaults `selectedMeetingID`; remove the key when showing a new meeting. The coordinator updates selection after successful switch/end/delete, independently of View refresh or termination callbacks.
+`sync` upserts meaningful Sections by stable `sectionId`, updates ordering/text/dates, deletes pruned empty Sections, and refreshes cached count/status/duration in one save. Refinement writes separate fields and never overwrites originals.
 
-## 3. SwiftData models
+Every successful insight appends a new snapshot immediately. The payload retains the full source used, including separately marked provisional text, prompt/configuration, complete applicable vocabulary, provider/model label, budget, and timestamps. Later refinement or prompt changes cannot rewrite that evidence. Reading saved snapshots requires neither credentials nor networking. See [AI insights](04-ai-insights-and-refinement.md) for dispatch and coverage policy.
 
-### 3.1 MeetingRecord
+SwiftData errors propagate. Failed saves roll back model mutations. The engine retains an unsaved generated value in memory, labels it unsaved, and offers Retry Save without another provider request. Retry is idempotent by snapshot UUID. Unsaved results are not durable across quitting; the UI explicitly says to retry before quitting. Automatic generation for an item with an unsaved result pauses until it is saved. Deleting its meeting discards pending/unsaved results only after the deletion succeeds.
 
-Stores session-level data:
+A database-open failure blocks meeting work rather than starting a nonpersistent replacement. There are no custom schema migrations, obsolete `insightJSON` readers, or dual writes.
 
-- Unique UUID, start/end time, source/target language pair, Section count.
-- Lifecycle status: `recording | paused | ended`.
-- Optional `insightJSON`.
-- Optional `aiTitle`; without a valid title, display the start time.
-- Optional `refinedAt` and `glossaryJSON`.
-- Cascade relationship to `TranscriptLine`.
+## 5. History and export
 
-### 3.2 TranscriptLine
+The sidebar lists drafts, recording, paused, and ended meetings by creation date. Both user and AI titles retain the meeting date in secondary metadata; an untitled meeting uses the date as its primary label. History contains original/refined transcript display and the same insight timeline. Definitions can be edited or removed without deleting previously saved results; removed definitions remain browsable through their snapshots.
 
-One persisted line corresponds to one Section at save time:
+Markdown export includes every saved insight version in request order, distinguishing manual, automatic, and full-summary kinds, with cutoff, coverage, provisional disclosure, conclusions, points, and summary parts. Insights no longer request or export supporting evidence quotes. The transcript portion prefers refined text when available and preserves source echoes only for translated meetings. Export never changes stored originals. Undecodable saved snapshots are retained and reported rather than silently omitted.
 
-- `speaker`, `sourceText`, `targetText`, `spokenAt`.
-- `orderIndex`: display order within the record.
-- `sectionId`: stable live-Section upsert key.
-- `refinedSource`, `refinedTarget`: additional AI-refined versions.
+## 6. Validation boundaries
 
-Refinement never overwrites original text. Users can switch between Original and Refined.
-
-## 4. Incremental persistence
-
-[`MeetingHistoryStore.sync`](../Sources/History/MeetingHistory.swift):
-
-1. Filter Sections containing only whitespace or isolated punctuation.
-2. Index existing `record.lines` by `sectionId`.
-3. Update or insert each valid Section's line.
-4. Delete lines whose empty Sections were pruned from the live store.
-5. Update `lineCount`, `endedAt`, and optional status in one context save.
-
-Stable-ID upsert avoids deleting and rebuilding the entire meeting every four seconds, reducing relationship churn and allowing resumed recording to update the same line.
-
-`finish` saves final text, `endedAt`, and `status=ended` atomically, with no intermediate commit where text is updated but the meeting remains unfinished. `beginRecord`, `sync`, `setStatus`, `finish`, `unfinishedRecords`, and `delete` propagate SwiftData errors. Save failure rolls back the context before later operations can observe uncommitted changes. The coordinator presents errors at the relevant boundary instead of manufacturing success with `try?`. Failure to create the persistent container shows a blocking launch error rather than switching to an in-memory database.
-
-## 5. Crash and exit recovery
-
-- Normal termination: `applicationWillTerminate` immediately saves the current store snapshot.
-- Crash: the latest four-second autosave remains on disk. The theoretical loss window is one autosave interval plus audio still being recognized.
-- Next launch: normalize every `status != ended` record to paused, then look up the saved selection UUID. Ended records open read-only; unfinished records mount paused without starting capture.
-- A previous new-meeting selection, missing/invalid UUID, or deleted record shows a new meeting and clears invalid selection. Other paused records remain in the sidebar; the newest one is not selected automatically. Database read/save failures show a recovery error and retain the key for retry.
-- Recovery preserves `sectionId` and sets `nextId` to the maximum plus one, avoiding collisions.
-
-## 6. History and export
-
-- [`MeetingSidebar`](../Sources/App/MeetingSidebar.swift) uses a reverse-chronological SwiftData `@Query`, listing recording, paused, and ended meetings together.
-- Ended records open read-only in [`HistoryDetailView`](../Sources/History/HistoryDetailView.swift).
-- With `aiTitle`, sidebar rows show title, start time, and count/duration on three lines. Details use the title as primary text while retaining the start time. Blank/missing titles use start time instead.
-- Both live and saved meetings export as Markdown.
-- Historical export prefers refined text and prepends cached AI insights.
-- Translated meetings export target and source; same-language meetings suppress duplicate source echo.
-- Export headings, speaker labels, and metadata are English. Transcript and cached content are preserved. Dates use an English Gregorian format; durations use `m`/`s` units.
-
-## 7. Consistency boundaries
-
-- ASR finalization is deterministic; translation waits at most five seconds so an unresponsive system service cannot block lifecycle completion. Source is saved on timeout, while some translations may be missing.
-- Four-second autosave still permits loss of the latest interval and audio without final ASR. Because audio is not saved, that part cannot be recovered offline.
-- `applicationWillTerminate` is synchronous: it saves text already in the store but cannot asynchronously drain recognition as End does.
-- `elapsedSeconds` counts active recording time. `endedAt = startedAt + elapsedSeconds`; pauses do not count toward duration.
+Deterministic tests cover draft restart, empty finish, failed-start state retention, title ownership, attachment copies and limits, vocabulary isolation, definition/snapshot ownership, cascade deletion, pause/end selection, and snapshot save retry. On-disk reopen tests verify serialization beyond a single in-memory context. Actual audio, permissions, recognition accuracy, and live translation require signed-app smoke tests; see [Phase 2 validation](phase-2-validation.md).

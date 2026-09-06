@@ -6,14 +6,15 @@ import SwiftData
 /// carry per-utterance spoken-time stamps.
 ///
 /// A record is written INCREMENTALLY, not once at stop: `status` tracks its
-/// lifecycle ("recording" → "paused" → "ended"), and the coordinator autosaves the
-/// live transcript every few seconds. So a meeting survives a pause, an app quit, or
-/// a crash — on next launch any non-"ended" record is recovered as a paused session
-/// the user can resume (losing at most the last few unsynced seconds).
+/// lifecycle ("draft" → "recording" → "paused" → "ended"). Preparation saves before
+/// capture, and the coordinator autosaves the live transcript every few seconds.
+/// Interrupted recordings recover paused; prepared drafts remain drafts.
 @Model
 final class MeetingRecord {
     /// Stable id (also used to select in the UI).
     @Attribute(.unique) var id: UUID
+    var createdAt: Date = Date()
+    var userTitle: String = ""
     var startedAt: Date
     var endedAt: Date
     /// Persisted raw value of `MeetingLanguagePair`.
@@ -23,11 +24,8 @@ final class MeetingRecord {
     /// Persisted raw value of `MeetingStatus`.
     var status: String
 
-    /// Cached AI insight for this meeting, encoded as `InsightResult` JSON.
-    var insightJSON: String?
-
     /// Concise title generated from the transcript by the configured AI provider.
-    /// nil or blank keeps the deterministic started-at date as the visible title.
+    /// Used when no user title is saved; a missing title displays the start date.
     var aiTitle: String?
 
     /// When the transcript was last LLM-refined (source cleaned + translation redone),
@@ -42,20 +40,28 @@ final class MeetingRecord {
     /// The transcript lines, ordered by `orderIndex`. Deleting the record deletes them.
     @Relationship(deleteRule: .cascade, inverse: \TranscriptLine.record)
     var lines: [TranscriptLine]
+    @Relationship(deleteRule: .cascade, inverse: \MeetingDocument.record)
+    var documents: [MeetingDocument] = []
+    @Relationship(deleteRule: .cascade, inverse: \MeetingVocabularyTerm.record)
+    var vocabulary: [MeetingVocabularyTerm] = []
+    @Relationship(deleteRule: .cascade, inverse: \InsightDefinition.record)
+    var definitions: [InsightDefinition] = []
+    @Relationship(deleteRule: .cascade, inverse: \InsightSnapshot.record)
+    var insightSnapshots: [InsightSnapshot] = []
 
     init(id: UUID = UUID(), startedAt: Date, endedAt: Date,
          languagePair: MeetingLanguagePair,
-         lineCount: Int, status: MeetingStatus, insightJSON: String? = nil,
+         lineCount: Int, status: MeetingStatus,
          aiTitle: String? = nil,
          refinedAt: Date? = nil, glossaryJSON: String? = nil,
          lines: [TranscriptLine] = []) {
         self.id = id
+        self.createdAt = startedAt
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.language = languagePair.rawValue
         self.lineCount = lineCount
         self.status = status.rawValue
-        self.insightJSON = insightJSON
         self.aiTitle = aiTitle
         self.refinedAt = refinedAt
         self.glossaryJSON = glossaryJSON
@@ -67,10 +73,12 @@ final class MeetingRecord {
     /// "Jul 7, 2026 at 18:27" — the row/header title.
     var displayDate: String { DateFormat.dayTime.string(from: startedAt) }
 
-    /// The AI title when available, otherwise the deterministic meeting date.
     var hasAITitle: Bool { aiTitle?.trimmed.isEmpty == false }
+    var hasTitle: Bool { !userTitle.trimmed.isEmpty || hasAITitle }
+    var needsAITitle: Bool { !hasTitle }
 
     var displayTitle: String {
+        if !userTitle.trimmed.isEmpty { return userTitle.trimmed }
         guard let title = aiTitle?.trimmed, !title.isEmpty else { return displayDate }
         return title
     }
@@ -83,9 +91,9 @@ final class MeetingRecord {
     /// "N sections · duration" — the one-line summary shown in the sidebar row and stage header.
     var metaText: String { "\(lineCount) \(lineCount == 1 ? "section" : "sections") · \(durationText)" }
 
-    /// Keep the original date visible as secondary metadata after an AI title replaces it.
+    /// Keep the original date visible as secondary metadata after a title replaces it.
     var displayMetaText: String {
-        guard hasAITitle else { return metaText }
+        guard hasTitle else { return metaText }
         return "\(displayDate) · \(metaText)"
     }
 
@@ -94,9 +102,6 @@ final class MeetingRecord {
     /// languages differ. Same-language meetings store the recognized source as the target,
     /// so repeating it would duplicate the caption.
     var showsSourceEcho: Bool { languagePair.needsTranslation }
-
-    /// The decoded cached insight, or nil if none was generated (or it's unreadable).
-    var insight: InsightResult? { InsightResult.decode(from: insightJSON) }
 
     /// Whether this meeting has an LLM-refined version (source cleaned + translation
     /// redone). Gates the Original/Refined toggle and picks refined text for export.
@@ -161,11 +166,6 @@ final class TranscriptLine {
     }
 
     var isMine: Bool { speaker == Speaker.mine.persistedValue }
-    /// Chinese primary; falls back to source if untranslated.
-    var displayText: String {
-        let zh = targetText.trimmed
-        return zh.isEmpty ? sourceText : zh
-    }
     /// "18:27" — the per-line spoken time.
     var timeText: String { DateFormat.clock.string(from: spokenAt) }
 
@@ -191,34 +191,20 @@ final class MeetingHistoryStore {
     let container: ModelContainer
 
     init(configuration: ModelConfiguration? = nil) throws {
-        if let configuration {
-            container = try ModelContainer(
-                for: MeetingRecord.self,
-                TranscriptLine.self,
-                configurations: configuration
-            )
-        } else {
-            container = try ModelContainer(for: MeetingRecord.self, TranscriptLine.self)
-        }
+        let schema = Schema([MeetingRecord.self, TranscriptLine.self, MeetingDocument.self,
+                             MeetingVocabularyTerm.self, InsightDefinition.self, InsightSnapshot.self])
+        container = try ModelContainer(for: schema, configurations: configuration.map { [$0] } ?? [])
     }
 
     var context: ModelContext { container.mainContext }
 
-    /// Open a new live record (status "recording") the moment a meeting starts, so it
-    /// exists on disk before a single word is spoken. Returned so the coordinator can
-    /// keep syncing into it.
-    func beginRecord(startedAt: Date,
-                     languagePair: MeetingLanguagePair) throws -> MeetingRecord {
-        let r = MeetingRecord(
-            startedAt: startedAt,
-            endedAt: startedAt,
-            languagePair: languagePair,
-            lineCount: 0,
-            status: .recording
-        )
-        context.insert(r)
+    func beginCapture(_ record: MeetingRecord, languagePair: MeetingLanguagePair,
+                      now: Date = .now) throws {
+        record.language = languagePair.rawValue
+        record.startedAt = now
+        record.endedAt = now
+        record.status = MeetingStatus.recording.rawValue
         try save()
-        return r
     }
 
     /// Incrementally sync the live transcript into `record`: UPSERT each meaningful
@@ -270,13 +256,9 @@ final class MeetingHistoryStore {
         try save()
     }
 
-    /// Finalize a meeting: one last sync, then mark "ended" so it enters history. An
-    /// empty meeting (nothing was said) is deleted rather than left as a blank row.
+    /// Finalize without deleting preparation or an empty workspace.
     func finish(_ record: MeetingRecord, sections: [Section], endedAt: Date) throws {
         update(record: record, sections: sections, endedAt: endedAt, status: .ended)
-        if record.lineCount == 0 {
-            context.delete(record)
-        }
         try save()
     }
 
@@ -293,6 +275,14 @@ final class MeetingHistoryStore {
     func record(id: UUID) throws -> MeetingRecord? {
         var descriptor = FetchDescriptor<MeetingRecord>(
             predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    func mostRecentRecord() throws -> MeetingRecord? {
+        var descriptor = FetchDescriptor<MeetingRecord>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first

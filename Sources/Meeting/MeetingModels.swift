@@ -75,6 +75,7 @@ enum MeetingLanguagePair: String, Codable, Sendable {
 }
 
 enum MeetingStatus: String, Codable, Sendable {
+    case draft
     case recording
     case paused
     case ended

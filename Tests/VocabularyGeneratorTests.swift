@@ -18,7 +18,7 @@ final class VocabularyGeneratorTests: XCTestCase {
     }
 
     func testReviewCandidatesOnlyContainPhrasesNewToCurrentDraft() {
-        let candidates = VocabularyCandidateReview.newPhrases(
+        let candidates = SpeechVocabularySettings.newPhrases(
             from: ["xpay", " M365 Copilot ", "m365 copilot", "SwiftData"],
             excluding: ["XPay", "Existing Draft Phrase"]
         )
@@ -37,17 +37,12 @@ final class VocabularyGeneratorTests: XCTestCase {
         ])
         var events: [String] = []
         var successes: [[String]] = []
-        var timings: [VocabularyAttempt] = []
         try await VocabularyGenerator(provider: provider).generate(
             batches: batches, totalBatchCount: batches.count
         ) { event in
             switch event {
             case .attempt(let attempt):
-                if attempt.outcome == .running {
-                    events.append("start \(attempt.batchNumber)")
-                } else {
-                    timings.append(attempt)
-                }
+                events.append("start \(attempt.batchNumber)")
             case .succeeded(let number, let phrases):
                 events.append("success \(number)")
                 successes.append(phrases)
@@ -57,8 +52,6 @@ final class VocabularyGeneratorTests: XCTestCase {
         }
         XCTAssertEqual(events, ["start 1", "success 1", "start 2", "success 2"])
         XCTAssertEqual(successes, [["XPay"], ["M365 Copilot"]])
-        XCTAssertEqual(timings.count, 2)
-        XCTAssertTrue(timings.allSatisfy { ($0.duration ?? -1) >= 0 })
         let bodies = await provider.requestBodies()
         XCTAssertFalse(bodies.joined().contains("private-name.md"))
     }
@@ -83,7 +76,7 @@ final class VocabularyGeneratorTests: XCTestCase {
         XCTAssertEqual(count, 3)
     }
 
-    func testGeneratorRetriesTwiceAndRecordsEveryAttempt() async throws {
+    func testGeneratorRetriesTwiceAndPublishesCurrentAttempt() async throws {
         let provider = VocabularyProviderStub(responses: [
             .failure(.network("temporary")), .failure(.server(503)),
             .content(#"{"phrases":["XPay"]}"#),
@@ -91,19 +84,18 @@ final class VocabularyGeneratorTests: XCTestCase {
         let batches = try VocabularyGenerator.makeBatches(from: [
             VocabularySourceDocument(fileName: "test.md", content: "XPay")
         ])
-        var timings: [VocabularyAttempt] = []
+        var attempts: [VocabularyAttempt] = []
         var phrases: [String] = []
         try await VocabularyGenerator(provider: provider).generate(batches: batches, totalBatchCount: 1) {
-            if case .attempt(let timing) = $0, timing.duration != nil { timings.append(timing) }
+            if case .attempt(let attempt) = $0 { attempts.append(attempt) }
             if case .succeeded(_, let result) = $0 { phrases = result }
         }
         XCTAssertEqual(phrases, ["XPay"])
-        XCTAssertEqual(timings.map(\.number), [1, 2, 3])
-        XCTAssertEqual(timings.map(\.outcome), [
-            .failed(LLMError.network("temporary").localizedDescription),
-            .failed(LLMError.server(503).localizedDescription), .succeeded
+        XCTAssertEqual(attempts, [
+            VocabularyAttempt(batchNumber: 1, number: 1),
+            VocabularyAttempt(batchNumber: 1, number: 2),
+            VocabularyAttempt(batchNumber: 1, number: 3)
         ])
-        XCTAssertTrue(timings.allSatisfy { ($0.duration ?? -1) >= 0 })
     }
 
     func testGeneratorSkipsFailedBatchAndContinuesSerially() async throws {
@@ -118,11 +110,10 @@ final class VocabularyGeneratorTests: XCTestCase {
         var events: [String] = []
         try await VocabularyGenerator(provider: provider).generate(batches: batches, totalBatchCount: 3) {
             switch $0 {
-            case .attempt(let timing) where timing.outcome == .running:
-                events.append("start \(timing.batchNumber).\(timing.number)")
+            case .attempt(let attempt):
+                events.append("start \(attempt.batchNumber).\(attempt.number)")
             case .succeeded(let number, _): events.append("success \(number)")
             case .failed(let number, _): events.append("failure \(number)")
-            default: break
             }
         }
         XCTAssertEqual(events, [
@@ -131,25 +122,38 @@ final class VocabularyGeneratorTests: XCTestCase {
         ])
     }
 
-    func testSourceExcerptsAreLocalVerbatimAndNeverInvented() throws {
-        let text = "# Notes\nUse XPay with SwiftData."
+    func testBatchCombinesDocumentContentInOrderWithoutFileNames() throws {
         let batches = try VocabularyGenerator.makeBatches(from: [
-            VocabularySourceDocument(fileName: "secret.md", content: text)
+            VocabularySourceDocument(fileName: "secret.md", content: "# Notes\nUse XPay."),
+            VocabularySourceDocument(fileName: "private.md", content: "Use SwiftData.")
         ])
-        XCTAssertEqual(batches[0].excerpts(for: "xpay"), [
-            VocabularySourceExcerpt(fileName: "secret.md", text: text)
+        XCTAssertEqual(batches, [
+            VocabularyBatch(number: 1, content: """
+            [Document 1, fragment 1/1]
+            # Notes
+            Use XPay.
+
+            ---
+
+            [Document 2, fragment 1/1]
+            Use SwiftData.
+            """)
         ])
-        XCTAssertTrue(batches[0].excerpts(for: "InventedProduct").isEmpty)
-        XCTAssertFalse(batches[0].content.contains("secret.md"))
     }
 
-    func testUnicodeBatchingPreservesAllCharactersAndLocalSources() throws {
+    func testUnicodeBatchingPreservesAllCharactersInRequestContent() throws {
         let text = String(repeating: "中文👨‍👩‍👧‍👦é", count: 12_000)
         let batches = try VocabularyGenerator.makeBatches(from: [
             VocabularySourceDocument(fileName: "unicode.md", content: text)
         ])
         XCTAssertTrue(batches.allSatisfy { $0.content.count <= 20_000 })
-        XCTAssertEqual(batches.flatMap(\.sources).map(\.content).joined(), text)
+        XCTAssertEqual(batches.count, 3)
+        let fragments = try batches.enumerated().map { index, batch in
+            let parts = batch.content.split(separator: "\n", maxSplits: 1)
+            XCTAssertEqual(parts.first.map(String.init), "[Document 1, fragment \(index + 1)/3]")
+            return String(try XCTUnwrap(parts.last))
+        }
+        XCTAssertEqual(fragments.joined(), text)
     }
 
     func testBatchingSplitsOversizedParagraphWithoutLosingContent() throws {
@@ -164,7 +168,10 @@ final class VocabularyGeneratorTests: XCTestCase {
 
         XCTAssertEqual(batches.count, 3)
         XCTAssertTrue(batches.allSatisfy { $0.content.count <= VocabularyGenerator.batchCharacterLimit })
-        XCTAssertEqual(batches.flatMap(\.sources).map(\.content).joined(), content)
+        let fragments = try batches.map { batch in
+            String(try XCTUnwrap(batch.content.split(separator: "\n", maxSplits: 1).last))
+        }
+        XCTAssertEqual(fragments.joined(), content)
     }
 
     func testBatchAndRetryBudgetsMatchRequestContract() {

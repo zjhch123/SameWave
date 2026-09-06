@@ -18,6 +18,8 @@ SameWave is a native macOS app for one-on-one meetings. It treats system audio a
 | Environment, build, permissions, change entry points, validation | [Development and validation](06-development-and-validation.md) |
 | Accepted long-term decisions and rationale | [DECISIONS.md](DECISIONS.md) |
 | Conversation segmentation and rendering baseline | [Conversation rendering requirements](conversation-rendering-requirements.md) |
+| Phase 2 validation and remaining smoke checks | [Phase 2 validation](phase-2-validation.md) |
+| Phase 2 core requirements, adopted choices, and candidate extensions | [Phase 2 spec](phase-2-spec.md) (P2-R01–P2-R09 implemented; candidate extensions deferred) |
 
 ## Repository paths
 
@@ -49,4 +51,5 @@ SameWave is a native macOS app for one-on-one meetings. It treats system audio a
 
 - **Current implementation:** `01`–`06` describe behavior verifiable in current source.
 - **Design baseline:** requirements may lead implementation; relevant references must disclose known differences.
+- **Requirement specs:** [Phase 2](phase-2-spec.md) defines the accepted V2 release contract, preserving requirement and choice IDs for traceability. Candidate extensions remain deferred.
 - **Decision records:** `DECISIONS.md` explains why decisions were made, rather than replacing domain documentation or a changelog.

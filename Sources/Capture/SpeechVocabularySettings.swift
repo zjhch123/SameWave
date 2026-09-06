@@ -75,59 +75,21 @@ final class SpeechVocabularySettings {
         return phrases.compactMap { rawPhrase in
             let phrase = rawPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !phrase.isEmpty else { return nil }
-            let identity = phrase.lowercased(with: Locale(identifier: "en_US_POSIX"))
-            guard seen.insert(identity).inserted else { return nil }
+            guard seen.insert(identity(phrase)).inserted else { return nil }
             return phrase
         }
     }
 
+    nonisolated static func identity(_ phrase: String) -> String {
+        phrase.trimmed.lowercased(with: Locale(identifier: "en_US_POSIX"))
+    }
+
+    nonisolated static func newPhrases(from phrases: [String], excluding existing: [String]) -> [String] {
+        let identities = Set(existing.map(identity))
+        return normalized(phrases).filter { !identities.contains(identity($0)) }
+    }
+
     private enum Keys {
         static let phrases = "speech.vocabulary.phrases"
-    }
-}
-
-@MainActor
-@Observable
-final class SpeechVocabularyDraft {
-    var text: String
-
-    private let settings: SpeechVocabularySettings
-
-    init(settings: SpeechVocabularySettings) {
-        self.settings = settings
-        text = settings.phrases.joined(separator: "\n")
-    }
-
-    var phrases: [String] {
-        SpeechVocabularySettings.phrases(from: text)
-    }
-
-    var isDirty: Bool {
-        phrases != settings.phrases
-    }
-
-    var existingPhrases: [String] {
-        SpeechVocabularySettings.normalized(settings.phrases + phrases)
-    }
-
-    @discardableResult
-    func saveImported(_ phrases: [String]) -> Int {
-        let additions = VocabularyCandidateReview.newPhrases(from: phrases, excluding: existingPhrases)
-        guard !additions.isEmpty else { return 0 }
-        settings.save(settings.phrases + additions)
-        // Append without rewriting the manual draft: pending deletions, edits and
-        // whitespace remain untouched, and cancelling Settings cannot undo this save.
-        if !text.isEmpty && !text.hasSuffix("\n") { text += "\n" }
-        text += additions.joined(separator: "\n")
-        return additions.count
-    }
-
-    func save() {
-        settings.save(phrases)
-        text = settings.phrases.joined(separator: "\n")
-    }
-
-    func revert() {
-        text = settings.phrases.joined(separator: "\n")
     }
 }

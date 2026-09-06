@@ -8,8 +8,8 @@ SameWave aims to make one-on-one cross-language meetings a continuous workflow w
 2. Recognize both streams locally in real time.
 3. Choose English or Simplified Chinese independently for source and target; translate between different languages or display same-language recognition directly.
 4. Produce a readable conversation organized by turns, rather than two unrelated caption streams.
-5. Save continuously during recording, supporting pause, switching, and crash recovery.
-6. Send text to a cloud service for insights or refinement only after the user explicitly configures a provider.
+5. Save meeting preparation before capture and save continuously during recording, supporting pause, switching, and crash recovery.
+6. Support custom, timestamped, persistent AI insights and deliberate full summaries after configuring a provider. Local captions remain independent.
 
 The app does not save audio. Its core data is a set of text Sections carrying speaker, time, source, and translation.
 
@@ -54,13 +54,14 @@ flowchart LR
     SYS[System output audio] --> SCK[SystemAudioCaptureSCK]
     MIC[Microphone] --> MC[MicrophoneCapture]
     VS[SpeechVocabularySettings\nUserDefaults] --> CO
-    VS --> IE
+    MW[Meeting workspace / documents / terms / definitions] --> CO
+    MW --> IE
     VS --> TR
     MD[Selected Markdown content] --> VI[VocabularyImportController]
     VI --> VG[VocabularyGenerator]
     VG --> VI
-    VI --> VD[SpeechVocabularyDraft\nManual draft and import save boundary]
-    VD --> VS
+    VI --> VE[VocabularyEditorStore\nExplicit vocabulary commits]
+    VE --> VS
     SCK --> ASR1[NativeSpeechEngine actor\nremote]
     MC --> ASR2[NativeSpeechEngine actor\nmine]
     ASR1 --> CO[CaptureCoordinator]
@@ -84,7 +85,8 @@ flowchart LR
     AI --> TG
     AI --> VI
     OP --> CLOUD[User-selected AI service]
-    IE --> INS[AI Insights Inspector]
+    IE --> HS
+    HS --> INS[AI Insights Inspector / saved timeline]
 ```
 
 `CaptureCoordinator` orchestrates runtime work; `CaptionStore` is the only write boundary for the live conversation model. SwiftUI views primarily read observable state and invoke coordinator actions.
@@ -95,9 +97,9 @@ flowchart LR
 
 [`Sources/App/SameWaveApp.swift`](../Sources/App/SameWaveApp.swift):
 
-- Creates the main window, Settings, Markdown vocabulary window, and menu-bar entry.
-- `AppDelegate` creates and connects `CaptureCoordinator`, `MeetingHistoryStore`, `AISettings`, `InsightEngine`, `TranscriptRefiner`, `MeetingTitleGenerator`, `SpeechVocabularyDraft`, and `VocabularyImportController`.
-- Requests speech/microphone permissions at launch and restores the last selected meeting. Unfinished records become paused; no valid selection means a new meeting.
+- Creates the main window, Settings sheets/menu command, and menu-bar entry. Personal vocabulary editing lives inside Settings.
+- `AppDelegate` creates and connects `CaptureCoordinator`, `MeetingHistoryStore`, `AISettings`, `InsightEngine`, `TranscriptRefiner`, `MeetingTitleGenerator`, `VocabularyEditorStore`, and its `VocabularyImportController`.
+- Requests speech/microphone permissions at launch and restores the last selected meeting. Interrupted recordings become paused and drafts remain drafts; no valid selection chooses the most recently created meeting, or the empty state when none exist.
 - Shows a blocking error if SwiftData cannot open, without starting a nonpersistent alternative.
 
 ### 5.2 Capture and recognition
@@ -105,7 +107,7 @@ flowchart LR
 - [`SystemAudioCaptureSCK.swift`](../Sources/Capture/SystemAudioCaptureSCK.swift): system audio → mono Float samples.
 - [`MicrophoneCapture.swift`](../Sources/Capture/MicrophoneCapture.swift): default input → mono Float samples; rebuilds the tap when the device changes.
 - [`NativeSpeechEngine.swift`](../Sources/Capture/NativeSpeechEngine.swift): actor-isolated bounded audio stream, sample-rate conversion, SpeechAnalyzer input, awaitable interim/final callbacks.
-- [`SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift): English defaults, normalization, UserDefaults persistence, and app-owned `SpeechVocabularyDraft`. Imports save only selected new terms and add them to the draft, keeping other unsaved settings edits independent.
+- [`SpeechVocabularySettings.swift`](../Sources/Capture/SpeechVocabularySettings.swift): English defaults, normalization, and UserDefaults persistence. `VocabularyEditorStore` owns app-session manual/row drafts and extraction, committing explicit actions independently of AI settings.
 - [`CustomSpeechLanguageModel.swift`](../Sources/Capture/CustomSpeechLanguageModel.swift): builds and caches Apple custom language models by vocabulary fingerprint.
 
 Both capture components share the conceptual interface `onAudio`, `inputSampleRate`, and `start/stop`, allowing the coordinator to connect both streams in the same way.
@@ -120,35 +122,36 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 ### 5.4 Data and output
 
-- [`MeetingHistory.swift`](../Sources/History/MeetingHistory.swift): SwiftData models, incremental upsert, recovery, deletion.
+- [`MeetingHistory.swift`](../Sources/History/MeetingHistory.swift): SwiftData models, incremental upsert, recovery, deletion; `MeetingWorkspace.swift` owns preparation models and `InsightSnapshot.swift` owns append-only results.
 - [`TranscriptExporter.swift`](../Sources/History/TranscriptExporter.swift): live or saved meeting Markdown export.
 - [`Support.swift`](../Sources/Shared/Support.swift): text validity and shared date formats.
 
 ### 5.5 AI infrastructure and use cases
 
-- [`InsightModels.swift`](../Sources/Insights/InsightModels.swift): the single structured insight model.
-- [`InsightEngine.swift`](../Sources/Insights/InsightEngine.swift): cancellable live triggers and one-shot historical insights.
+- [`InsightModels.swift`](../Sources/Insights/InsightModels.swift): the structured response, exact request evidence, and conservative full-input budget.
+- [`InsightEngine.swift`](../Sources/Insights/InsightEngine.swift): interval/content scheduling, manual priority, cancellation, immediate snapshot persistence, and local save retry.
 - [`TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift): independent post-meeting proofreading, retranslation, glossary merging in batches.
 - [`MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift): one-shot title requests parallel to refinement, input budgets, output validation.
 - [`LLMProvider.swift`](../Sources/AI/LLMProvider.swift): minimal provider protocol, errors, provider configuration.
 - [`OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift): the sole HTTP implementation.
 - [`AISettings.swift`](../Sources/AI/AISettings.swift): app-wide UserDefaults + Keychain configuration and availability validation.
+- [`AISettingsDraft.swift`](../Sources/AI/AISettingsDraft.swift): editable preferences and their cancellable connection-test/model-discovery state. Settings dismissal invalidates these checks while preserving the draft.
 - [`JSONResponseParser.swift`](../Sources/AI/JSONResponseParser.swift): shared strict JSON decoding boundary.
-- [`VocabularyImportController.swift`](../Sources/Capture/VocabularyImportController.swift): app-owned import state, per-request results and timing, stop/retry, selective saving.
-- [`VocabularyImportWindow.swift`](../Sources/Capture/VocabularyImportWindow.swift): compact progress, editable selection, source disclosure, and request details in a separate window. Actual window closure cancels work and discards unsaved results.
+- [`VocabularyImportController.swift`](../Sources/Capture/VocabularyImportController.swift): app-owned import state, per-request results, current progress, stop/retry, selective saving.
+- [`VocabularyEditorView.swift`](../Sources/Capture/VocabularyEditorView.swift): shared manual editing and extraction cards for meeting sheets and the embedded Settings tab. Closing either presenter preserves unfinished app-session work; Stop and Discard are explicit actions.
 
 ### 5.6 Presentation
 
 - [`MainView.swift`](../Sources/App/MainView.swift): three-column container, draggable Inspector width, long-lived translation-session attachment.
 - [`MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift): SwiftData history query, selection, deletion.
-- [`MeetingStage.swift`](../Sources/App/MeetingStage.swift): live/history stage, header, timer, capture controls.
-- [`InsightInspector.swift`](../Sources/App/InsightInspector.swift): live and historical insight generation and display.
+- [`MeetingStage.swift`](../Sources/App/MeetingStage.swift): preparation/live/history stage, header, timer, capture controls; `MeetingPreparationView.swift` edits owned preparation.
+- [`InsightInspector.swift`](../Sources/App/InsightInspector.swift): peer insight cards, live/history generation, independent saved versions, offline reading, and save retry.
 - [`CaptionsView.swift`](../Sources/Meeting/CaptionsView.swift): live Section list.
 - [`HistoryDetailView.swift`](../Sources/History/HistoryDetailView.swift): saved transcript lines.
-- [`InsightCards.swift`](../Sources/Insights/InsightCards.swift): typed insight cards.
-- [`SettingsView.swift`](../Sources/App/SettingsView.swift): tabs and cross-window navigation; AI configuration actions select AI Services directly.
-- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): AI draft configuration, model discovery, connection testing, saving.
-- [`SpeechVocabularySettingsView.swift`](../Sources/Capture/SpeechVocabularySettingsView.swift): English vocabulary editing, save/cancel, direct Markdown file selection before opening generation.
+- [`InsightResultCard.swift`](../Sources/Insights/InsightResultCard.swift): concise results with independent reading state, history, and local save retry. [`MeetingSummaryCards.swift`](../Sources/Insights/MeetingSummaryCards.swift) renders the expanded named sections.
+- [`MeetingPreparationView.swift`](../Sources/Meeting/MeetingPreparationView.swift): four preparation cards and retained-result archive. `MeetingContextView.swift` owns attachment controls; `MeetingVocabularyView.swift` hosts the shared vocabulary editor; `InsightDefinitionEditor.swift` owns definition edits.
+- [`SettingsView.swift`](../Sources/App/SettingsView.swift): tabs and native sheet routing over the current main/preparation surface; AI configuration actions select AI Services directly.
+- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): renders the AI draft and invokes its discovery, testing, Save, and Cancel actions.
 - [`TrafficLightConfigurator.swift`](../Sources/App/TrafficLightConfigurator.swift): macOS window button positioning after hiding the title bar.
 
 ### 5.7 Resources
@@ -161,8 +164,8 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 - [`CaptionStoreTests.swift`](../Tests/CaptionStoreTests.swift): segmentation, floor, restore, generation invariants.
 - [`TranslationBridgeTests.swift`](../Tests/TranslationBridgeTests.swift): coalescing, cross-Section ordering, idle drain.
-- [`MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift): in-memory upsert, pruning, empty-record deletion.
-- [`InsightEngineTests.swift`](../Tests/InsightEngineTests.swift): context windows and strict JSON parsing.
+- [`MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift): in-memory upsert, pruning, and empty-workspace retention. `MeetingWorkspaceTests.swift` also verifies on-disk reopen and artifact ownership.
+- [`InsightEngineTests.swift`](../Tests/InsightEngineTests.swift): full input, scheduling, priority, cancellation, versioned persistence, failures, and strict result parsing.
 - [`OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift): Structured Outputs request contracts and built-in models.
 - [`TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift): line/character batch boundaries.
 - [`MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift): title requests, context, output bounds.
@@ -176,19 +179,19 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 ┌────────────────┬────────────────────────────────────────┬────────────────────┐
 │ Meetings       │ Live captions / History details        │ AI Insights        │
 │                │                                        │                    │
-│ New Meeting    │ Speaker  14:32                         │ Current Topic      │
-│ Recording…     │ Target text (primary)                  │ Suggested Answer   │
-│ Paused         │ Source text (secondary if translated)  │ Suggestions        │
-│ Ended meetings │                                        │ Action Items       │
-│                │ [Source → Target][Mic][Pause][End]      │ Decisions          │
+│ Draft meetings │ Preparation / Speaker 14:32             │ Custom insight     │
+│ Recording…     │ Target text (primary)                  │ Generate / History │
+│ Paused         │ Source text (secondary if translated)  │ Saved result times │
+│ Ended meetings │                                        │ Topics / Actions   │
+│                │ [Source → Target][Mic][Pause][End]      │ Full summary       │
 └────────────────┴────────────────────────────────────────┴────────────────────┘
 ```
 
-- The center owns transcripts; insights belong exclusively to the right Inspector.
+- The center owns transcripts and draft preparation; insight cards belong to the right Inspector. Custom definitions appear newest first, above the initial Overview, with meeting-wide sections last after End. Structured overviews and full summaries display Topics, Suggestions, Action Items, Decisions, and Open Questions directly as cards, with shared generation/history controls and no enclosing summary card. Each insight owns its history. All result content is read on the cards or in export, without a Details screen or generated supporting quotes. Preparation contains four concise cards with separate management/editing sheets. Vocabulary previews up to twelve terms in wrapping chips; its management sheet shows the complete read-only Context file list.
 - History and live captions share a window; there is no separate floating caption `NSPanel`.
-- The control dock occupies real layout space through `safeAreaInset`, preventing captions from scrolling behind translucent controls. It places language selectors above capture controls when the English labels need more width. History uses a two-line title/metadata header with compact action icons; tooltips and accessibility labels retain full action names.
+- The control dock occupies a separate layout row below the scrollable preparation/captions, preventing content from scrolling behind controls. It places language selectors above capture controls when the English labels need more width. History uses a two-line title/metadata header with compact action icons; tooltips and accessibility labels retain full action names.
 - Inspector width is draggable and persists through `@AppStorage`.
-- Settings has AI Services and Vocabulary tabs. Both explicitly save/cancel rather than changing runtime configuration on each keystroke. AI configuration actions select the AI tab without committing vocabulary drafts. Vocabulary opens the first file picker directly; selected files then open a separate generation/review window whose task state is independent of the Settings Scene. Review can proceed during generation; saving selected new terms does not submit other manual settings drafts.
+- Settings is a native sheet with AI Services and Vocabulary tabs. AISettingsDraft belongs to SettingsNavigation, preserving pending preferences across tab switches and dismissal; Save/Cancel affects AI preferences only. The Vocabulary tab directly embeds the shared editor, with a compact scope heading inside its scroll content and a fixed Done footer. There is no Manage landing page, independent window, or nested vocabulary sheet. Configure AI Services switches tabs in the same 600×540 Settings sheet. Choosing files stays local; Extract explicitly sends text. Both hosts preserve drafts, suggestions, reading state, and background work on dismissal. Suggested Terms owns review actions and feedback; vocabulary commits never submit another draft. Vocabulary cards have independent observation boundaries, and only uniform term rows are lazy. Their fixed geometry preserves reading position while keeping large-list tab changes bounded by visible content.
 
 ## 7. Platform and permissions
 
@@ -204,4 +207,8 @@ App Sandbox is disabled to reduce restrictions on capture and model resources. H
 
 ## 8. Privacy boundaries
 
-“Local” applies to the live captioning pipeline: audio, ASR, Apple Translation, and SwiftData run on-device. AI insights, refinement, and titles send transcript text to the user's selected third-party endpoint. Refinement sends the complete saved vocabulary frozen at operation start; insights send only terms matched in recent context; title requests send no vocabulary. Settings discloses these boundaries, and product copy must remain consistent with them.
+“Local” applies to the live captioning pipeline: audio, ASR, Apple Translation, and SwiftData run on-device. AI insights, refinement, and titles send transcript text to the user's selected third-party endpoint. Refinement sends the complete personal vocabulary frozen at operation start; insights send the full current applicable meeting/personal vocabulary and retain an exact input snapshot; title requests send no vocabulary. Settings discloses these boundaries, and product copy must remain consistent with them.
+
+## Phase 2 boundaries
+
+Meeting workspaces own documents, confirmed vocabulary, custom definitions, and append-only insight snapshots. Markdown attachments supply vocabulary extraction; document retrieval, goals, templates, cross-meeting projects, and notifications remain candidate extensions. See [Phase 2](phase-2-spec.md) for adopted choices and [validation](phase-2-validation.md) for evidence. No new third-party dependency or generic project framework was added.

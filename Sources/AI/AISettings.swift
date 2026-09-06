@@ -21,6 +21,16 @@ final class AISettings {
         didSet { defaults.set(customModel, forKey: Keys.customModel) }
     }
 
+    /// Conservative full-input preflight budget; the user sets the provider's supported window.
+    var insightContextTokenBudget: Int {
+        didSet { defaults.set(insightContextTokenBudget, forKey: "insight.contextTokenBudget") }
+    }
+
+    var modelIdentity: String {
+        let config = selectedConfig
+        return "\(config.displayName) / \(config.isCustom ? customModel : config.defaultModel)"
+    }
+
     /// The API key, backed by the Keychain. Setting to empty deletes it.
     var apiKey: String {
         didSet {
@@ -34,6 +44,8 @@ final class AISettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let savedBudget = defaults.integer(forKey: "insight.contextTokenBudget")
+        insightContextTokenBudget = savedBudget > 0 ? savedBudget : 32_768
         let persistedProviderID = defaults.string(forKey: Keys.provider)
         let supportedProvider = persistedProviderID.flatMap { id in
             LLMProviderConfig.builtIn.first { $0.id == id }
