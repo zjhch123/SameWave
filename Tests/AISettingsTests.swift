@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftData
 import XCTest
 @testable import SameWave
 
@@ -46,20 +47,21 @@ final class AISettingsTests: XCTestCase {
         let defaults = isolatedDefaults()
         let settings = AISettings(defaults: defaults)
         let vocabulary = SpeechVocabularySettings(defaults: defaults)
-        let insights = InsightEngine(settings: settings, vocabularySettings: vocabulary)
+        let history = try MeetingHistoryStore(configuration: ModelConfiguration(isStoredInMemoryOnly: true))
+        let insights = InsightEngine(settings: settings, history: history)
         let refiner = TranscriptRefiner(settings: settings, vocabularySettings: vocabulary)
         let title = MeetingTitleGenerator(settings: settings)
-        let draft = SpeechVocabularyDraft(settings: vocabulary)
-        let importer = VocabularyImportController(aiSettings: settings, vocabularyDraft: draft)
+        let editor = VocabularyEditorStore(aiSettings: settings, settings: vocabulary)
+        let importer = editor.importer
 
         XCTAssertFalse(settings.isConfigured)
         XCTAssertNil(settings.makeProvider())
-        do {
-            _ = try await insights.generateOnce(transcript: "对方：项目进度")
-            XCTFail("Insights must require the shared AI configuration")
-        } catch {
-            XCTAssertEqual(error as? LLMError, .notConfigured)
-        }
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let definition = try XCTUnwrap(record.definitions.first)
+        insights.generate(record: record, configuration: definition.configuration, kind: .manual,
+                          sources: [], vocabulary: [], elapsedSeconds: 0)
+        XCTAssertEqual(insights.states[InsightKey(meetingID: record.id, definitionID: definition.id)],
+                       .failed(LLMError.notConfigured.localizedDescription))
         do {
             _ = try await refiner.refine(
                 lines: [],
@@ -71,20 +73,20 @@ final class AISettingsTests: XCTestCase {
             XCTAssertEqual(error as? LLMError, .notConfigured)
         }
         do {
-            _ = try await title.generate(lines: [])
+            _ = try await title.generateIfNeeded(for: record)
             XCTFail("Titles must require the shared AI configuration")
         } catch {
             XCTAssertEqual(error as? LLMError, .notConfigured)
         }
-        XCTAssertFalse(importer.canStartOrResume)
-        XCTAssertTrue(importer.handleFileSelection(.success([URL(filePath: "/unused.md")])))
+        XCTAssertFalse(importer.isConfigured)
+        importer.start(documents: [.init(fileName: "test.md", content: "SameWave")])
         XCTAssertEqual(importer.state, .failed(LLMError.notConfigured.localizedDescription))
         XCTAssertTrue(importer.requests.isEmpty)
 
         // Editing a local vocabulary remains available without AI.
-        draft.text = "SameWave"
-        draft.save()
-        XCTAssertEqual(vocabulary.phrases, ["SameWave"])
+        editor.manualText = "SameWave"
+        editor.addTerms()
+        XCTAssertTrue(vocabulary.phrases.contains("SameWave"))
     }
 
     func testAISettingsRouteSelectsAITabAndPreservesVocabularyDraft() async throws {
@@ -92,32 +94,27 @@ final class AISettingsTests: XCTestCase {
         let settings = AISettings(defaults: defaults)
         let vocabulary = SpeechVocabularySettings(defaults: defaults)
         vocabulary.save(["Saved"])
-        let draft = SpeechVocabularyDraft(settings: vocabulary)
-        draft.text = "Saved\nUnsaved"
-        let navigation = SettingsNavigation()
+        let editor = VocabularyEditorStore(aiSettings: settings, settings: vocabulary)
+        editor.manualText = "Saved\nUnsaved"
+        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
-        let controller = VocabularyImportController(aiSettings: settings, vocabularyDraft: draft)
-        let host = NSHostingView(rootView: SettingsView(
-            aiSettings: settings, speechVocabularyDraft: draft,
-            vocabularyImportController: controller
-        ).environment(navigation)
+        let host = NSHostingView(rootView: SettingsView().environment(navigation)
             .background(Color(nsColor: .windowBackgroundColor)))
         let window = makeWindow(host: host)
         defer { window.close() }
         await Task.yield()
         try capture(host, name: "Vocabulary settings with AI service link")
 
-        var didOpen = false
-        navigation.openAISettings {
-            XCTAssertEqual(navigation.selectedTab, .ai)
-            didOpen = true
-        }
+        let hostID = UUID()
+        window.orderFront(nil)
+        navigation.register(hostID, window: window)
+        navigation.openAISettings()
+        XCTAssertEqual(navigation.selectedTab, .ai)
         await Task.yield()
         try capture(host, name: "App-wide AI service settings")
 
-        XCTAssertTrue(didOpen)
-        XCTAssertEqual(draft.text, "Saved\nUnsaved")
-        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(navigation.presentedHost, hostID)
+        XCTAssertEqual(editor.manualText, "Saved\nUnsaved")
         XCTAssertEqual(vocabulary.phrases, ["Saved"])
     }
 
@@ -126,7 +123,7 @@ final class AISettingsTests: XCTestCase {
         settings.selectedProviderID = LLMProviderConfig.custom.id
         settings.customAPIAddress = "http://localhost:8080/v1"
         settings.customModel = "my-model"
-        let host = NSHostingView(rootView: AISettingsView(settings: settings)
+        let host = NSHostingView(rootView: AISettingsView(draft: AISettingsDraft(settings: settings))
             .background(Color(nsColor: .windowBackgroundColor)))
         let window = makeWindow(host: host)
         defer { window.close() }

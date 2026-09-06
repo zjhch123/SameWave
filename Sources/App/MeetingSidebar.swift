@@ -4,7 +4,7 @@ import SwiftUI
 struct MeetingSidebar: View {
     let coordinator: CaptureCoordinator
     @Binding var selectedRecord: MeetingRecord?
-    @Query(sort: \MeetingRecord.startedAt, order: .reverse) private var records: [MeetingRecord]
+    @Query(sort: \MeetingRecord.createdAt, order: .reverse) private var records: [MeetingRecord]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -15,12 +15,11 @@ struct MeetingSidebar: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
 
-            if records.isEmpty && !showsNewMeetingPlaceholder {
+            if records.isEmpty {
                 emptyState
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
-                        if showsNewMeetingPlaceholder { newMeetingPlaceholder }
                         ForEach(records) { record in recordRow(record) }
                     }
                     .padding(.horizontal, 12)
@@ -35,22 +34,15 @@ struct MeetingSidebar: View {
         }
     }
 
-    private var showsNewMeetingPlaceholder: Bool {
-        selectedRecord == nil && !coordinator.isRunning
-    }
-
     private var emptyState: some View {
         VStack(spacing: 8) {
             Spacer()
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 22))
                 .foregroundStyle(CaptionsView.meta.opacity(0.5))
-            Text("No meeting history yet")
+            Text("No meetings yet")
                 .font(.system(size: 12))
                 .foregroundStyle(CaptionsView.muted)
-            Text("Meetings are saved automatically when they end")
-                .font(.system(size: 11))
-                .foregroundStyle(CaptionsView.muted.opacity(0.7))
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -65,7 +57,7 @@ struct MeetingSidebar: View {
                     await coordinator.startNewMeeting()
                 }
             } label: {
-                Label("Start a New Meeting", systemImage: "plus.circle.fill")
+                Label("New Meeting", systemImage: "plus.circle.fill")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
                         activelyRecording ? CaptionsView.muted.opacity(0.5) : CaptionsView.accent
@@ -83,24 +75,17 @@ struct MeetingSidebar: View {
         }
     }
 
-    private var newMeetingPlaceholder: some View {
-        Button { selectedRecord = nil } label: {
-            sidebarRow(title: "New Meeting", subtitle: "Not started", highlighted: true, selected: true)
-        }
-        .buttonStyle(.plain)
-    }
-
     private func recordRow(_ record: MeetingRecord) -> some View {
-        let isCurrent = record.id == coordinator.activeRecordID && coordinator.isRunning
+        let isCurrent = record.id == coordinator.activeRecordID
         let isUnfinished = record.meetingStatus != .ended
         let isRecording = isCurrent && coordinator.sessionState == .recording
         let isSelected = isCurrent ? selectedRecord == nil : selectedRecord?.id == record.id
         let subtitle: String
         let detail: String?
         if isUnfinished {
-            subtitle = isRecording ? "Recording…" : "Paused"
+            subtitle = record.meetingStatus == .draft ? "Preparation" : isRecording ? "Recording…" : "Paused"
             detail = nil
-        } else if record.hasAITitle {
+        } else if record.hasTitle {
             subtitle = record.displayDate
             detail = record.metaText
         } else {
@@ -116,7 +101,7 @@ struct MeetingSidebar: View {
                     await coordinator.loadSession(record)
                 }
             } else {
-                selectedRecord = record
+                Task { await coordinator.openHistory(record) }
             }
         } label: {
             sidebarRow(
@@ -130,7 +115,7 @@ struct MeetingSidebar: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if !isCurrent {
+            if !isCurrent || !coordinator.isRunning {
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     coordinator.delete(record)
                 }

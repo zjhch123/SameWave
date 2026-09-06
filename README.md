@@ -1,18 +1,22 @@
 # SameWave
 
-SameWave is a native macOS live-captioning app for one-on-one meetings. It treats system audio as the other participant and the microphone as you, recognizes both streams locally, translates in the selected direction, and builds a recoverable, exportable transcript in speaking order.
+SameWave is a native macOS meeting workspace for preparation, live captions, and review. It treats system audio as the other participant and the microphone as you, recognizes both streams locally, translates in the selected direction, and builds a recoverable, exportable transcript in speaking order.
 
 The app, executable, Swift module, project, target, and scheme all use the name **SameWave**. The interface, documentation, export templates, AI insights, and generated titles are in English. Meeting text follows the selected source and target languages.
 
 ## Features
 
+- Create and save a meeting before recording. Prepare a title, language pair, Markdown documents, meeting vocabulary, and custom insight prompts.
+- Extract reviewable meeting terms from attached Markdown without adding them to other meetings or personal vocabulary. Attachment alone stays local.
+- Generate custom insights manually or automatically during recording. Keep every successful result with its time, prompt, exact source, and vocabulary.
+- Browse earlier insights offline and deliberately generate versioned full meeting summaries after End. Full-input analysis never silently drops the start of the meeting.
 - Capture system output with ScreenCaptureKit and microphone input with AVFoundation.
 - Recognize both audio streams locally with Apple `SpeechAnalyzer`.
-- Edit and save English product names, personal names, and acronyms in the Vocabulary settings tab. With AI configured, generate vocabulary for review from one or more Markdown files to improve recognition and preserve terminology in refinement and insights.
+- Manage English product names, personal names, and acronyms through Settings > Vocabulary. With AI configured, generate vocabulary for review from one or more Markdown files to improve recognition and preserve terminology in refinement and insights.
 - Select English or Simplified Chinese independently for source and target. Use local Apple Translation when they differ; display recognition directly when they match.
 - Organize turns into Sections. Translated captions emphasize the target text with the source beneath it; same-language captions avoid duplicate text.
-- Save incrementally to SwiftData from the start of a meeting, with pause, resume, crash recovery, history, and Markdown export.
-- Reopen the last selected meeting. Unfinished meetings resume in a paused state. Show a new meeting if the previous selection was a new meeting, is missing, or was deleted.
+- Save preparation before recording and transcripts incrementally to SwiftData, with pause, resume, crash recovery, history, and Markdown export.
+- Reopen the last selected meeting. Interrupted recordings reopen paused; prepared drafts remain drafts. A missing or deleted selection chooses a remaining meeting, or the empty state when none remain.
 - Configure AI once in the AI Services settings tab. Insights, refinement, meeting titles, and Markdown vocabulary generation share that configuration, each with its own typed output contract.
 - Use built-in Qwen and Kimi models that support Structured Outputs. Custom services accept a domain, a versioned URL, or a complete endpoint; Test Connection verifies a nested structured-output contract.
 - Manage recording, pausing, and ending through an explicit state machine. Drain audio, ASR, and translation before the final save.
@@ -66,20 +70,27 @@ The app, executable, Swift module, project, target, and scheme all use the name 
 
 ## Basic workflow
 
-1. To maintain English recognition and AI terminology, open Settings (⌘,) → Vocabulary, enter one word or phrase per line, and save. After configuring AI, Generate from Markdown opens a file picker, then a separate window for progress and review. Switching or closing Settings does not interrupt generation; closing the generation window cancels it. Each UTF-8 Markdown file can be up to 3 MB, with a 30 MB total selection limit. Documents are processed serially in AI requests of at most 20,000 characters. Each request retries at most twice; a final failure does not block later requests. Successful requests immediately show deduplicated terms for selection, editing, and source inspection. Add and Save persists selected terms. Stop keeps existing results; incomplete requests can be retried. Import saves do not submit other manual settings edits.
-2. To use AI, open Settings → AI Services, select a provider, enter an API key, and save. Custom services also require an API URL and a model ID that supports Structured Outputs; Test Connection can verify them first. All four AI features use the saved configuration, and their Configure AI Services actions open this tab directly. Local captions, live translation, manual vocabulary, history, and export remain available without AI.
-3. Select source and target languages in the main window. Both menus offer English and Simplified Chinese.
-4. Enable your microphone if needed, then start the meeting. All system audio belongs to the other participant.
-5. Pause or resume during the meeting. Ended meetings appear in the history sidebar automatically.
-6. Export history as Markdown. With AI configured, generate insights or a refined transcript. The first refinement also requests a title independently; a successfully generated title is not requested again.
+1. Click New Meeting to save a draft. Optionally prepare Meeting title, Context, Vocabulary, and AI Insights. Save or Return commits your title; a saved title prevents AI title generation during refinement.
+2. To use AI, open Settings → AI Services, configure a provider/key and its context budget, and save. Custom services also need a URL and model. Local captions and preparation work without AI.
+3. Attach Markdown in Context, then Manage Vocabulary to extract and review terms or enter them manually. Settings > Vocabulary uses the same editor for personal terms. Extract sends document text explicitly; Add to Vocabulary saves only selected suggestions to the displayed scope. Done preserves unfinished work and extraction for this app session. Vocabulary saves are independent of AI settings.
+4. Choose the source and target languages, enable the microphone if needed, and Start. English recognizers use meeting plus personal vocabulary frozen at Start/Resume; edits during recording take effect at Resume.
+5. Use a card's refresh icon or Custom Insights → Generate to update all editable insights, with up to six concurrent requests. Automatic updates are optional and require 45 seconds plus 80 new finalized characters. Custom cards appear above Meeting Overview.
+6. Pause, resume, or End. Browse each insight's saved versions independently; new results preserve an older selection and remembered Key points expansion. If saving fails, use Retry Save before quitting.
+7. After End, use Meeting Insights → Generate for Topics, Suggestions, Action Items, Decisions, and Open Questions, displayed directly as cards. Regeneration retains earlier versions. Export includes all saved insights and the transcript; refinement keeps original text available.
+
+See the [V2 specification](doc/phase-2-spec.md) for complete behavior and the [validation report](doc/phase-2-validation.md) for tested coverage and remaining smoke checks.
 
 ## Data and privacy
 
-Audio capture, speech recognition, Apple Translation, and meeting history are handled locally. The app does not save audio. AI features are separate from the offline captioning pipeline: configured services receive meeting text when invoked. Markdown vocabulary generation sends selected file contents in batches, without filenames or uploading the original files. Content, source excerpts, and unsaved candidates stay in the window's in-memory session. Refinement also sends the full saved vocabulary; insights send only terms matched in recent context; titles send no vocabulary. The AI pipeline never uploads audio.
+Audio capture, speech recognition, Apple Translation, attachments, and meeting history are handled locally. Audio is neither saved nor uploaded. Importing an attachment and sending its text are separate actions. Explicit vocabulary extraction sends document content in batches without filenames; only confirmed spellings are stored as vocabulary. Meeting vocabulary does not automatically enter personal settings.
+
+Insight generation sends the full original transcript through its cutoff, the custom prompt, and the complete applicable meeting/personal vocabulary to the configured service. Saved snapshots retain that exact input locally, including provisional text when used. Refinement sends personal vocabulary; titles send no vocabulary. Full summaries do not send documents or earlier insights as factual context. Documents are used for vocabulary extraction only in this release.
+
+The default insight budget is 32,768 tokens, estimated conservatively from serialized bytes plus instructions, Schema, framing, and output allowance. This is not a tokenizer or automatic model-limit discovery. Oversized requests are rejected before sending, with no truncation. Choose a model with adequate capacity and configure its budget; no compressed long-meeting fallback is implemented.
 
 If the local SwiftData container cannot open, the app blocks new meetings and displays an error. It does not silently switch to memory storage and imply that data was saved.
 
-The bundle ID is `com.plus.samewave`, shared by the UserDefaults and Keychain namespaces. Speech models are cached under `Application Support/SameWave/SpeechLanguageModel`. Settings, vocabulary, keys, and model caches from an older app identity are not read or migrated; moving from that identity requires reconfiguration and may require permissions again. Existing data files are not deleted, and the SwiftData history model and storage implementation are unchanged. The English display-name change retains the current bundle ID and storage namespaces.
+The bundle ID is `com.plus.samewave`, shared by the UserDefaults and Keychain namespaces. Speech models are cached under `Application Support/SameWave/SpeechLanguageModel`. Settings, vocabulary, keys, and model caches from an older app identity are not read or migrated; moving from that identity requires reconfiguration and may require permissions again. Phase 2 adds meeting-owned artifacts and replaces the obsolete single-insight field; no legacy insight reader, dual write, or custom migration is provided. Existing data files are not manually deleted. The English display-name change retains the current bundle ID and storage namespaces.
 
 ## Repository layout
 

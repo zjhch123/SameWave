@@ -23,8 +23,12 @@ final class OpenAICompatibleProviderTests: XCTestCase {
         XCTAssertEqual(schema["additionalProperties"] as? Bool, false)
         XCTAssertEqual(
             schema["required"] as? [String],
-            ["topic", "suggestions", "answer", "todos", "decisions"]
+            ["conclusion", "points", "summary"]
         )
+        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
+        XCTAssertEqual(Set(properties.keys), ["conclusion", "points", "summary"])
+        XCTAssertFalse(InsightRequest.systemPrompt.contains("exact quotes"))
+        XCTAssertFalse(InsightRequest.systemPrompt.contains("sectionID"))
     }
 
     func testBuiltInProvidersUseDocumentedStructuredOutputModels() {

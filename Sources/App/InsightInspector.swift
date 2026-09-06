@@ -1,192 +1,122 @@
-import SwiftData
 import SwiftUI
 
 struct InsightInspector: View {
     let coordinator: CaptureCoordinator
-    @Binding var selectedRecord: MeetingRecord?
-    @Environment(\.openSettings) private var openSettings
     @Environment(AISettings.self) private var aiSettings
     @Environment(SettingsNavigation.self) private var settingsNavigation
-    @Environment(\.modelContext) private var modelContext
+    @State private var palettes: [UUID: InsightCardPalette] = [:]
 
-    private enum GenerationState: Equatable {
-        case idle
-        case generating
-        case failed(String)
-    }
-
-    @State private var generationState: GenerationState = .idle
-    @State private var historyInsight: InsightResult?
-    @State private var generationTask: Task<Void, Never>?
-    @State private var generationToken = UUID()
+    private var record: MeetingRecord? { coordinator.workspaceRecord }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Rectangle().fill(CaptionsView.borderSoft).frame(height: 1)
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            HStack {
+                Text("AI Insights").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button { settingsNavigation.openAISettings() } label: {
+                    Image(systemName: "gearshape")
+                }.buttonStyle(.plain).help("AI Service Settings").accessibilityLabel("AI Service Settings")
+            }.frame(height: 48).padding(.horizontal, 16)
+            Divider()
+            if let record {
+                ScrollView {
+                    // Measure expanded cards together so scrolling never revises estimated heights.
+                    VStack(alignment: .leading, spacing: 12) {
+                        if !aiSettings.isConfigured {
+                            Button("Configure AI Services") { settingsNavigation.openAISettings() }
+                                .font(.caption)
+                            Text("Saved results are available offline.")
+                                .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
+                        }
+                        if record.definitions.isEmpty {
+                            Text("Add an insight in Meeting Preparation.")
+                                .font(.callout).foregroundStyle(CaptionsView.muted)
+                        } else {
+                            customInsightsHeader(record)
+                        }
+                        ForEach(record.insightReadingOrder) { definition in
+                            card(definition.configuration, record: record,
+                                 tone: palettes[record.id]?.slots[definition.id] ?? 0,
+                                 automatic: definition.automaticallyUpdates)
+                        }
+                        // Removing a definition must not hide a generated value that failed to save.
+                        ForEach(orphanedUnsavedConfigurations(record), id: \.id) { configuration in
+                            card(configuration, record: record, allowsGeneration: false)
+                        }
+                        if record.meetingStatus == .ended {
+                            card(.summary, record: record)
+                        }
+                    }.padding(12)
+                }.id(record.id)
+            } else {
+                Text("No meeting selected.\nYour insights will appear here.")
+                    .font(.system(size: 13)).foregroundStyle(CaptionsView.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                Spacer()
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CaptionsView.bg)
-        .onChange(of: selectedRecord?.id) { _, _ in syncSelectedRecord() }
-        .onAppear { syncSelectedRecord() }
-        .onDisappear { cancelGeneration() }
+        .onAppear(perform: ensurePalette)
+        .onChange(of: record?.id) { _, _ in ensurePalette() }
+        .onChange(of: record?.orderedDefinitions.map(\.id)) { _, _ in ensurePalette() }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            Text("AI Insights")
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1)
-            if isGenerating { ProgressView().controlSize(.small) }
-            Spacer()
-            if selectedRecord != nil { generationButton }
-            Button { openAISettings() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14))
-                    .foregroundStyle(CaptionsView.muted)
+    private func customInsightsHeader(_ record: MeetingRecord) -> some View {
+        let generating = coordinator.insights?.batchMeetingID == record.id
+        return HStack(alignment: .firstTextBaseline) {
+            Text("Custom Insights").font(.system(size: 11, weight: .medium))
+                .foregroundStyle(CaptionsView.muted)
+            Spacer(minLength: 0)
+            if generating { ProgressView().controlSize(.mini) }
+            Button(generating ? "Stop" : "Generate") {
+                if generating { coordinator.insights?.cancelBatch() }
+                else { coordinator.generateAllInsights() }
             }
-            .buttonStyle(.plain)
-            .help("AI Service Settings")
-            .accessibilityLabel("AI Service Settings")
-        }
-        .frame(height: 48)
-        .padding(.horizontal, 16)
-    }
-
-    private var isGenerating: Bool {
-        if generationState == .generating { return true }
-        if selectedRecord == nil, case .generating = coordinator.insights?.state { return true }
-        return false
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if selectedRecord != nil {
-            historyContent
-        } else {
-            InsightCardsView(
-                result: coordinator.insights?.current ?? .empty,
-                state: coordinator.insights?.state ?? .idle,
-                isConfigured: aiSettings.isConfigured,
-                onOpenSettings: { openAISettings() },
-                centersPlaceholder: true
-            )
+            .controlSize(.small)
+            .disabled(!generating && (!aiSettings.isConfigured || coordinator.isTransitioning
+                || coordinator.insights?.canGenerateAll(record) != true))
+            .help(generating ? "Stop generating custom insights" : "Generate all custom insights")
+            .accessibilityLabel(generating ? "Stop all custom insights" : "Generate all custom insights")
         }
     }
 
-    @ViewBuilder
-    private var historyContent: some View {
-        if !aiSettings.isConfigured {
-            InsightCardsView(
-                result: .empty,
-                state: .idle,
-                isConfigured: false,
-                onOpenSettings: { openAISettings() },
-                centersPlaceholder: true
-            )
-        } else if let historyInsight, !historyInsight.isEmpty {
-            ScrollView {
-                InsightCardsView(result: historyInsight, state: .done, isConfigured: true)
-                    .padding(16)
-            }
-        } else if generationState == .generating {
-            InsightCardsView(
-                result: .empty,
-                state: .generating,
-                isConfigured: true,
-                centersPlaceholder: true
-            )
-        } else if case .failed(let message) = generationState {
-            centeredHint(message, color: CaptionsView.danger)
-        } else {
-            centeredHint("Use the sparkle button above to summarize topics, action items, and decisions.", color: CaptionsView.muted)
-        }
-    }
-
-    private var generationButton: some View {
-        let hasResult = historyInsight?.isEmpty == false
-        let label = !aiSettings.isConfigured
-            ? "Configure AI Services"
-            : hasResult ? "Regenerate" : "Generate Insights"
-        return Button {
-            if aiSettings.isConfigured { generateHistoryInsight() }
-            else { openAISettings() }
-        } label: {
-            Label(
-                label,
-                systemImage: hasResult ? "arrow.clockwise" : "sparkles"
-            )
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(CaptionsView.accent)
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.plain)
-        .help(label)
-        .accessibilityLabel(label)
-        .disabled(generationState == .generating)
-    }
-
-    private func openAISettings() {
-        settingsNavigation.openAISettings { openSettings() }
-    }
-
-    private func centeredHint(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.system(size: 12))
-            .foregroundStyle(color)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func syncSelectedRecord() {
-        cancelGeneration()
-        historyInsight = selectedRecord?.insight
-        generationState = .idle
-    }
-
-    private func generateHistoryInsight() {
-        guard let record = selectedRecord, let engine = coordinator.insights else { return }
-        generationState = .generating
-        let transcript = InsightEngine.flatten(
-            lines: record.lines,
-            preferringRefinedSource: true
+    private func card(_ configuration: InsightConfiguration, record: MeetingRecord,
+                      tone: Int = 3, automatic: Bool = false, allowsGeneration: Bool = true) -> some View {
+        let key = InsightKey(meetingID: record.id, definitionID: configuration.id)
+        let isSummary = configuration.id == InsightConfiguration.summary.id
+        return InsightResultCard(
+            meetingID: record.id,
+            configuration: configuration,
+            snapshots: record.insightSnapshots.filter { $0.definitionID == configuration.id },
+            tone: tone, state: coordinator.insights?.states[key],
+            unsaved: coordinator.insights?.unsaved.values.filter {
+                $0.input.meetingID == record.id && $0.input.configuration.id == configuration.id
+            }.sorted { $0.input.requestedAt < $1.input.requestedAt } ?? [],
+            canGenerate: aiSettings.isConfigured && !coordinator.isTransitioning
+                && coordinator.insights?.batchMeetingID == nil
+                && record.meetingStatus != .draft && (!isSummary || record.meetingStatus == .ended),
+            automatic: automatic,
+            emptyMessage: isSummary ? "Generate a summary of the complete meeting."
+                : (record.meetingStatus == .draft ? "Ready when the conversation starts."
+                   : "No saved insight yet. Generate when you’re ready."),
+            generate: allowsGeneration ? { coordinator.generateInsight(configuration, summary: isSummary) } : nil,
+            stop: { coordinator.insights?.cancel(key) },
+            retrySave: { coordinator.insights?.retrySave($0) }
         )
-        let token = UUID()
-        generationToken = token
-        generationTask = Task { @MainActor in
-            do {
-                let result = try await engine.generateOnce(transcript: transcript)
-                guard !Task.isCancelled,
-                      generationToken == token,
-                      selectedRecord?.id == record.id else { return }
-                guard let encoded = result.encoded() else { throw LLMError.badResponse }
-                record.insightJSON = encoded
-                do {
-                    try modelContext.save()
-                } catch {
-                    modelContext.rollback()
-                    throw error
-                }
-                historyInsight = result
-                generationState = .idle
-            } catch is CancellationError {
-                return
-            } catch let error as LLMError {
-                guard generationToken == token else { return }
-                generationState = .failed(error.errorDescription ?? "Generation failed")
-            } catch {
-                guard generationToken == token else { return }
-                generationState = .failed(error.localizedDescription)
-            }
-        }
     }
 
-    private func cancelGeneration() {
-        generationTask?.cancel()
-        generationTask = nil
-        generationToken = UUID()
+    private func ensurePalette() {
+        guard let record else { return }
+        palettes[record.id, default: InsightCardPalette()].include(record.orderedDefinitions.map(\.id))
+    }
+
+    private func orphanedUnsavedConfigurations(_ record: MeetingRecord) -> [InsightConfiguration] {
+        var seen = Set(record.definitions.map(\.id) + [InsightConfiguration.summary.id])
+        return (coordinator.insights?.unsaved.values.sorted { $0.input.requestedAt < $1.input.requestedAt } ?? [])
+            .filter { $0.input.meetingID == record.id }
+            .compactMap { value in
+                seen.insert(value.input.configuration.id).inserted ? value.input.configuration : nil
+            }
     }
 }

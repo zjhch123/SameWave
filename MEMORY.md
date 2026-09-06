@@ -1,5 +1,10 @@
 # SameWave Project Memory
 
+## UI design direction
+
+- Use a native Apple/macOS visual style throughout the app, following Apple Human Interface Guidelines.
+- On 2026-09-05, the user authorized using OpenDesign MCP as the UI/UX designer. Commission relevant design work there and implement the reviewed result in native SwiftUI.
+
 ## Automatically install and launch after development
 
 - On 2026-09-05, the user explicitly requested that every completed development task replace and launch the desktop app without asking again.

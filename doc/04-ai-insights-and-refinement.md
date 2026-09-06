@@ -1,6 +1,6 @@
 # AI Insights and Transcript Refinement
 
-> Main implementation: [`InsightEngine.swift`](../Sources/Insights/InsightEngine.swift), [`TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift), [`MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift), [`VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift), [`VocabularyImportController.swift`](../Sources/Capture/VocabularyImportController.swift), [`VocabularyImportWindow.swift`](../Sources/Capture/VocabularyImportWindow.swift), [`InsightModels.swift`](../Sources/Insights/InsightModels.swift), [`LLMProvider.swift`](../Sources/AI/LLMProvider.swift), [`OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift), [`AISettings.swift`](../Sources/AI/AISettings.swift).
+> Main implementation: [`InsightEngine.swift`](../Sources/Insights/InsightEngine.swift), [`TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift), [`MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift), [`VocabularyGenerator.swift`](../Sources/Insights/VocabularyGenerator.swift), [`VocabularyImportController.swift`](../Sources/Capture/VocabularyImportController.swift), [`VocabularyEditorView.swift`](../Sources/Capture/VocabularyEditorView.swift), [`InsightModels.swift`](../Sources/Insights/InsightModels.swift), [`LLMProvider.swift`](../Sources/AI/LLMProvider.swift), [`OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift), [`AISettings.swift`](../Sources/AI/AISettings.swift).
 
 ## 1. Capability boundaries
 
@@ -8,13 +8,13 @@ AI is an optional enhancement, independent of live-caption correctness:
 
 - Without an API key, capture, ASR, local translation, saving, and export still work.
 - Configured AI sends transcript text to the selected provider.
-- Explicit Markdown vocabulary generation sends selected file contents in batches, without filenames. Content, excerpts, and unsaved candidates remain in the current window's memory; explicitly saved terms enter local vocabulary.
-- User-initiated refinement sends the complete saved vocabulary. Insights send only terms matched in recent context; titles send none.
+- Explicit Markdown vocabulary generation sends selected file contents in batches, without filenames. Personal import review remains in memory until selected terms are saved. Meeting attachments and confirmed terms belong to the persistent workspace; importing an attachment does not send it.
+- User-initiated refinement sends the complete saved personal vocabulary. Insights send the complete applicable meeting/personal vocabulary with original source; titles send no vocabulary.
 - This pipeline never uploads audio.
 
 AI Services settings is shared by insights, refinement, titles, and Markdown vocabulary generation. Insights is a consumer, not the owner or proxy for other features' configuration. Complete, saved configuration enables each feature's existing triggers; there is no additional enable switch.
 
-Shared configuration, provider, strict parsing, and settings UI live in `Sources/AI/`. `Sources/App/SettingsView.swift` owns the window and navigation. `AppDelegate` injects one `AISettings` into all consumers; UI reads availability directly from it, not through `InsightEngine`.
+Shared configuration, provider, strict parsing, and settings UI live in `Sources/AI/`. `Sources/App/SettingsView.swift` owns native Settings sheet presentation and navigation. `AppDelegate` injects one `AISettings` into all consumers; UI reads availability directly from it, not through `InsightEngine`.
 
 App-owned prompts are English. Insights and generated titles request English output. Refinement preserves the meeting's selected source/target languages, and vocabulary extraction preserves original term spelling.
 
@@ -38,59 +38,65 @@ HTTP behavior:
 - Every request requires `response_format: {type: "json_schema", json_schema: {strict: true, ...}}`.
 - Check `finish_reason`; distinguish truncation, refusal, HTTP 400 schema/parameter errors, other HTTP errors, network failures, parsing, and empty content as readable `LLMError` values.
 
-## 3. One insight model, three uses
+## 3. Custom insights and one response contract
 
-[`InsightResult`](../Sources/Insights/InsightModels.swift) defines:
+Each meeting owns editable definitions with title, natural-language prompt, automatic-update flag, and focus (`cumulative` or `latestExchange`). Both scopes receive the whole original transcript through the cutoff; focus changes the analysis, not evidence coverage. New meetings contain an editable Meeting Overview preset with automatic updates off. Manual generation works independently of that flag.
 
-1. The strict JSON Schema sent to the model.
-2. SwiftUI card data.
-3. The payload persisted in `MeetingRecord.insightJSON`.
+The single `InsightResult` contract contains `conclusion`, `points`, and nullable `summary`. All three keys are required in provider responses; missing or extra top-level fields fail validation. Broad meeting overviews, including live cumulative updates, request a summary object with `topics`, `decisions`, `actionItems`, `openQuestions`, and `suggestions` arrays; focused custom prompts use points and an explicit null summary. Analytical intent comes from the prompt, not the editable title. Full-summary requests require a non-null summary at validation. A structured summary leaves points empty to avoid duplicate content. The prompt and schema do not request supporting quotes or a separate evidence payload.
 
-Fields are topic, suggestions, suggested answer, action items, and decisions. Every key is required. No answer is `null`; other empty content uses empty strings/arrays. Missing fields, wrong types, or more than three suggestions reject the entire response.
+The client validates nonempty/bounded text and at most 12 points. Each summary part allows at most eight nonblank items of up to 500 characters; all five arrays are required, including empty ones. Empty parts state that no relevant facts were recorded. Prompts keep unknown owners/dates explicit and distinguish suggestions from agreed actions. The generated presentation is English. The same contract drives provider Schema, rendering, immutable persistence, and export. There is no parallel fixed topic/answer/todo engine.
 
-The UI renders typed cards directly, without a Markdown/HTML renderer.
+Transcript, vocabulary, attached content, and quoted material are analyzed data. They cannot override the app-owned output contract or initiate external actions. User prompts direct analysis subject to that contract. Vocabulary assists spelling but is not evidence that a commitment or topic occurred.
 
-## 4. Live insight triggers
+## 4. Live scheduling and manual priority
 
-Only final ASR drives generation, not interim:
+`AutomaticInsightSchedule` requires both 45 seconds since the item's last dispatch (or start/resume) and at least 80 additional finalized source characters. A speaker switch is not a trigger. The coordinator evaluates on final commits and four-second autosave ticks. Short acknowledgments and time passing without new content do not independently dispatch work.
 
-- A speaker switch, or
-- Six accumulated new final sentences.
+At most six insight requests are active at once, including automatic work. At most one automatic request runs at a time; subsequent content coalesces into the next evaluation without a FIFO of intermediate snapshots. Eligible items rotate by oldest dispatch, and automatic work waits when all six slots are occupied. A standalone manual Generate Now starts immediately, cancelling an obsolete automatic request for that same item and superseding earlier manual work. Repeated clicks with the same active input/configuration coalesce. Changing the input creates a new frozen cutoff.
 
-Input contains the latest complete `sourceText` lines formatted as `Me: ...` / `Other party: ...`. The budget is 6,000 Swift characters, reserving room for prompt/output in the smallest built-in 8K context. If one line exceeds the budget, keep its latest suffix. Live translations are not treated as facts, avoiding amplified translation errors.
+The Custom Insights section's Generate action queues every current editable definition, including the Overview preset, in reading order and fills all available slots under the six-request limit. Completion, failure, or individual cancellation immediately releases capacity for the next queued item. The batch remains active until both its queue and active requests are empty. All inputs freeze the same original source, provisional text, vocabulary, request time, and definition configurations at the click. It excludes the separate meeting-wide summary. Queued cards show Queued and cannot dispatch automatically. Each success saves a new version independently, including out-of-order responses; provider, preflight, and save failures remain on their cards while other items continue. A batch cannot start while any included definition has an unsaved result. Repeated batch clicks coalesce. Stop cancels the entire batch; a card's Stop removes only that item. Meeting lifecycle cancellation clears the pending queue, and an explicit replacement manual request supersedes it. Late results remain subject to the existing cancellation and ownership checks.
 
-At each live/historical request, `InsightEngine` matches saved vocabulary against this truncated recent context. Matching is case-insensitive; terms beginning/ending in letters or digits also require alphanumeric boundaries, so `PR` does not match `project`. Only matches enter the system prompt, preserving saved order and exact spelling. The model may use that spelling when relevant, without introducing absent information. Empty vocabulary or no matches adds no prompt section.
+Manual requests include visible provisional recognition in a distinct `provisionalText` field. Automatic requests include only finalized source. The original request value retains provisional text even after later recognition changes. Editing a prompt or vocabulary affects the next request; a pending request keeps its original configuration.
 
-### 4.1 One in-flight request with a dirty flag
+A batch retains the provider instance and model label selected at the click, so editing AI Services cannot send later queued items to a different service under the old label. Automatic scheduling records each item's actual dispatch time separately from the batch's shared request cutoff.
 
-`InsightEngine` permits one request at a time:
+Pause, end, meeting switch, and deletion cancel outstanding work. Request tokens, cancellation checks, meeting lookup, and definition ownership are checked before persistence. Late responses cannot recreate deleted data or replace newer work. Cancelled requests do not delete successful snapshots. Failures remain visible and keep the caption pipeline independent.
 
-- Changes during generation set `dirtyDuringGen=true`.
-- Completion can immediately schedule at most one latest complete snapshot.
-- Each intermediate change does not enqueue a separate request.
+The 45-second/80-character defaults are deliberate initial policy, verified deterministically rather than claimed optimal from live latency/cost measurements.
 
-Like the translation mailbox, this prioritizes the latest state over replaying intermediate snapshots.
+## 5. Full input, history, and summaries
 
-Every live generation also carries `liveToken`. A new meeting/reset cancels work and replaces the token; even a late provider response cannot update the next meeting's cards.
+Every insight uses complete source-language evidence through its cutoff, never duplicate translations or earlier AI results as unquestioned facts. Historical requests and full summaries use original source, independently of the Original/Refined display toggle. All confirmed meeting vocabulary and saved personal vocabulary are sent, with meeting spellings winning case-insensitive duplicates. Each saved input retains exact vocabulary and source; the removed Details screen's content fingerprints are no longer computed.
 
-## 5. Historical insights
+AI Services exposes an insight context budget (default 32,768; supported configuration range 16,384–2,000,000). Set it to the selected service/model's documented capacity. Preflight conservatively counts serialized input bytes, system instructions, response Schema, 1,024 bytes of framing allowance, and an 8,192-token output allowance. This is an estimate, not a model tokenizer or discovered capacity. The unchanged provider can still reject a request at its own actual limit or truncate output; those errors remain visible. No output-token transport parameter is newly assumed for compatible services.
 
-When viewing history:
+If the estimate exceeds the configured budget, fail before sending with the estimated requirement and a larger-budget/model instruction. No source is silently removed. Traceable compression and document retrieval are outside this delivery. Therefore whole-meeting analysis is supported where the full input fits; oversized meetings get an explicit limitation, not a recent excerpt labeled complete.
 
-- Show cached insights immediately.
-- Allow manual generation/regeneration.
-- Prefer nonempty `refinedSource` per line, otherwise `sourceText`; translations are never factual input. Live insights and titles still use original `sourceText`.
-- Persist results to `insightJSON` for reuse without another request.
-- Prepend insights to exported Markdown.
-- Cancel generation on selection changes or deletion. Recheck selection and operation token before persistence to reject stale results.
+Each success appends `InsightSnapshot` immediately, with exact input/configuration, result, automatic/manual/summary kind, request/cutoff time, completion time, recorded-time offset, provider/model label, and budget. Each card has its own history selector, following latest by default; choosing a specific version holds it while newer results arrive. Custom, meeting-wide, archived, and unsaved results have no Details action or sheet. Saved history renders offline, including when AI configuration is removed. Save failure shows the unsaved result's conclusion/points or summary sections directly with a local Retry Save action.
 
-Live insights are not automatically stored in `MeetingRecord.insightJSON` at session end. Historical caches come from explicit historical generation.
+Meeting-wide sections appear directly at the bottom of AI Insights after End, with compact shared Meeting Insights controls. Generate sends one combined request guided by the meeting's definitions. It reconciles final decisions, actions/owners, dates, unresolved questions, disagreements, and later changes. Each regeneration adds another summary version while retaining every live result. Ending alone does not send a summary request. Markdown exports include all saved versions with the same named parts and empty-part messages.
+
+### 5.1 Card presentation and preparation
+
+Meeting Overview is an ordinary editable definition created with the draft. The Custom Insights heading groups editable definitions and provides Generate for all of them; while the batch runs, it shows progress and Stop. User-created definitions take reading priority: the stream uses reverse creation order, placing newer custom insights above the initial Overview, without separate tabs or an item picker. Titles and prompts remain editable and do not determine order. Scheduling and Preparation retain their own creation order. Each custom insight has a refresh icon for generation/retry, Stop while active, and its own history menu. Batch and Meeting Insights generation controls retain text labels. Conclusions start expanded. Key points default to expanded, and their disclosure choice is saved in local preferences by meeting ID and definition ID. View recreation, app relaunch, and newer or older versions retain the choice; other meetings and definitions remain independent. This reading preference is not part of generated or exported meeting content.
+
+Structured live overviews and full summaries render five fully expanded cards directly: Topics, Suggestions, Action Items, Decisions, and Open Questions. There is no enclosing title/conclusion card. Export retains the overall conclusion. For meeting-wide summary requests, section placeholders exist before generation and through generation, failure, and cancellation; missing content is distinct from a generated finding that no actions or decisions were recorded. All parts share one request, cutoff, and selected history version, controlled by compact actions above the cards. Incoming results do not reset another insight's selected version or expansion. Generation, cancellation, and network/save failures retain previous saved results; unsaved generated values, including their parts, remain visible with local Retry Save.
+
+Cards use 12-point corners, 14-point padding, 12-point gaps, 12-point semibold titles, and 13-point body text. Shared Generate/Retry buttons use the native small control size. Blue, lavender, mint, and neutral surfaces repeat decoratively. The inspector allocates slots by definition ID in initial creation order and retains that mapping for each meeting during the window session, including edits, removals, and meeting switches. Colors have no severity, provider, or default/custom meaning and add no persistent model field.
+
+Preparation contains Meeting title, Context, Vocabulary, and AI Insights cards. Context owns attachment selection, filenames, sizes, and direct removal. Vocabulary previews up to twelve saved terms in wrapping chips with a remaining count. It opens a shared 600×540 editor with every Context filename and size listed read-only in import order, compact extraction controls, temporary Suggested Terms, and Saved Vocabulary in one regular ScrollView/VStack. Manage Context dismisses the vocabulary sheet and focuses the existing Context card. Manual multiline add, row Save/Cancel, removal, and selected suggestion saves commit explicitly. Suggested Terms owns all review actions and feedback, repeating its toolbar at both ends for long lists; the fixed footer has only Done and dismissal information. Stable IDs and app-session reading state prevent automatic navigation on results. One coordinator-owned editor per meeting retains extraction, drafts, and candidates across closure or meeting switches; deletion invalidates it. Context changes apply to the next extraction, while Retry uses original inputs. Attachments never ground insights in this release. Draft preparation hides the redundant top-bar preparation shortcut. Insight Add/Edit retains its native editor and fixed Save/Cancel; removed definitions retain saved versions under Saved results from removed insights.
+
+The existing sidebar, titlebar, caption hierarchy, capture dock, and three-column resize behavior remain intact.
+
+The insight stream uses a regular `VStack` inside `ScrollView`. Expanded summaries and focused cards have very different heights; measuring them together keeps document height stable as cards enter and leave the viewport. Scrolling unchanged content must not trigger height estimates or position corrections.
+
+Each card decodes its selected immutable snapshot once per body evaluation. Saved and unsaved versions render their own result shapes, so changing a prompt between focused points and a structured summary cannot hide either version. No second persistent result cache is maintained.
 
 ## 6. Post-meeting refinement
 
 Refinement cleans ASR source line by line and retranslates in the original direction when languages differ. Independent [`TranscriptRefiner`](../Sources/Insights/TranscriptRefiner.swift) owns this use case; `InsightEngine` owns structured insights only. They share provider settings, not state machines.
 
-Starting refinement also starts a separate [`MeetingTitleGenerator`](../Sources/Insights/MeetingTitleGenerator.swift) HTTP request. Titles do not join the batch state machine or wait for refinement.
+Starting refinement starts a separate [`MeetingTitleGenerator`](../Sources/Insights/MeetingTitleGenerator.swift) HTTP request only when both the saved user title and AI title are blank. Titles do not join the batch state machine or wait for refinement.
 
 ### 6.1 Batching
 
@@ -126,9 +132,10 @@ Changing records invalidates both the view task and the refiner's run token. A r
 - Use chronologically ordered ASR source, with the latest 6,000-character budget, allowing parallel refinement.
 - Use the independent `meeting_title` Schema. The English prompt names the field and asks for a specific title of 3–8 words and at most 60 characters. The client rejects blank titles and caps unexpectedly long output at 60 characters.
 - Title/refinement outcomes and saves are independent. Failure in one does not invalidate success in the other.
-- Generate only without a valid `aiTitle`. After successful persistence, Refine Again skips title generation. A previously failed title is retried on the next refinement.
-- Selection changes cancel both tasks; each checks operation token and current record ID before writing.
-- Persist success in `MeetingRecord.aiTitle`. Sidebar/details prioritize it while retaining start time; missing titles display start time.
+- Preparation commits a user title with Save or Return; typing alone remains a local field draft. The saved title survives capture, pause/resume, End, and relaunch.
+- Generate only without a valid `aiTitle` and without a nonblank saved user title. After successful persistence, Refine Again skips title generation. A previously failed title is retried on the next refinement. Clearing and saving a user title exposes an existing AI title; if neither title remains, the next refinement may generate one.
+- Selection changes cancel both tasks; each checks operation token and current record ID before writing. Title eligibility is checked before the request, after its response, and immediately before persistence. A user title saved while generation is running discards the obsolete result and suppresses its errors.
+- Persist success in `MeetingRecord.aiTitle`. Sidebar/details prioritize the user title, then the AI title, while retaining start time; missing titles display start time.
 
 ### 6.5 Shared JSON boundary
 
@@ -138,28 +145,30 @@ Insights, refinement, titles, and connection tests use strict `JSONResponseParse
 
 - Provider ID, custom API URL, and custom model are stored in UserDefaults.
 - API keys are Keychain generic passwords under bundle-ID service `com.plus.samewave`. Older app-identity settings/keys are not read or migrated. The English display-name change keeps this namespace.
-- Settings uses drafts; only Save updates shared configuration.
-- AI Services explains its app-wide purpose. Configuration actions in insights, refinement, and vocabulary select this tab even when Vocabulary was active, without submitting vocabulary drafts. Custom settings scroll while Save/Cancel stay fixed at the bottom.
+- Settings uses native sheets over the current main/preparation surface, including menu and Command-comma entry points. AI configuration links select AI Services. AISettingsDraft belongs to SettingsNavigation, retaining preference edits across tab switches and Settings dismissal. Save commits AI preferences; Cancel restores their saved values. Neither action changes vocabulary.
+- The draft owns connection tests, model discovery, cancellation tokens, and loading/error state. Changing provider/key/address invalidates both checks and clears discovered models; changing the model invalidates its connection test. Settings dismissal cancels checks even if SwiftUI retains the dismissed view, releases loading state, and rejects late replies. Discovery preserves any model typed during the request. Vocabulary extraction has a separate owner and continues across dismissal.
+- AI Services explains its app-wide purpose. Configuration actions select this tab without submitting vocabulary drafts. Custom settings scroll while Save/Cancel stay fixed at the bottom.
 - `AISettings` validates both saved settings and connection-test drafts: every provider needs a nonblank key; custom providers also need a valid URL and nonblank model ID. Existing UserDefaults keys and Keychain accounts remain the sole storage, without copies or migrations.
 - A draft can run a representative connection test containing nested objects and arrays, verifying the actual contract instead of accepting an accidentally valid simple object.
 - Custom URLs accept bare domains/hosts, versioned base URLs, or complete `/chat/completions` endpoints. Remote bare hosts default to HTTPS and `/v1/chat/completions`; localhost/loopback default to HTTP. The UI shows the normalized request URL.
 - Fetch model lists from sibling `/models` with the same Bearer key. Successful results populate a menu while keeping manual model entry. A 404/405, empty list, or nonstandard response does not block configuration.
 - ATS explicitly allows local networking only; external services require HTTPS.
-- Vocabulary is a separate tab. Local English recognition uses it; refinement uses the complete operation-start snapshot; live/history insights use matches only; titles use none. Empty vocabulary/matches add no insight prompt content.
-- Generate from Markdown opens the system file picker first and a separate window only after selection. Cancelling the initial picker starts nothing. Switching tabs or closing Settings does not affect work. Closing the generation window cancels requests and discards unsaved review content; Stop cancels current/pending requests while retaining the window and candidates, or returns to file selection if none exist. Actual NSWindow close notifications define cancellation; state changes and hiding do not.
+- Vocabulary is a separate tab. Local English recognition uses it; refinement uses the complete operation-start snapshot; live/history insights use complete meeting/personal vocabulary; titles use none. Empty vocabulary adds no term content.
+- The Vocabulary tab directly embeds the shared editor in the 600×540 Settings sheet, with no Manage landing page or extra vocabulary presenter. Configure AI Services switches to the adjacent tab. A compact scope heading scrolls with the cards; the fixed Done footer closes Settings and identifies pending AI preferences. Choose Markdown loads temporary local files without making a request; Extract Vocabulary explicitly sends them. Done, Escape, and native close preserve app-session files, candidates, manual drafts, and extraction. Stop retains partial results; Discard clears pending extraction/review only when stopped. App exit clears unsaved work. The former close-to-cancel observer and bulk vocabulary draft are removed.
 - Input may contain multiple UTF-8 `.md`/`.markdown` files, limited to 3 MB each and 30 MB total, with no total body-character cap. Local fragments of at most 18,000 characters assemble into actual requests of at most 20,000 characters. Requests are serial, retry twice after the first failure, and continue after exhausted failures. Each success returns at most 50 single-line terms through its own strict Schema. Markdown is untrusted data; the system prompt forbids following embedded instructions. Candidates must pass both specific-named-entity and speech-recognition-value gates. Generic concepts, categories, process terms, and phrases distinguished only by heading style or capitals are excluded; uncertainty favors fewer or no terms.
-- Publish each success immediately after deduplicating against saved vocabulary, the current draft, and previously seen terms. Review defaults to selected, supports edits and Select All/Deselect All, and expands local filenames/excerpts. Missing source matches explicitly require verification. Stable candidate IDs and original extraction identity prevent later requests from resetting edits/selections.
-- Add and Save persists only selected new terms after another deduplication. Append only new terms to the draft while retaining other manual edits and formatting. Saving works during generation and reports inline.
-- Each request retains succeeded/failed/pending state. Retry Incomplete Requests reruns failed, interrupted, and unsent requests, each with a fresh initial attempt plus two retries. Successful requests are not charged again. Edits, sources, and attempt history remain. Provider configuration freezes at the original start and does not change on retry. Stop invalidates the run token; late responses cannot enter review. Restart waits for old cancellation to preserve serial execution.
-- Default progress shows completed count, new-term count, and current retry state. Request Details records each success/error/stop and duration. A monotonic clock measures from immediately before provider invocation through complete response and term validation, excluding retry delay. This combines network/server time and cannot isolate inference, server queues, or network latency. Reading/splitting happens in the background with propagated cancellation.
+- Publish each success immediately after deduplicating against saved vocabulary, current candidates, and previously seen terms. Review defaults to selected and supports edits and Select All/Deselect All. Both personal and meeting vocabulary contain term strings only: extraction does not request, compute, store, or display per-term source metadata. Stable candidate IDs and original extraction identity prevent later requests from resetting edits/selections.
+- Add to Vocabulary persists only selected new terms after another deduplication. Invalid selected rows block the save; unchecked invalid rows do not. Manual drafts remain unchanged. Saving works during generation and reports inside Suggested Terms. Manual Add, row Save, and Remove commit separately to the saved destination; failures retain input and saved originals.
+- `SpeechVocabularySettings` owns shared term identity, normalization, and new-term filtering for manual entry, suggestions, and persistence. `VocabularyDocumentLoader.merging` owns ordered file deduplication/limits. `VocabularyDocumentRow` renders filenames/sizes across Context and both vocabulary scopes, with removal only where that surface owns the files.
+- Each request retains succeeded/failed/pending state. Retry Incomplete Requests reruns failed, interrupted, and unsent requests, each with a fresh initial attempt plus two retries. Successful requests are not charged again. Edits and selections remain. Provider configuration freezes at the original start and does not change on retry. Stop invalidates the run token; late responses cannot enter review. Restart waits for old cancellation to preserve serial execution.
+- Compact progress shows completed count, new-term count, and current retry state. Personal and meeting review omit request details and per-attempt timing/history. The controller retains only the current attempt plus batch statuses needed for retry. Preparation errors or the most recent failed batch reason appear inline; retry clears the previous error for retried batches. Stop and completion clear the current attempt. Reading/splitting happens in the background with propagated cancellation.
 
 ## 8. Risks and limitations
 
-- The app neither sets nor discovers a model's context window. Server/model configuration controls it. Insights/titles budget 6,000 characters; Markdown request bodies budget 20,000. Characters are not tokens, and full requests also include prompts, schemas, and output.
+- Insight budgets are user configured with conservative full-input preflight; the provider remains authoritative. Title generation alone retains a recent 6,000-character limit. Markdown request bodies budget 20,000 characters. Characters/bytes are not exact token counts.
 - `/chat/completions` compatibility does not guarantee enforced `json_schema`. Custom services should pass the representative connection test. Production requests always send Schema and decode strictly; gateways that ignore it can still fail intermittently.
 - `/models` is optional and may use a different gateway path; manual model IDs remain necessary for such services.
 - Strict Schema does not guarantee factual correctness. Clients still validate titles, batch line IDs, suggestion counts, and other business invariants.
-- Speaker switches can trigger frequent live insights. Single-flight coalescing prevents backlog but supplies no cooldown or spending budget.
+- Automatic insights have interval/content gates and one slot; full-context requests still grow with meeting length and may increase cost or latency. Manual batches use up to six concurrent requests, with automatic work counted against the same cap.
 - Long Markdown creates multiple requests with corresponding latency/cost. Requests failing all three attempts are skipped, so review may cover only part of the documents; the window discloses this.
-- Matched vocabulary can contain internal project or personal names and is sent in the insight system prompt.
+- Complete applicable vocabulary can contain internal project or personal names and is sent in the insight request.
 - Users must understand the cloud boundary. “Fully offline” applies only to live captions with AI unused.

@@ -141,10 +141,10 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 ### 8.3 Sessions and history
 
-- Start and quit without speaking; the empty-record behavior on relaunch is sensible.
+- Start and quit without speaking; the prepared workspace remains on relaunch.
 - Select history and reopen: sidebar, stage, and insights still correspond to it even if a newer unfinished meeting exists.
 - Quit/crash while recording: the last selected session restores paused. After switching among paused sessions, reopening selects the last one.
-- Selecting a new meeting, first launch, or deletion of the saved selection shows a new meeting; other paused sessions remain selectable.
+- New Meeting saves and selects a draft. Deleting the displayed meeting selects a remaining meeting and restores its draft/history/paused presentation without starting capture. Reopen to verify that selection persists. With no meetings, show the empty state without a synthetic sidebar row or capture dock.
 - Time stops while paused and continues cumulatively after resume.
 - Switching among multiple paused sessions creates no conflicting/duplicate Section IDs.
 - End saves final lines, duration, and translations.
@@ -156,17 +156,21 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 ### 8.4 AI and interface
 
 - Without AI configured, the local pipeline remains fully usable.
-- Settings shows AI Services and Vocabulary; AI copy names all four consumers.
+- Settings opens as a native sheet from the app menu/Command-comma and nested preparation panels, then returns to its presenter. It shows AI Services and Vocabulary; AI copy names all four consumers.
 - Leave an unsaved vocabulary draft, then Configure AI Services from insights/refinement. It selects AI directly without saving the draft. The vocabulary page's configuration action does the same.
 - Scroll through full custom AI settings/privacy content with Save/Cancel always accessible. Unsaved drafts do not unlock AI; complete saved settings enable all consumers.
-- The Markdown picker precedes the separate window. Switching/closing Settings or hiding generation does not cancel; closing generation cancels and discards unsaved candidates.
-- Multiple requests reveal terms incrementally. Edits, deselection, and saves during generation survive later duplicate results. Stop retains results; retry handles incomplete requests only. Expand details to verify real attempt durations/errors.
-- Leave manual vocabulary edits unsaved, then save selected generated terms. Only new terms persist; manual drafts remain pending, and cancelling Settings does not undo import saves.
+- Edit connection details during Test Connection and verify that the old response cannot show Connected. Close Settings during model discovery and reopen: the draft remains, loading is cleared, and Fetch Models is available. A model typed during discovery must not be overwritten by its response. Vocabulary extraction remains independent.
+- Meeting extraction continues across panel closure/reopening and meeting switches, preserving edits and selections. Context owns attachments; Preparation previews up to twelve terms across wrapping rows. Manage Vocabulary opens the shared editor with all Context filenames and sizes in the same order, plus a route back to Context; that read-only list has no removal or body previews. Add to Vocabulary saves checked terms in place and retains unchecked terms; Done only dismisses. Verify manual term entry, no-new-terms feedback, and repeated in-card actions with long lists and retained reading position after reopening. Remove an attachment during extraction; the running input and confirmed terms remain intact. Delete its meeting and verify that late results cannot restore it.
+- Settings Vocabulary directly renders the shared editor. Switch between Vocabulary and AI Services, including Configure AI Services, without opening another window/sheet or changing Settings dimensions. Choose Markdown only loads local temporary files; Extract sends them explicitly. Done closes Settings. Tab switching and dismissal preserve drafts, files, candidates, reading position, and extraction for the app session.
+- With 300 saved terms, including long two-line spellings, switch Settings tabs and scroll to the bottom and back. Document height and reading position remain stable. Repeat while editing an invalid row, then cancel. The native performance test records update/layout timing and asserts that tab navigation does not reread saved terms; timing is evidence from the test machine, not a device-independent frame-rate guarantee.
+- Multiple requests reveal terms incrementally. Edits, deselection, and saves during generation survive later duplicate results. Stop retains results; retry handles incomplete requests only. Verify compact progress and inline error reasons without request details.
+- Leave manual vocabulary edits and an AI Services draft unsaved, then save selected generated terms. Only selected terms persist; manual and AI drafts remain pending. Reopen Settings and cancel AI edits; saved vocabulary must remain unchanged. Test manual multiline Add, saved-row Save/Cancel, Remove, duplicate feedback, and all-or-nothing invalid-line handling.
 - 401, 429, timeout, and non-JSON responses show the appropriate English error.
-- Dense commits allow only one insight request in flight, followed by one latest snapshot.
+- Dense commits respect 45-second/80-character automatic gates and one automatic slot. Standalone Generate Now starts immediately; Custom Insights Generate fills up to six concurrent requests, including any automatic work in that cap. Completion, failure, and individual Stop refill available capacity. Whole-batch Stop clears queued and active work. Every successful result is saved independently.
+- Save a Preparation title with Save or Return, record and End, then refine: no title request should be sent. Reopen to verify persistence. With no saved title, refine and save a user title before its response returns; the late AI title must be discarded. Clearing a user title reuses any existing AI title, otherwise the next refinement may generate one.
 - One failed refinement batch neither erases successful batches nor overwrites originals.
 - Cross-language and same-language refinement prompts/fields differ correctly; direction follows the saved pair.
-- Long historical input sends only the latest 6,000 characters, preferring complete lines.
+- Historical/full-summary input retains all original source or fails preflight explicitly. Early agreements and late revisions both enter the request.
 - New meetings reject old live-insight writes.
 - Newly generated insights/titles are English. Check main-window controls, Settings, and vocabulary review for clipped English text at supported window sizes. Narrow stages stack language selectors above capture controls; history actions expose full names through tooltips and accessibility labels.
 
@@ -176,15 +180,19 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 1. `CaptionStore` floor switches, six-sentence split, non-floor interim, restore IDs/context, generation.
 2. `TranslationBridge` replacement, cross-Section order, idle drain.
-3. `MeetingHistoryStore.sync/finish` upsert, stale deletion, empty-record deletion.
-4. Recent insight context, strict JSON Schema bodies, malformed-response rejection.
+3. `MeetingHistoryStore.sync/finish` upsert, stale deletion, and empty-workspace retention; draft/attachment on-disk reopen and cascade ownership.
+4. Full insight context, explicit budgets, strict JSON Schema/evidence, automatic gates, manual priority, cancellation, history versions, and save retry.
 5. Refinement line/character batch limits.
 6. Vocabulary defaults, persisted empty state, whitespace cleanup, case-insensitive deduplication.
 7. Fixed language labels, four pairs, bypass, persisted pair values.
-8. Markdown file/request budgets, Unicode fragmentation, incremental delivery, two retries and continuation, local provenance, omitted filenames.
-9. Import stop/retry/close and stale-response isolation; retained edits/selections; save-time deduplication and draft isolation; native NSWindow hide/close semantics and review rendering.
-10. AI key/URL/model validation, all four unconfigured consumers blocked, local vocabulary availability, tab navigation and settings rendering.
+8. Markdown file/request budgets, Unicode fragmentation, incremental delivery, two retries and continuation, term-only review/persistence, omitted filenames.
+9. Import stop/retry/discard, non-destructive close, and stale-response isolation; retained edits/selections; save-time deduplication and draft isolation; native Settings tab switching/dismissal and review rendering.
+10. AI key/URL/model validation, all four unconfigured consumers blocked, connection-test/discovery cancellation and stale replies, local vocabulary availability, tab navigation and settings rendering.
 11. Immediate selection persistence, UUID-based history/paused restore, invalid/missing selection handling, consistency after switch/delete/end.
 12. English identity, output templates, metadata, title/insight prompts, and selected-language preservation.
 
-Domain tests do not start real audio, Apple Translation, or AI requests. However, XCTest uses the app as its host, and `AppDelegate.applicationDidFinishLaunching` still requests speech/microphone permissions. Alternating an unsigned temporary host and signed installation with the same bundle ID can mismatch TCC signature requirements and reprompt. Passing tests does not prove permission isolation or authorization reuse. Changes to those I/O boundaries require signed-app smoke tests; report unexecuted paths accurately.
+Hosted XCTest launches detect `XCTestBundlePath`: app assembly uses an in-memory history container, skips restoring personal meeting selection, and does not request speech/microphone permission. AI settings also avoid loading the real key. Tests create their own in-memory or temporary on-disk stores and controlled providers. Passing domain tests does not prove real capture, permission reuse, translation, or recognition accuracy; those remain signed-app smoke checks.
+
+## Phase 2 acceptance
+
+See [Phase 2 validation](phase-2-validation.md) for repeatable coverage and remaining signed-app smoke checks. Render preparation and offline history at 1120×760 and 940×480; verify cards, empty state, editors, vocabulary management, archive, and inline errors. Check independent older-result selection/expansion, mixed saved/unsaved result shapes, identity-stable color allocation, retained history after definition removal, partial extraction retry, and Save failures independent of network progress. Test late responses with a provider that deliberately ignores cancellation.

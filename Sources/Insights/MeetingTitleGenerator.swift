@@ -11,7 +11,7 @@ final class MeetingTitleGenerator {
 
     private let settings: AISettings
 
-    /// Fixed provider-independent budget shared with one-shot insights. A title uses the
+    /// A title-specific character budget. A title uses the
     /// latest complete conversation lines and does not wait for refined text.
     static let contextCharacterLimit = 6_000
     static let titleCharacterLimit = 60
@@ -20,9 +20,16 @@ final class MeetingTitleGenerator {
         self.settings = settings
     }
 
-    func generate(lines: [TranscriptLine]) async throws -> String {
-        guard let provider = settings.makeProvider() else { throw LLMError.notConfigured }
-        return try await Self.generate(lines: lines, provider: provider)
+    func generateIfNeeded(for record: MeetingRecord) async throws -> String? {
+        try await Self.generateIfNeeded(for: record, provider: settings.makeProvider())
+    }
+
+    static func generateIfNeeded(for record: MeetingRecord, provider: LLMProvider?) async throws -> String? {
+        guard record.needsAITitle else { return nil }
+        guard let provider else { throw LLMError.notConfigured }
+        let title = try await generate(lines: record.lines, provider: provider)
+        guard record.needsAITitle else { return nil }
+        return title
     }
 
     static func generate(lines: [TranscriptLine], provider: LLMProvider) async throws -> String {
@@ -40,14 +47,36 @@ final class MeetingTitleGenerator {
     }
 
     static func input(lines: [TranscriptLine], limit: Int) -> String {
-        InsightEngine.recentContext(
-            from: InsightEngine.flatten(
-                lines: lines,
-                preferringRefinedSource: false
-            ),
-            limit: limit
-        )
+        let transcript = lines.sorted { $0.orderIndex < $1.orderIndex }.compactMap { line -> String? in
+            let text = line.sourceText.trimmed
+            return text.isEmpty ? nil : "\(line.isMine ? "Me" : "Other party"): \(text)"
+        }.joined(separator: "\n")
+        return recentContext(from: transcript, limit: limit)
     }
+
+    /// Keeps complete newest lines until the character budget is full. If a single
+    /// line exceeds the budget, its newest suffix is retained rather than sending an
+    /// oversized request.
+    private static func recentContext(from transcript: String, limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        let trimmed = transcript.trimmed
+        guard trimmed.count > limit else { return trimmed }
+
+        var selected: [String] = []
+        var count = 0
+        for line in trimmed.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            let value = String(line)
+            let additional = value.count + (selected.isEmpty ? 0 : 1)
+            if additional + count > limit {
+                if selected.isEmpty { return String(value.suffix(limit)) }
+                break
+            }
+            selected.append(value)
+            count += additional
+        }
+        return selected.reversed().joined(separator: "\n")
+    }
+
 
     static func systemPrompt() -> String {
         """

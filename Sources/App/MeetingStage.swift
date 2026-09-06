@@ -6,6 +6,7 @@ struct MeetingStage: View {
     @Binding var sidebarOpen: Bool
     @Binding var selectedRecord: MeetingRecord?
     @State private var showRefined = true
+    @Environment(AISettings.self) private var aiSettings
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,19 +25,38 @@ struct MeetingStage: View {
                 )
                 .id(record.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                CaptionsView(
-                    store: coordinator.store,
-                    isListening: coordinator.isRunning,
-                    statusMessage: coordinator.statusMessage,
-                    hideSourceEcho: !coordinator.languagePair.needsTranslation
-                )
+            } else if coordinator.workspaceRecord == nil {
+                ContentUnavailableView {
+                    Label("No Meetings", systemImage: "rectangle.stack")
+                } description: {
+                    Text("Create a meeting to get started.")
+                } actions: {
+                    Button("New Meeting") { Task { await coordinator.startNewMeeting() } }
+                        .buttonStyle(.borderedProminent)
+                }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
+            } else {
+                VStack(spacing: 0) {
+                    Group {
+                        if let record = coordinator.workspaceRecord,
+                           record.meetingStatus == .draft, let history = coordinator.history {
+                            MeetingPreparationView(record: record, history: history,
+                                editor: coordinator.vocabularyEditor(for: record, settings: aiSettings))
+                                .id(record.id)
+                        } else {
+                            CaptionsView(
+                                store: coordinator.store,
+                                isListening: coordinator.isRunning,
+                                statusMessage: coordinator.statusMessage,
+                                hideSourceEcho: !coordinator.languagePair.needsTranslation
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     MeetingControlDock(coordinator: coordinator)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-                    .frame(maxWidth: .infinity)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
+                        .frame(maxWidth: .infinity)
                 }
             }
         }
@@ -50,10 +70,10 @@ private struct StageHeader: View {
     @Binding var selectedRecord: MeetingRecord?
     @Binding var showRefined: Bool
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.openSettings) private var openSettings
     @Environment(AISettings.self) private var aiSettings
     @Environment(SettingsNavigation.self) private var settingsNavigation
     @State private var saveError: String?
+    @State private var showingPreparation = false
     @State private var refinementTask: Task<Void, Never>?
     @State private var titleTask: Task<Void, Never>?
     @State private var refinementToken = UUID()
@@ -62,6 +82,9 @@ private struct StageHeader: View {
         HStack(spacing: 0) {
             if !sidebarOpen { Color.clear.frame(width: 64) }
             iconButton("sidebar.left", help: "Toggle Sidebar") { sidebarOpen.toggle() }
+            if let record = coordinator.workspaceRecord, record.meetingStatus != .draft {
+                iconButton("slider.horizontal.3", help: "Meeting Preparation") { showingPreparation = true }
+            }
 
             if let record = selectedRecord {
                 VStack(alignment: .leading, spacing: 2) {
@@ -92,7 +115,7 @@ private struct StageHeader: View {
                 iconButton("square.and.arrow.up", help: "Export Meeting") {
                     TranscriptExporter.exportRecord(record)
                 }
-            } else {
+            } else if coordinator.workspaceRecord != nil {
                 Spacer()
                 if coordinator.isRunning || !coordinator.statusMessage.isEmpty {
                     liveStatus
@@ -105,6 +128,10 @@ private struct StageHeader: View {
                     )
                 }
                 .disabled(!coordinator.store.hasContent)
+            } else {
+                Spacer()
+                if !coordinator.statusMessage.isEmpty { liveStatus }
+                Spacer()
             }
         }
         .padding(.horizontal, 16)
@@ -113,6 +140,18 @@ private struct StageHeader: View {
         } message: {
             Text(saveError ?? "")
         }
+        .sheet(isPresented: $showingPreparation) {
+            if let record = coordinator.workspaceRecord, let history = coordinator.history {
+                VStack(spacing: 0) {
+                    HStack { Spacer(); Button("Done") { showingPreparation = false } }.padding(12)
+                    MeetingPreparationView(record: record, history: history,
+                                editor: coordinator.vocabularyEditor(for: record, settings: aiSettings))
+                        .id(record.id)
+                }.frame(width: 620, height: 640)
+                    .modifier(SettingsSheet())
+            }
+        }
+        .onChange(of: coordinator.selectedRecordID) { _, _ in showingPreparation = false }
         .onChange(of: selectedRecord?.id) { _, _ in cancelRefinement() }
         .onDisappear { cancelRefinement() }
     }
@@ -180,7 +219,7 @@ private struct StageHeader: View {
             if configured {
                 runRefinement(record)
             } else {
-                settingsNavigation.openAISettings { openSettings() }
+                settingsNavigation.openAISettings()
             }
         } label: {
             Group {
@@ -207,13 +246,14 @@ private struct StageHeader: View {
         let languagePair = record.languagePair
         let token = UUID()
         refinementToken = token
-        if !record.hasAITitle, let titleGenerator = coordinator.titleGenerator {
+        if record.needsAITitle, let titleGenerator = coordinator.titleGenerator {
             titleTask = Task { @MainActor in
                 do {
-                    let title = try await titleGenerator.generate(lines: lines)
+                    guard let title = try await titleGenerator.generateIfNeeded(for: record) else { return }
                     guard !Task.isCancelled,
                           refinementToken == token,
-                          selectedRecord?.id == record.id else { return }
+                          selectedRecord?.id == record.id,
+                          record.needsAITitle else { return }
                     record.aiTitle = title
                     do {
                         try modelContext.save()
@@ -224,10 +264,10 @@ private struct StageHeader: View {
                 } catch is CancellationError {
                     return
                 } catch let error as LLMError {
-                    guard refinementToken == token else { return }
+                    guard refinementToken == token, record.needsAITitle else { return }
                     saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.errorDescription ?? "Unknown error")"
                 } catch {
-                    guard refinementToken == token else { return }
+                    guard refinementToken == token, record.needsAITitle else { return }
                     saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.localizedDescription)"
                 }
             }
@@ -319,6 +359,7 @@ private struct MeetingControlDock: View {
         .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
         .padding(.horizontal, 12)
         .disabled(coordinator.isTransitioning)
+        .onChange(of: coordinator.languagePair) { _, _ in coordinator.saveDraftLanguages() }
     }
 
     private var languages: some View {

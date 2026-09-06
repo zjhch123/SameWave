@@ -7,8 +7,7 @@ final class MeetingHistoryStoreTests: XCTestCase {
     func testSyncUpsertsBySectionIDAndDeletesPrunedLines() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(
-            startedAt: .now,
+        let record = try history.createDraft(
             languagePair: .englishToSimplifiedChinese
         )
 
@@ -27,25 +26,24 @@ final class MeetingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.lines[0].targetText, "你好")
     }
 
-    func testFinishDeletesEmptyMeeting() throws {
+    func testFinishRetainsEmptyMeeting() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(
-            startedAt: .now,
+        let record = try history.createDraft(
             languagePair: .simplifiedChineseToSimplifiedChinese
         )
 
         try history.finish(record, sections: [], endedAt: .now)
 
         let records = try history.context.fetch(FetchDescriptor<MeetingRecord>())
-        XCTAssertTrue(records.isEmpty)
+        XCTAssertEqual(records.map(\.id), [record.id])
+        XCTAssertEqual(records.first?.meetingStatus, .ended)
     }
 
     func testFinishPersistsTranscriptAndEndedStatusTogether() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(
-            startedAt: .now,
+        let record = try history.createDraft(
             languagePair: .simplifiedChineseToEnglish
         )
         var section = Section(id: 7, speaker: .remote)
@@ -62,10 +60,7 @@ final class MeetingHistoryStoreTests: XCTestCase {
     func testAITitlePersistsAndReplacesDateWhileDateRemainsInMetadata() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
-        let record = try history.beginRecord(
-            startedAt: Date(timeIntervalSince1970: 1_700_000_000),
-            languagePair: .englishToSimplifiedChinese
-        )
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese, now: Date(timeIntervalSince1970: 1_700_000_000))
 
         XCTAssertEqual(record.displayTitle, record.displayDate)
         XCTAssertEqual(record.displayMetaText, record.metaText)

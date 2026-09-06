@@ -1,7 +1,17 @@
+import AppKit
 import XCTest
 @testable import SameWave
 
 final class AppIdentityTests: XCTestCase {
+    @MainActor
+    func testHostedTestsUseMemoryStorageAndDoNotRestorePersonalMeetings() throws {
+        let delegate = AppDelegate()
+        delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+        let history = try XCTUnwrap(delegate.history)
+        XCTAssertTrue(history.container.configurations.allSatisfy(\.isStoredInMemoryOnly))
+        XCTAssertNil(delegate.coordinator.selectedRecordID)
+    }
+
     func testApplicationUsesEnglishSameWaveIdentity() {
         XCTAssertEqual(Bundle.main.bundleIdentifier, "com.plus.samewave")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String, "SameWave")

@@ -13,9 +13,18 @@ final class CaptureCoordinator {
     private(set) var sessionState: MeetingSessionState = .idle
     private(set) var statusMessage = ""
     private(set) var sessionStartedAt: Date?
-    /// nil shows the mounted session, or the new-meeting stage when none is mounted.
+    /// nil shows the mounted session, or the empty state when none is mounted.
     var selectedHistoryRecord: MeetingRecord? {
-        didSet { persistSelection() }
+        didSet {
+            if oldValue?.id != selectedHistoryRecord?.id {
+                if let id = oldValue?.id { insights?.cancelMeeting(id) }
+                if selectedHistoryRecord != nil, let id = activeRecordID { insights?.cancelMeeting(id) }
+                if selectedHistoryRecord == nil, sessionState == .recording, let activeRecord {
+                    insights?.startRecording(activeRecord, sections: store.sections)
+                }
+            }
+            persistSelection()
+        }
     }
 
     private var pausedElapsed: TimeInterval = 0
@@ -43,12 +52,15 @@ final class CaptureCoordinator {
     var insights: InsightEngine?
     var refiner: TranscriptRefiner?
     var titleGenerator: MeetingTitleGenerator?
+    @ObservationIgnored private var vocabularyEditors: [UUID: VocabularyEditorStore] = [:]
 
     private var activeRecord: MeetingRecord? {
         didSet { persistSelection() }
     }
     private var autosaveTask: Task<Void, Never>?
     var activeRecordID: UUID? { activeRecord?.id }
+    var workspaceRecord: MeetingRecord? { selectedHistoryRecord ?? activeRecord }
+    var globalVocabulary: [String] { speechVocabularySettings.phrases }
     var selectedRecordID: UUID? { selectedHistoryRecord?.id ?? activeRecordID }
     var languagePair: MeetingLanguagePair {
         MeetingLanguagePair(source: sourceLanguage, target: targetLanguage)
@@ -82,6 +94,22 @@ final class CaptureCoordinator {
         }
     }
 
+    /// One editing session per meeting, independent of the sheet lifecycle.
+    func vocabularyEditor(for record: MeetingRecord, settings: AISettings) -> VocabularyEditorStore {
+        if let editor = vocabularyEditors[record.id] { return editor }
+        let meetingID = record.id
+        let editor = VocabularyEditorStore(scope: .meeting, aiSettings: settings,
+            readPhrases: { record.confirmedVocabulary },
+            replacePhrases: { [weak self] phrases in
+                guard let history = self?.history, let owner = try history.record(id: meetingID) else {
+                    throw LLMError.invalidRequest("This meeting is no longer available.")
+                }
+                try history.replaceVocabulary(phrases, in: owner)
+            })
+        vocabularyEditors[meetingID] = editor
+        return editor
+    }
+
     // MARK: - Lifecycle
 
     func startGlobal() async {
@@ -91,25 +119,31 @@ final class CaptureCoordinator {
             return
         }
 
+        do {
+            if activeRecord == nil { activeRecord = try history.createDraft(languagePair: languagePair) }
+            guard let record = activeRecord else { return }
+            try history.beginCapture(record, languagePair: languagePair)
+        } catch {
+            statusMessage = "Could not save the meeting: \(error.localizedDescription)"
+            return
+        }
         beginFreshSession()
+        selectedHistoryRecord = nil
         let expectedSessionID = sessionID
         do {
-            activeRecord = try history.beginRecord(
-                startedAt: meetingStartedAt ?? Date(),
-                languagePair: languagePair
-            )
-            selectedHistoryRecord = nil
             try await startSystemPipeline(sessionID: expectedSessionID)
         } catch {
             guard sessionID == expectedSessionID, sessionState == .starting else { return }
             var message = error.localizedDescription
             await tearDownPipelines()
-            do {
-                try discardEmptyActiveRecord()
-            } catch {
-                message += "; could not remove the empty record: \(error.localizedDescription)"
-            }
+            let preparedRecord = activeRecord
             resetSession(keepingTranscript: false)
+            activeRecord = preparedRecord
+            do {
+                if let preparedRecord { try history.setStatus(preparedRecord, .draft) }
+            } catch {
+                message += "; could not save the draft: \(error.localizedDescription)"
+            }
             statusMessage = message
             return
         }
@@ -137,6 +171,7 @@ final class CaptureCoordinator {
     func pause() async -> Bool {
         guard sessionState == .recording else { return false }
         freezeElapsedTime()
+        if let id = activeRecordID { insights?.cancelMeeting(id) }
         sessionState = .pausing
         statusMessage = "Pausing…"
 
@@ -158,7 +193,8 @@ final class CaptureCoordinator {
 
     func resume() async {
         guard sessionState == .paused, let activeRecord else { return }
-        activeVocabulary = sourceLanguage == .english ? speechVocabularySettings.phrases : []
+        activeVocabulary = sourceLanguage == .english
+            ? activeRecord.effectiveVocabulary(global: globalVocabulary) : []
         sessionState = .starting
         sessionStartedAt = Date()
         statusMessage = "Starting…"
@@ -203,6 +239,7 @@ final class CaptureCoordinator {
     func stop() async {
         guard sessionState.hasActiveSession, sessionState != .stopping else { return }
         if sessionStartedAt != nil { freezeElapsedTime() }
+        if let id = activeRecordID { insights?.cancelMeeting(id) }
         sessionState = .stopping
         statusMessage = "Finishing…"
 
@@ -223,62 +260,101 @@ final class CaptureCoordinator {
             return
         }
 
-        let hasTranscript = record.lineCount > 0
-        selectedHistoryRecord = hasTranscript ? record : nil
+        selectedHistoryRecord = record
         resetSession(keepingTranscript: true)
         statusMessage = translationsFinished ? "" : "Source text saved; some translations are incomplete"
     }
 
     func startNewMeeting() async {
         guard await suspendCurrent() else { return }
-        resetSession(keepingTranscript: false)
-        selectedHistoryRecord = nil
+        guard let history else { return }
+        do {
+            let draft = try history.createDraft(languagePair: languagePair)
+            mountDraft(draft)
+            selectedHistoryRecord = nil
+        } catch {
+            statusMessage = "Could not create the meeting: \(error.localizedDescription)"
+        }
     }
 
     func loadSession(_ record: MeetingRecord) async {
         guard record.meetingStatus != .ended, record.id != activeRecord?.id else { return }
         guard await suspendCurrent() else { return }
         do {
-            try mountPaused(record)
+            if record.meetingStatus == .draft { mountDraft(record) }
+            else { try mountPaused(record) }
             selectedHistoryRecord = nil
         } catch {
             statusMessage = "Could not restore the meeting: \(error.localizedDescription)"
         }
     }
 
+    func openHistory(_ record: MeetingRecord) async {
+        guard record.meetingStatus == .ended, await suspendCurrent() else { return }
+        resetSession(keepingTranscript: false)
+        selectedHistoryRecord = record
+    }
+
     func restoreSelection() {
         guard sessionState == .idle, let history else { return }
         do {
             let records = try history.unfinishedRecords()
-            for record in records where record.meetingStatus != .paused {
+            for record in records where record.meetingStatus == .recording {
                 record.status = MeetingStatus.paused.rawValue
             }
             try history.save()
 
-            guard let value = defaults.string(forKey: Self.selectedMeetingKey),
-                  let id = UUID(uuidString: value),
-                  let record = try history.record(id: id) else {
+            let savedID = defaults.string(forKey: Self.selectedMeetingKey).flatMap(UUID.init(uuidString:))
+            let savedRecord = try savedID.flatMap { try history.record(id: $0) }
+            guard let record = try savedRecord ?? history.mostRecentRecord() else {
                 defaults.removeObject(forKey: Self.selectedMeetingKey)
                 return
             }
-            if record.meetingStatus == .ended {
-                selectedHistoryRecord = record
-            } else {
-                try mountPaused(record)
-            }
+            try selectStoredRecord(record)
         } catch {
             statusMessage = "Could not restore the previous meeting: \(error.localizedDescription)"
         }
     }
 
     func delete(_ record: MeetingRecord) {
-        guard record.id != activeRecordID, let history else { return }
+        guard !(record.id == activeRecordID && isRunning), let history else { return }
+        let wasCurrent = selectedRecordID == record.id
         do {
+            let wasActive = record.id == activeRecordID
             let wasSelected = selectedHistoryRecord?.id == record.id
+            insights?.cancelMeeting(record.id)
             try history.delete(record)
-            if wasSelected { selectedHistoryRecord = nil }
+            vocabularyEditors.removeValue(forKey: record.id)?.invalidate()
+            insights?.cancelMeeting(record.id, deleting: true)
+            if wasActive { resetSession(keepingTranscript: false) }
+            if wasSelected {
+                selectedHistoryRecord = nil
+                if activeRecord == nil { resetSession(keepingTranscript: false) }
+            }
         } catch {
             statusMessage = "Could not delete: \(error.localizedDescription)"
+            return
+        }
+        if wasCurrent && selectedRecordID == nil {
+            do {
+                if let next = try history.mostRecentRecord() { try selectStoredRecord(next) }
+            } catch {
+                statusMessage = "Meeting deleted, but another meeting could not be opened: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func selectStoredRecord(_ record: MeetingRecord) throws {
+        switch record.meetingStatus {
+        case .ended:
+            resetSession(keepingTranscript: false)
+            selectedHistoryRecord = record
+        case .draft:
+            mountDraft(record)
+            selectedHistoryRecord = nil
+        case .paused, .recording:
+            try mountPaused(record)
+            selectedHistoryRecord = nil
         }
     }
 
@@ -487,10 +563,7 @@ final class CaptureCoordinator {
         } else {
             store.setNativeCaption(id: sectionID)
         }
-        insights?.noteNewFinalContent(
-            sections: store.sections,
-            speaker: speaker
-        )
+        tickInsights()
     }
 
     private func sealTurn(_ speaker: Speaker) {
@@ -531,16 +604,47 @@ final class CaptureCoordinator {
     private func beginFreshSession() {
         translation.cancelPending()
         sessionID = UUID()
-        activeVocabulary = sourceLanguage == .english ? speechVocabularySettings.phrases : []
+        activeVocabulary = sourceLanguage == .english
+            ? (activeRecord?.effectiveVocabulary(global: globalVocabulary) ?? globalVocabulary) : []
         store.clear()
         lastProvisionalText.removeAll()
-        insights?.reset()
         let now = Date()
         sessionStartedAt = now
         meetingStartedAt = now
         pausedElapsed = 0
         sessionState = .starting
         statusMessage = "Starting…"
+    }
+
+    func generateInsight(_ configuration: InsightConfiguration, summary: Bool = false) {
+        generateInsights(configuration: configuration, summary: summary)
+    }
+
+    func generateAllInsights() {
+        generateInsights(configuration: nil, summary: false)
+    }
+
+    private func generateInsights(configuration: InsightConfiguration?, summary: Bool) {
+        guard let record = workspaceRecord, let insights else { return }
+        let isLive = selectedHistoryRecord == nil && record.id == activeRecordID
+        let sources = isLive
+            ? InsightSource.capture(store.sections, includingProvisional: true)
+            : InsightSource.capture(record.lines)
+        let vocabulary = record.effectiveVocabulary(global: globalVocabulary)
+        let duration = isLive ? elapsedSeconds : TimeInterval(record.durationSec)
+        if let configuration {
+            insights.generate(record: record, configuration: configuration, kind: summary ? .summary : .manual,
+                              sources: sources, vocabulary: vocabulary, elapsedSeconds: duration)
+        } else {
+            insights.generateAll(record: record, sources: sources, vocabulary: vocabulary, elapsedSeconds: duration)
+        }
+    }
+
+    private func tickInsights() {
+        guard sessionState == .recording, selectedHistoryRecord == nil, let record = activeRecord else { return }
+        insights?.automaticTick(record: record, sections: store.sections,
+                                 vocabulary: record.effectiveVocabulary(global: globalVocabulary),
+                                 elapsedSeconds: elapsedSeconds)
     }
 
     private func freezeElapsedTime() {
@@ -553,6 +657,7 @@ final class CaptureCoordinator {
     }
 
     private func startAutosave() {
+        if let activeRecord { insights?.startRecording(activeRecord, sections: store.sections) }
         autosaveTask?.cancel()
         autosaveTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -562,6 +667,7 @@ final class CaptureCoordinator {
                     return
                 }
                 guard let self, self.sessionState == .recording else { continue }
+                self.tickInsights()
                 do {
                     try self.persistActiveRecord(status: .recording)
                 } catch {
@@ -573,6 +679,11 @@ final class CaptureCoordinator {
 
     private func persistActiveRecord(status: MeetingStatus) throws {
         guard let record = activeRecord, let history else { return }
+        if record.meetingStatus == .draft {
+            record.language = languagePair.rawValue
+            try history.save()
+            return
+        }
         try history.sync(
             record: record,
             sections: store.sections,
@@ -641,12 +752,20 @@ final class CaptureCoordinator {
         }
     }
 
-    private func discardEmptyActiveRecord() throws {
-        guard let record = activeRecord else { return }
-        try history?.delete(record)
+    private func mountDraft(_ record: MeetingRecord) {
+        resetSession(keepingTranscript: false)
+        sourceLanguage = record.languagePair.source
+        targetLanguage = record.languagePair.target
+        activeRecord = record
+    }
+
+    func saveDraftLanguages() {
+        guard activeRecord?.meetingStatus == .draft else { return }
+        persistNow()
     }
 
     private func resetSession(keepingTranscript: Bool) {
+        if let id = activeRecordID { insights?.cancelMeeting(id) }
         autosaveTask?.cancel()
         autosaveTask = nil
         translation.cancelPending()
@@ -659,7 +778,6 @@ final class CaptureCoordinator {
         lastProvisionalText.removeAll()
         if !keepingTranscript {
             store.clear()
-            insights?.reset()
             statusMessage = ""
         }
     }

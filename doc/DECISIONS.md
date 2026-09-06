@@ -16,6 +16,358 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260906-008"></a>
+## DEC-20260906-008: Let the AI settings draft own asynchronous service checks
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** AI settings state ownership and request lifetime
+- **Context:** Settings retains editable preferences across tab switches and dismissal. Keeping connection tests and model discovery in the view split their lifetime from the draft: old replies could validate changed credentials, and dismissed discovery could leave a retained view loading indefinitely. SwiftUI can retain dismissed native sheets without immediately calling onDisappear.
+- **Decision:** AISettingsDraft owns both checks, their task handles, cancellation tokens, discovered models, and progress/errors. Changing provider/key/address invalidates checks and discovered models; a model edit invalidates the connection test. The Settings presentation boundary cancels checks on dismissal and clears active loading while preserving editable values. Responses must match their request token and pass cancellation checks. Discovery may select a returned model only if the model field is unchanged since dispatch. Vocabulary extraction remains owned by its editor and continues independently.
+- **Rejected alternatives:** View-local tasks retain split ownership. Comparing only field values permits an old request to become current after editing away and back. Clearing the whole draft on dismissal loses intentional edits. Cancelling all AI work when Settings closes would incorrectly stop vocabulary extraction.
+- **Rationale/tradeoffs:** A draft has one testable owner for preferences and their validation, without adding another coordinator or generic request framework. Closing Settings deliberately abandons its diagnostic checks; reopening can run fresh checks with retained values. Save/Cancel and persisted configuration remain unchanged.
+- **Impact and validation:** Controlled-provider tests cover ignored cancellation, changed credentials, invalid responses, discovery retry after dismissal, and manual model edits. A native Settings-sheet test verifies cancellation through the presentation boundary. The full SameWave suite passed 176/176 on macOS arm64; see [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/AI/AISettingsDraft.swift`, `Sources/AI/AISettingsView.swift`, `Sources/App/SettingsView.swift`, `Tests/AISettingsDraftTests.swift`, `Tests/SettingsPresentationTests.swift`.
+
+---
+
+<a id="dec-20260906-007"></a>
+## DEC-20260906-007: Virtualize uniform vocabulary rows within stable cards
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** Shared vocabulary rendering, Settings tab performance, and scroll geometry
+- **Context:** Settings tab changes visibly stalled with more than 200 saved terms. A native 300-term fixture measured a median update/layout pulse of 109 ms. Removing the vocabulary subtree's enabled-state toggle improved only part of the cost; separating the list's observation boundary removed repeated data reads but still left roughly 75 ms of layout work.
+- **Decision:** Keep the Settings presentation from [DEC-20260906-006](#dec-20260906-006) and the shared editor. Use separate view bodies for saved terms and suggestions, and LazyVStack only for their term rows. Keep cards and the single outer ScrollView eager. Saved rows have a stable 32-point height with two-line display text; candidate rows are 36 points. Each saved term has one row view. Show invalid-input feedback within the saved row, with the full reason available through its tooltip and accessibility label, so validation never changes row height. Gate hidden-tab hit testing, accessibility, focus, and keyboard actions without disabling the entire vocabulary subtree.
+- **Rejected alternatives:** Eagerly creating every term retains work proportional to the full vocabulary during tab changes. View extraction alone does not bound layout work. Making whole cards lazy reintroduces uncertain card-height estimates. Variable-height validation outside a lazy row left an incorrect document extent after cancelling edits in the native regression test. Replacing the shared editor with a separate native list host would add unnecessary UI and lifecycle machinery.
+- **Rationale/tradeoffs:** Uniform term rows suit on-demand rendering while the surrounding cards retain exact geometry. This preserves the existing interaction and reading position without creating hundreds of offscreen controls. The compact inline error replaces a below-row error line. Pending text, selected suggestions, file inputs, extraction, and explicit commit rules retain their existing owners.
+- **Validation:** XcodeGen and unsigned Debug passed. Full SameWave XCTest passed 162/162 on macOS arm64. On the same machine, the 300-term fixture's median tab update/layout pulse fell to 13 ms, with zero saved-term reads across eight switches. These are hosted Debug measurements, not a universal frame-rate guarantee. Regression tests cover 300 mixed-length terms, distant scrolling, invalid edits, cancellation, tab switching, and unchanged extent/offset, plus existing suggestion arrival/reopen/focus tests. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/App/SettingsView.swift`, `Sources/Capture/VocabularyEditorView.swift`, `Tests/VocabularyPerformanceTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260906-006"></a>
+## DEC-20260906-006: Embed personal vocabulary directly in Settings
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** Personal vocabulary presentation and navigation within Settings
+- **Replaces:** The independent personal window and Settings handoff in [DEC-20260906-005](#dec-20260906-005). Its shared editing, scope ownership, commit, and lifecycle decisions remain adopted.
+- **Context:** The user first requested a native panel instead of an independent window, then refined the requirement to embed vocabulary management within Settings itself. A second presentation layer adds an unnecessary step between choosing Vocabulary and editing terms.
+- **Decision:** Render VocabularyEditorView directly in Settings' Vocabulary tab. Remove the count/Manage landing page and independent window scene and wrapper. Keep the same 600×540 Settings sheet and visible AI Services/Vocabulary selector. Use a compact Personal Vocabulary scope heading within the scroll content and one fixed Done footer. Configure AI Services selects the adjacent tab in the same presenter. Pending AI preferences are identified in the vocabulary footer; only AI Save commits them.
+- **State:** Both Settings tab views remain mounted, preserving local UI and reading state. Vocabulary keyboard focus is active only in its visible tab and restores on return. App-owned drafts, temporary files, suggestions, selections, and extraction survive tab switches and Settings dismissal. Explicit Add, row Save, Remove, and selected suggestion saves remain separate from AI Save/Cancel. No storage or provider change is needed.
+- **Rejected alternatives:** A second sheet or navigation detail retains the redundant Manage step. An independent vocabulary window conflicts with the latest requirement. Replacing the shared editor with a separate Settings implementation duplicates interaction and commit rules. Resizing the Settings sheet for each tab destabilizes navigation.
+- **Rationale/tradeoffs:** Direct editing gives the two tabs one predictable presentation and preserves the approved vocabulary cards. Settings occupies its presenter while open; Done releases it while background extraction continues. The fixed height makes long lists scroll, with review actions still owned by Suggested Terms.
+- **Validation:** XcodeGen and unsigned Debug build passed. Full SameWave XCTest passed 160/160 on macOS arm64. Native tests verify one Settings sheet, stable dimensions, independent drafts/commits, Configure AI routing, focus restoration, Escape dismissal, continued extraction after closure, and 100-term scrolling across tab changes and reopen. Native render checks cover direct editing and Suggested Terms. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/App/SettingsView.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Capture/VocabularyEditorView.swift`, `Tests/SettingsPresentationTests.swift`, `Tests/VocabularyImportControllerTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260906-005"></a>
+## DEC-20260906-005: Separate Context and share explicit vocabulary editing across scopes
+
+- **Date:** 2026-09-06
+- **Status:** Superseded for personal vocabulary presentation by [DEC-20260906-006](#dec-20260906-006); Context ownership, shared editing, explicit commits, and app-session state remain accepted.
+- **Scope:** Preparation ownership, personal/meeting vocabulary interaction, app-session state, and settings handoff
+- **Replaces:** The merged document/term presentation and global review footer in [DEC-20260906-004](#dec-20260906-004), the personal bulk-draft/import bridge and close-to-cancel policy in [DEC-20260905-001](#dec-20260905-001), and the affected Settings/Preparation behavior in [DEC-20260906-001](#dec-20260906-001) and [DEC-20260905-012](#dec-20260905-012).
+- **Context:** The user wants Context to own Markdown, Vocabulary to support manual entry and extraction, and Settings to reuse the approved native editor. Selection state and review actions belong to Suggested Terms. Personal work must remain nonmodal, and closing either host should preserve progress.
+- **Decision:** Keep Context and Vocabulary as separate Preparation cards. One VocabularyEditorView supports multiline Add Terms, row Save/Cancel, Remove, and selected suggestion saves in both scopes. Each action commits explicitly; manual and AI preference drafts remain independent. Suggested Terms contains selection, Add, Discard, validation, and save feedback, with repeated controls at both ends of long cards. Done only dismisses. Meeting editing references Context's document count and returns to that card for changes. Personal editing chooses temporary local files in its own window; Extract is a separate transmission action. No document previews, source metadata, request details, or Review destination are added.
+- **State and persistence:** AppDelegate owns the personal VocabularyEditorStore; CaptureCoordinator caches one per meeting. Dismissal preserves app-session drafts, suggestions, file selection, reading position, and extraction. Stop retains results; Discard clears pending review/progress only when stopped. Retry uses the original request inputs/provider. Meeting deletion invalidates the owner and rejects late results. Saved vocabulary remains in its existing distinct stores; temporary files and unfinished work end at app exit. AISettingsDraft belongs to SettingsNavigation and survives personal-window handoff; AI Save/Cancel never writes vocabulary. Scoped SwiftData undo restores a failed vocabulary operation without reverting unrelated pending edits or manually reinserting deleted models.
+- **Rejected alternatives:** Duplicate meeting document lists obscure ownership. A global document library exceeds the personal-import requirement. Keeping bulk Settings Save/Cancel around vocabulary perpetuates two commit models. Closing to discard disrupts task switching. Separate Review tabs, nested list scrollers, and global review footers separate actions from their data. New extraction scheduling or a generic host framework is unnecessary.
+- **Rationale/tradeoffs:** The same native 600×540 editor works in a meeting sheet and a nonmodal personal window, with a small source-area difference. Long lists require scrolling between in-card toolbars; stable rows and restored offsets preserve reading. Explicit vocabulary commits cannot be undone by cancelling AI settings. Invalid selected suggestions block Add; unchecked invalid rows do not. Existing serial batching, limits, retries, and privacy boundaries remain intact.
+- **Validation:** XcodeGen and unsigned Debug passed. Full XCTest: 159 passed, 0 failed, 0 skipped on SameWave / macOS arm64. Tests cover local-only selection, manual add/edit/remove, duplicate and invalid input, independent drafts, progressive selected saves, native close/reopen, scroll restoration, repeated save failures followed by retry, scoped undo, database reopen, deletion, and late responses. Native 600×540 renders verify both hosts and in-card controls. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Capture/VocabularyEditorStore.swift`, `Sources/Capture/VocabularyEditorView.swift`, `Sources/Meeting/MeetingContextView.swift`, `Sources/Meeting/MeetingPreparationView.swift`, `Sources/History/MeetingWorkspace.swift`, `Sources/AI/AISettingsDraft.swift`, `Sources/App/SettingsView.swift`, corresponding vocabulary and native presentation tests.
+
+---
+
+<a id="dec-20260906-004"></a>
+## DEC-20260906-004: Keep meeting vocabulary extraction in one continuous sheet
+
+- **Date:** 2026-09-06
+- **Status:** Superseded by [DEC-20260906-005](#dec-20260906-005) for Context ownership, shared editing, and in-card review actions.
+- **Scope:** Meeting Preparation vocabulary management and confirmation flow
+- **Replaces:** The separate Review destination and reopening navigation in [DEC-20260906-001](#dec-20260906-001). Its ownership, cancellation, and Settings decisions remain adopted.
+- **Context:** A permanent Review tab separates extraction from its results and obscures where selected terms are saved. OpenDesign evaluated a focused native sheet with documents, suggestions, and saved terms in reading order.
+- **Decision:** Remove the management tabs. Keep Documents and Meeting Vocabulary in one scroll area, with a temporary Suggested Terms group directly below extraction. Editable checkboxes and an explicit Not saved label distinguish suggestions from saved rows. Keep Add to Vocabulary and Done in the fixed footer. Adding saves only the selection and leaves unchecked suggestions in place, even while extraction continues; Done only dismisses. Progress, Stop, incomplete-only retry, and errors remain inline. Use stable row identities without automatic navigation or scrolling on incoming results. Manual entry opens inline.
+- **Rejected alternatives:** Renaming Review leaves the disconnection. A wizard or nested review modal adds navigation and blocks document/term management. Saving generated terms automatically removes the user's spelling/selection decision.
+- **Rationale/tradeoffs:** Extraction, confirmation, and the saved destination remain visible together for typical lists. Longer lists scroll within the same sheet, while actions remain available. The existing meeting-owned importer retains work across closure; no new workflow persistence or network policy is introduced. Personal Markdown import retains its independent window.
+- **Impact and validation:** Full XCTest passed 154/154. Native renders cover empty, three-suggestion, running, save-failure, selected-only save, no-new-terms, and long-list states. Controlled providers verify edits, unchecked retention, saving during generation, closure, retry, and deletion. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Meeting/MeetingVocabularyView.swift`, `Sources/Meeting/MeetingPreparationView.swift`, `Sources/Capture/VocabularyImportController.swift`, `Tests/MainViewRenderingTests.swift`, `Tests/VocabularyImportControllerTests.swift`.
+
+---
+
+<a id="dec-20260906-003"></a>
+## DEC-20260906-003: Present compact vocabulary progress without request details
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** Vocabulary diagnostics, progress state, and error presentation
+- **Replaces:** Request-history and timing presentation in [DEC-20260905-001](#dec-20260905-001).
+- **Context:** The user wants Request Details removed from Markdown vocabulary extraction in both workflows.
+- **Decision:** Remove the shared details rows, attempt-history collection, timestamps, and duration measurement. Retain the current attempt for compact progress and batch statuses for incomplete-only retry. Show preparation errors or the latest exhausted batch error inline. Retry clears errors for retried batches; Stop and completion clear current progress.
+- **Rejected alternatives:** Keeping invisible timing/history retains unused state. Removing the details panel without another error surface hides the provider failure reason.
+- **Rationale/tradeoffs:** Review focuses on terms and essential controls. Per-attempt diagnostics are no longer available; partial results, error feedback, cancellation, and retry remain supported.
+- **Impact and validation:** Full XCTest passed 152/152. Controlled providers verify retry inputs, preserved edits/selections, current-attempt cleanup, and failure feedback through recovery. Native review capture confirms the panel is absent. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/VocabularyGenerator.swift`, `Sources/Capture/VocabularyImportController.swift`, `Sources/Capture/VocabularyImportWindow.swift`, `Sources/Meeting/MeetingVocabularyView.swift`, `Tests/VocabularyGeneratorTests.swift`, `Tests/VocabularyImportControllerTests.swift`.
+
+---
+
+<a id="dec-20260906-002"></a>
+## DEC-20260906-002: Keep extracted vocabulary as term strings only
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** Personal and meeting vocabulary review, processing, and persisted term data
+- **Replaces:** Per-term source collection, disclosure, and retention in [DEC-20260905-001](#dec-20260905-001), [DEC-20260905-007](#dec-20260905-007), [DEC-20260905-012](#dec-20260905-012), and [DEC-20260906-001](#dec-20260906-001). Their unrelated lifecycle and ownership decisions remain adopted.
+- **Context:** The user no longer needs source metadata when extracting vocabulary from Markdown. The AI contract already returns only phrase strings; the application had been matching and copying local excerpts separately.
+- **Decision:** Remove local excerpt matching, redundant fragment copies, candidate source collections, saved term provenance, and Source disclosures from both workflows. Keep the existing phrase-only prompt and schema. Documents remain independent extraction inputs; confirmed spellings survive attachment removal. Review retains stable IDs, original extraction identity, editable text, selection, progressive save, and incomplete-request retry.
+- **Rejected alternatives:** Hiding Source while retaining collection or persistence leaves unused work and duplicated document content. Adding an optional provenance setting or compatibility reader preserves a removed path.
+- **Rationale/tradeoffs:** Term-only data serves recognition and the requested compact review without retaining excerpts for an unused feature. Vocabulary entries no longer provide passage attribution. Meeting attachments retain their existing explicit lifecycle.
+- **Impact and validation:** Removed the provenance model field without adding migration or compatibility code. Full XCTest passed 152/152, including actual request content/Unicode preservation, edits and selections across duplicate batches, partial saves/retries, attachment removal during extraction, on-disk term reopen, isolation, and cancellation. The native review capture contains only term rows and selection controls. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/VocabularyGenerator.swift`, `Sources/Capture/VocabularyImportController.swift`, `Sources/Capture/VocabularyImportWindow.swift`, `Sources/History/MeetingWorkspace.swift`, `Sources/Meeting/MeetingVocabularyView.swift`, `Tests/VocabularyGeneratorTests.swift`, `Tests/VocabularyImportControllerTests.swift`, `Tests/MeetingWorkspaceTests.swift`.
+
+---
+
+<a id="dec-20260906-001"></a>
+## DEC-20260906-001: Separate Settings presentation from meeting vocabulary work
+
+- **Date:** 2026-09-06
+- **Status:** Superseded for vocabulary interaction and Settings draft lifetime by [DEC-20260906-005](#dec-20260906-005), source metadata by [DEC-20260906-002](#dec-20260906-002), and Review navigation by [DEC-20260906-004](#dec-20260906-004); other decisions remain accepted.
+- **Scope:** Settings presentation, meeting extraction lifetime, and attachment removal
+- **Replaces:** The management-sheet cancellation policy in [DEC-20260905-012](#dec-20260905-012). The personal Markdown import window retains its independent close-to-cancel behavior.
+- **Context:** The user prefers Preparation's native sheets for settings, needs personal Markdown analysis to remain nonblocking, and reported inaccessible attachment removal and uncertain behavior when closing meeting vocabulary extraction.
+- **Decision:** Present Settings as a native sheet from the app menu, Command-comma, and configuration links, using the currently visible main/preparation window. Save commits the active tab and dismisses; Cancel reverts that tab and dismisses. Starting or resuming personal Markdown import opens its existing independent window and dismisses Settings. The capture coordinator retains one vocabulary importer per meeting for the app session. Closing management or switching meetings keeps requests, progress, candidate edits, and selection. Reopening enters active review; Preparation shows progress or waiting review. Explicit Stop retains review; Discard clears it. Successful meeting deletion cancels and releases work; generation tokens reject late results. Attachment rows provide direct removal without content preview. Removing attachments never changes current extraction's immutable document input or retained term provenance; it affects future extraction.
+- **Rejected alternatives:** Cancelling on sheet disappearance discards useful work and couples tasks to incidental presentation changes. A separate Settings window conflicts with the requested interaction. Making Markdown analysis a child settings sheet blocks the workspace. Disabling attachment removal during extraction is unnecessary because request inputs already copy document values. Persisting unfinished network jobs or unconfirmed review introduces a recovery mechanism beyond the current requirement.
+- **Rationale/tradeoffs:** Keep provider/parser/review behavior shared while giving each workflow an explicit owner and cancellation boundary. Unconfirmed review lasts until app exit, with an inline reminder to save. Settings routing uses weak native window references and actual visibility because macOS can retain dismissed sheet content without immediately calling SwiftUI onDisappear.
+- **Impact and validation:** Native window tests cover root/nested Settings presentation and reopening after a retained sheet closes. Controlled-provider tests cover panel closure, edited/unchecked candidates, attachment removal during generation, meeting isolation, retained source excerpts, deletion, and ignored late replies. Existing personal-window hide/close tests remain applicable. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/App/SettingsView.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Sources/Meeting/MeetingVocabularyView.swift`, `Sources/Meeting/MeetingPreparationView.swift`, `Sources/History/MeetingWorkspace.swift`, `Tests/SettingsPresentationTests.swift`, `Tests/VocabularyImportControllerTests.swift`.
+
+---
+
+<a id="dec-20260905-017"></a>
+## DEC-20260905-017: Run custom insight batches with bounded parallelism
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Scope:** Insight request concurrency and batch completion
+- **Replaces:** Serial batch dispatch in [DEC-20260905-016](#dec-20260905-016) and the single manual slot as a batch constraint in [DEC-20260905-008](#dec-20260905-008). Frozen inputs/provider, independent history, and cancellation behavior remain adopted.
+- **Context:** The user wants independent insight requests to run concurrently, with a maximum of six to eight, instead of waiting for each preceding result.
+- **Decision:** Set a fixed cap of six active insight requests, counting automatic work. Dispatch batch items in reading order until capacity is filled, then refill after any completion, failure, or individual stop. Keep a batch active until its queue and active requests are both empty. Save out-of-order results independently under their owning definitions. Clear batch identity and pending work before cancelling active requests so Stop cannot launch additional work. Retain the one-automatic-request policy and existing standalone manual replacement behavior.
+- **Rejected alternatives:** Keeping serial dispatch adds unnecessary wait between independent requests. Unbounded dispatch ignores the requested cap. Reserving an extra automatic slot outside the cap exceeds the stated maximum. Finishing the batch when the queue becomes empty hides active requests and releases the frozen provider too early.
+- **Rationale/tradeoffs:** Six is within the user's requested range and needs no additional configuration. Bounded parallelism reduces wait for independent results while maintaining an explicit concurrency limit. It does not reduce the number or size of provider requests, and response order is intentionally independent of card order.
+- **Impact and validation:** Held-provider tests verify the six-request peak, initial reading-order selection, immediate refill, out-of-order history, provider freezing for queued work, shared automatic capacity, failed/deleted items, and cancellation without late writes. Native rendering shows multiple generating cards and queued state. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/InsightEngine.swift`, `Tests/InsightBatchTests.swift`, `Tests/Phase2TestSupport.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260905-016"></a>
+## DEC-20260905-016: Queue explicit custom insight batches through the manual slot
+
+- **Date:** 2026-09-05
+- **Status:** Superseded by [DEC-20260905-017](#dec-20260905-017) for serial dispatch; grouping, frozen requests/provider, history, and cancellation retained.
+- **Scope:** Custom insight presentation and manual generation scheduling
+- **Context:** The user requested a Custom Insights heading with one Generate action for all editable insights, alongside the existing Meeting Insights controls. Calling the previous single-item action repeatedly would cancel every request except the last.
+- **Decision:** Group editable definitions, including the editable Overview preset, under Custom Insights. Generate freezes their reading order, configurations, original source cutoff, provisional text, vocabulary, provider, model label, and request time, then dispatches one item at a time through the existing manual slot. Exclude the independent meeting-wide summary. Retain per-card history and actions, show queued status, and offer Stop for the batch or an individual item. Save each success independently and continue after individual preflight, provider, or save failures. Block a new batch until included unsaved results are saved. Repeated clicks coalesce; lifecycle cancellation and replacement manual requests discard pending work and reject late results.
+- **Rejected alternatives:** Unbounded parallel requests remove the established manual concurrency limit. Repeated calls to the old single-item action cancel peer requests. Combining all definitions into one model response couples independent prompts, errors, and history. Reading inputs or selecting providers when each queued item starts would mix cutoffs or mislabel results after edits.
+- **Rationale/tradeoffs:** A serial batch preserves independent insight semantics and bounded request concurrency at the cost of waiting for earlier items. It is transient work, not a persisted job queue; app relaunch retains saved results but does not resume unfinished requests. Meeting-wide summary generation remains explicit and separate.
+- **Impact and validation:** Controlled-provider tests verify ordered dispatch, frozen inputs/provider selection, automatic exclusion of queued items, failure continuation, save retry, stop, manual replacement, deleted definitions, and cancellation on meeting switch. Native rendering covers the section header and queued/generating cards at narrow width; the scrolling regression remains passing. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/InsightEngine.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Sources/App/InsightInspector.swift`, `Sources/Insights/InsightResultCard.swift`, `Tests/InsightBatchTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260905-015"></a>
+## DEC-20260905-015: Remove insight Details and generated supporting quotes
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Scope:** Insight presentation, generated response contract, and export
+- **Replaces:** Details access in [DEC-20260905-014](#dec-20260905-014) and its predecessors, and the generated evidence-quote requirement in [DEC-20260905-009](#dec-20260905-009). Full original input, custom priority, named summary cards, and immutable history remain adopted.
+- **Context:** The user no longer wants Details for custom insights or the app's meeting summaries and authorized removing the associated information requests.
+- **Decision:** Remove the Details sheet and every saved, archived, and unsaved result entry point. Remove supporting-quote instructions, the evidence response field/schema/type, quote validation/export, and unused source/vocabulary fingerprints. The response now requires only conclusion, points, and nullable summary; unexpected top-level fields fail validation. Read all custom points and meeting sections directly on their cards, including unsaved results with Retry Save. Preserve shared history menus and export every saved result version.
+- **Rejected alternatives:** Hiding the button while continuing to request unused citations adds output cost and dead code. Removing the original transcript input would change the analysis itself. Clearing stored snapshots would discard history unrelated to this presentation request.
+- **Rationale/tradeoffs:** Keep the response focused on result content and retain the existing generation/persistence pipeline. Original-source grounding, provisional uncertainty, and factual constraints remain in prompts; structural and content-bound validation remains in the client. The app no longer offers generated citation inspection. Export retains the overall summary conclusion without restoring a Details surface.
+- **Impact and validation:** Schema/parser tests cover the reduced response, missing/invalid/extra fields, and persisted output. Native screenshot text checks cover custom and meeting results, archive, generation failures, and unsaved content without Details. Full validation and signed desktop delivery are recorded in [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/InsightModels.swift`, `Sources/Insights/InsightEngine.swift`, `Sources/Insights/InsightResultCard.swift`, `Sources/History/TranscriptExporter.swift`, `Tests/InsightEngineTests.swift`, `Tests/OpenAICompatibleProviderTests.swift`, `Tests/MainViewRenderingTests.swift`. Removed `Sources/Insights/InsightCards.swift`.
+
+---
+
+<a id="dec-20260905-014"></a>
+## DEC-20260905-014: Make the named sections the primary summary cards
+
+- **Date:** 2026-09-05
+- **Status:** Superseded by [DEC-20260905-015](#dec-20260905-015) for Details access; primary section cards, shared history, and failure-state behavior retained.
+- **Scope:** Summary presentation and missing-result states
+- **Replaces:** The enclosing conclusion card in [DEC-20260905-013](#dec-20260905-013). Its shared result contract, custom priority, immutable versions, and explicit generation remain adopted.
+- **Context:** Appending sections below a Full Meeting Summary card still foregrounded the summary wrapper, and displayed no sections before generation. The user explicitly wants the topics, suggestions, actions, and decisions to be the cards themselves.
+- **Decision:** Render Topics, Suggestions, Action Items, Decisions, and Open Questions directly, under compact shared generation/history controls. Remove the enclosing title/conclusion card for structured results. Keep the overall conclusion in Details and export. Meeting-wide sections appear with honest missing-content placeholders before generation and remain visible during generation, failure, and cancellation. Unsaved sections retain Retry Save and previous saved versions remain available.
+- **Rejected alternatives:** Renaming the old card alone leaves the same hierarchy. Creating one request/history per part gives related sections different evidence cutoffs. Filling missing sections by parsing existing prose invents structure that the provider did not return.
+- **Rationale/tradeoffs:** Keep the shared engine, schema, storage, and history while making the requested categories the primary reading surface. Missing content is distinct from a generated conclusion that nothing was recorded. The initial overview remains an editable definition; its structured results use this same presentation.
+- **Impact and validation:** Native rendering covers empty, generating, failed, cancelled, unsaved, and populated sections at 216-point width. Local Vision text recognition over rendered test images asserts that the named parts are visible and the obsolete summary title/conclusion card is absent. This catches a missing empty-state surface that populated fixtures alone missed. Full validation and desktop delivery are recorded in [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/InsightResultCard.swift`, `Sources/Insights/MeetingSummaryCards.swift`, `Sources/Insights/MeetingSummary.swift`, `Sources/History/MeetingWorkspace.swift`, `Tests/MainViewRenderingTests.swift`, `Tests/TranscriptExporterTests.swift`.
+
+---
+
+<a id="dec-20260905-013"></a>
+## DEC-20260905-013: Prioritize custom insights and show multipart summaries inline
+
+- **Date:** 2026-09-05
+- **Status:** Superseded by [DEC-20260905-014](#dec-20260905-014) for the enclosing conclusion card; result contract, custom priority, immutable history, and explicit generation retained.
+- **Scope:** Insight result contract, reading order, live overview and full-summary presentation
+- **Replaces:** [DEC-20260905-012](#dec-20260905-012) for reading order, initial expansion, and the summary sheet. Its preparation, evidence disclosure, independent history, decorative colors, and existing-shell boundaries remain adopted.
+- **Context:** The user wants custom insights above the default overview and both live and post-meeting summaries visible as multiple parts without opening or expanding them. A flat summary in a separate sheet hides useful meeting context.
+- **Decision:** Show definitions in reverse creation order, putting new user definitions above the initial editable Overview, and show Full Meeting Summary last after End. Keep titles editable and use no default/custom type flag. Extend the shared result with a nullable structured summary containing topics, decisions, action items, open questions, and suggestions. Broad overview prompts request these parts; focused prompts use points and a null summary. Full-summary responses must contain the parts. All parts share one immutable request, cutoff, and history selection. Render the conclusion and parts directly in the inspector with the approved pastel cards; ordinary conclusions and points also start expanded.
+- **Retained behavior:** Full summary generation remains explicit after End. Evidence and exact inputs remain in Details. Preparation keeps three cards and management/editing sheets. Saved versions, unsaved retry, palette identities, and the native three-column shell remain intact.
+- **Rejected alternatives:** A separate summary engine duplicates generation and history. Parsing headings from prose loses a validated structural contract. Matching an editable title to choose priority breaks on rename or duplicate titles. Splitting parts into independent generations makes their cutoffs and versions disagree. A default/custom model flag adds state unnecessary for the current single editable preset.
+- **Rationale/tradeoffs:** A typed optional part structure extends the existing provider, snapshot, and export path without migrations or a second schema pipeline. Empty arrays make absent facts explicit; suggestions remain proposals and unknown owners/dates stay unknown. Reverse creation order also places newer custom definitions above older ones. Broad-versus-focused live formatting follows analytical prompt intent; full summaries additionally enforce the structured payload at validation.
+- **Impact and validation:** Structured parts persist and export with their parent result. Tests cover the shared live/full response structure, explicit null, missing/invalid/oversized parts, duplicate flat content, immutable snapshots, empty-part exports, custom priority after rename/deletion, and stable colors. Native render fixtures verify expanded live/full cards at 256/216-point content widths. Complete validation and desktop delivery are recorded in [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/InsightModels.swift`, `Sources/Insights/MeetingSummary.swift`, `Sources/Insights/MeetingSummaryCards.swift`, `Sources/Insights/InsightResultCard.swift`, `Sources/Insights/InsightPresentation.swift`, `Sources/App/InsightInspector.swift`, `Sources/History/TranscriptExporter.swift`, `Tests/MeetingSummaryTests.swift`, `Tests/InsightPresentationTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260905-012"></a>
+## DEC-20260905-012: Present insights as peer cards with progressive disclosure
+
+- **Date:** 2026-09-05
+- **Status:** Superseded by [DEC-20260905-013](#dec-20260905-013) for insight presentation, [DEC-20260906-001](#dec-20260906-001) for vocabulary closure, [DEC-20260906-002](#dec-20260906-002) for source metadata, and [DEC-20260906-005](#dec-20260906-005) for Preparation and shared vocabulary editing; independent history, decorative colors, and shell boundaries retained.
+- **Scope:** Insight reading, preparation, and presentation state
+- **Context:** The Phase 2 item picker hid other insights, inline evidence dominated results, and preparation exposed too much configuration. The user approved OpenDesign's colored C cards and three-card preparation while explicitly retaining the existing native shell.
+- **Decision:** Show Meeting Overview and user definitions together in creation order. Each card owns its selected version and conclusion/point expansion. Latest follows arrivals; an explicitly chosen version stays selected, with a newer-result notice. Details freezes the selected saved value and exposes evidence, original inputs, prompt, vocabulary, and metadata. Keep failures and unsaved-save retry with the owning item. Use a deliberate summary sheet from the inspector footer, and retain removed-definition history under Preparation.
+- **Preparation:** Show Meeting title, Vocabulary & context, and AI Insights cards. Move document import, extraction/review, terms, and provenance to a management sheet, and prompt/focus/automatic settings to a definition editor. Closing management cancels unsaved extraction work; it does not remove confirmed terms.
+- **Rejected alternatives:** Separate default/custom tabs imply different data types and hide related results. A single global timeline couples unrelated reading choices. Inline evidence overloads the primary reading view. A shell redesign exceeds the requested scope.
+- **Rationale/tradeoffs:** Reuse the existing engine and immutable result model, with stable SwiftUI card identities. Decorative color slots are allocated by definition ID for the window session and do not introduce persisted type flags or user color settings. Full configuration and evidence remain one action away; short windows scroll content while sheet actions remain available.
+- **Impact and validation:** The three-column layout, sidebar, titlebar, caption hierarchy, control capsule, and resize behavior remain unchanged. Targeted XCTest covers independent reading state, palette identity through deletion/reorder/addition, archived versions, and native rendering at 1120×760 and 940×480. Full build/test and desktop-delivery evidence is recorded in [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/App/InsightInspector.swift`, `Sources/Insights/InsightResultCard.swift`, `Sources/Insights/InsightCards.swift`, `Sources/Insights/InsightPresentation.swift`, `Sources/Meeting/MeetingPreparationView.swift`, `Sources/Meeting/MeetingVocabularyView.swift`, `Sources/Meeting/InsightDefinitionEditor.swift`, `Tests/InsightPresentationTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260905-011"></a>
+## DEC-20260905-011: Keep selection on a stored meeting while any remain
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Scope:** Deletion, startup selection, empty-state presentation
+- **Replaces:** Missing/deleted-selection behavior in [DEC-20260905-004](#dec-20260905-004). Persistent draft ownership from [DEC-20260905-007](#dec-20260905-007) remains.
+- **Context:** Deleting preparation previously selected a synthetic New Meeting row even when saved meetings remained. This implied a new workspace that did not exist.
+- **Decision:** Preserve selection when deleting another meeting. After deleting the displayed meeting, select a remaining mounted meeting or the most recently created stored meeting, matching sidebar order. Restore its draft/history/paused state without starting capture, and persist the UUID immediately. Apply the same newest-record choice when startup has no valid saved UUID. With an empty store, clear retained transcript state and show an explicit empty state; only New Meeting creates a draft.
+- **Rejected alternatives:** An implicit new draft creates unwanted data after deletion. A synthetic New Meeting row misrepresents persistence. Choosing a paused meeting before newer history imposes a lifecycle priority absent from sidebar order.
+- **Rationale/tradeoffs:** Existing content remains available with a predictable successor and no new preference or database field. A most-recent-created successor may differ from the last-viewed remaining meeting; the app does not introduce a second recency history.
+- **Impact and validation:** Sixteen selection tests pass, including draft/history/paused successors, invalid/missing UUIDs, nonselected deletion, last-record deletion, retained transcript cleanup, and reopening. Views remove the synthetic row and empty-state capture dock.
+- **Files:** `Sources/Meeting/CaptureCoordinator.swift`, `Sources/History/MeetingHistory.swift`, `Sources/App/MeetingSidebar.swift`, `Sources/App/MeetingStage.swift`, `Tests/MeetingSelectionTests.swift`.
+
+---
+
+<a id="dec-20260905-010"></a>
+## DEC-20260905-010: Isolate hosted tests from personal meetings and capture permissions
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Scope:** Validation workflow and test-host persistence/permission boundaries
+- **Context:** Hosted XCTest previously ran normal app startup, opening personal history and requesting permissions before the domain tests. Repeated schema/lifecycle validation must not operate on the user's active meeting data.
+- **Decision:** Detect the existing `XCTestBundlePath` boundary in app assembly. Use an explicitly in-memory history container and skip personal selection restoration and speech/microphone preflight. Domain tests supply isolated defaults, stores, and provider fixtures. Production startup still uses its persistent store and normal permission flow.
+- **Rejected alternatives:** Running every domain test through normal personal startup creates unrelated persistent side effects; adding a production fallback database would hide real failures.
+- **Rationale/tradeoffs:** Reuse the existing test-key isolation signal without a new runtime setting. Signed-app capture remains a separate smoke-test responsibility.
+- **Impact and validation:** `AppIdentityTests` asserts the host uses memory storage and has not restored a personal selection; full validation is recorded in [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/App/SameWaveApp.swift`, `Tests/AppIdentityTests.swift`, `doc/06-development-and-validation.md`.
+
+---
+
+<a id="dec-20260905-009"></a>
+## DEC-20260905-009: Use complete original evidence or report an explicit input limit
+
+- **Date:** 2026-09-05
+- **Status:** Accepted
+- **Scope:** Insight context, vocabulary disclosure, factual source, long-meeting behavior
+- **Replaces:** Historical refined-source preference in [DEC-20260904-007](#dec-20260904-007), matched-only vocabulary in [DEC-20260904-006](#dec-20260904-006), and the insight recent-window policy in [DEC-20260903-002](#dec-20260903-002). Title-specific recent input remains.
+
+### Context and decision
+
+Cumulative analysis cannot account for early agreements when source is silently restricted to the latest 6,000 characters. Exact vocabulary matching also hides correct spellings when recognition is wrong. Phase 2 requires declared, reviewable evidence coverage.
+
+- Send complete original source through the frozen request cutoff and the complete confirmed meeting/personal vocabulary. Meeting spellings win case-insensitive duplicates. Focus can be cumulative or latest exchange; it does not silently change coverage.
+- Historical insights and summaries use originals regardless of the refinement display toggle. Keep refinement additive and retain frozen source inside every snapshot. Manual input marks provisional text separately; automatic input is finalized-only.
+- Expose the selected model's insight budget as an explicit saved AI setting (32,768 initially, 16,384–2,000,000 configurable). Preflight counts serialized UTF-8 bytes, instructions, Schema, framing allowance, and an 8,192-token output allowance. Treat it as a conservative estimate, not tokenization or discovered capacity; service errors remain authoritative.
+- If input does not fit, reject before sending and show the estimated requirement. Do not truncate, silently compress, or label a recent excerpt complete. Documents are not added to insight requests; their core use is vocabulary extraction.
+- Require one app-owned conclusion/points/evidence schema. Validate source IDs and verbatim quotes. Prompts require supported facts, later changes/retractions, unknown missing owners/dates, and English generated presentation.
+
+### Rejected alternatives and rationale
+
+- Recent-only input violates cumulative coverage. Reusing prior insights as facts can compound errors. Hierarchical compression/retrieval needs its own evidence and quality contract and is deferred.
+- Match-only vocabulary cannot help with the recognition mismatch that motivated it. Full vocabulary increases disclosure and cost; the UI and privacy references explicitly describe that boundary.
+- Refined source may contain model-introduced facts. Originals plus inspectable frozen evidence provide a consistent input contract, at the cost of retaining recognition errors.
+- Per-provider tokenizers/window discovery are not reliably available across configured compatible services. Conservative explicit budgets keep failure honest, but can reject input that a model might actually fit and cannot guarantee server acceptance.
+
+### Impact and validation
+
+Removed the old insight cutoff, match filter, and refined-input path. Titles retain their own bounded helper. Tests cover early/late evidence beyond 6,000 characters, unmatched vocabulary, Unicode over-budget rejection, provisional capture, original-source summaries, strict evidence validation, and preserved snapshot versions. See [validation](phase-2-validation.md).
+
+- **Files:** `Sources/Insights/InsightModels.swift`, `Sources/Insights/InsightEngine.swift`, `Sources/Insights/MeetingTitleGenerator.swift`, `Sources/AI/AISettings.swift`, `Sources/AI/AISettingsView.swift`, `Tests/InsightEngineTests.swift`.
+
+---
+
+<a id="dec-20260905-008"></a>
+## DEC-20260905-008: Save each custom insight with its immutable request and result
+
+- **Date:** 2026-09-05
+- **Status:** Superseded by [DEC-20260905-017](#dec-20260905-017) for the manual concurrency limit; definitions, snapshots, automatic gates, standalone manual priority, and persistence behavior retained.
+- **Scope:** Insight definitions, scheduling, cancellation, history, summary versions, persistence failure
+
+### Context and decision
+
+The fixed live result was overwritten in memory; historical regeneration replaced a single JSON field. Users need their own prompts, an immediate manual action, and a durable timeline they can review during and after recording.
+
+- Each meeting owns editable definitions with stable IDs, title, prompt, scope, and automatic flag. The initial Meeting Overview is an editable preset with automatic updates off. There is one engine/schema/renderer for all items.
+- Automatic work requires 45 seconds and 80 additional finalized characters per item. One automatic slot coalesces changes; one manual slot dispatches a clicked item immediately. Identical pending clicks coalesce; a newer manual request cancels earlier manual work and obsolete automatic work for its item.
+- Append each successful result immediately with its exact request/configuration, cutoff/request and completion dates, active-recording offset, provider/model, source/vocabulary versions, and result. Removing a definition retains saved history.
+- Choosing an older snapshot holds that selection; new arrivals only make Latest available. Reading saved history works without credentials/network. Export includes all saved versions.
+- Pause/end/switch/deletion cancel requests; cancellation tokens and owner/definition lookup reject late responses. End itself requests no summary. Explicit combined Full Meeting Summary uses current definitions and appends a distinct version each time.
+- Save failure preserves an unsaved value and local Retry Save, with no repeated provider call. Automatic updates pause for that item until it is saved. Unsaved values are explicitly not durable across quitting.
+
+### Rejected alternatives and rationale
+
+- Saving only at End risks losing every live result on interruption. Replacing one cache violates retention.
+- A separate legacy fixed-insight engine or summary store creates inconsistent history and render contracts. Kind metadata separates summary from live results in one model.
+- Speaker-only triggers overreact to acknowledgments. Interval/content gates provide deliberate frequency; these initial defaults are not claimed optimal from real-meeting measurements.
+- Waiting for unrelated automatic items defeats manual intent. The second slot costs some concurrency; no automatic batch/queue framework is introduced.
+- Storing only source IDs cannot reproduce provisional corrections. Exact inputs increase local storage and repeated request size, an accepted tradeoff for auditability in this release.
+
+### Impact and validation
+
+Removed `insightJSON`, the overwritten `current` result, and speaker/sentence trigger paths. Deterministic tests cover priority, coalescing, held late responses, prompt changes, exact input retention, append-only live/summary versions, offline rendering, older selection, deletion, and local save retry. See [validation](phase-2-validation.md).
+
+- **Files:** `Sources/Insights/`, `Sources/History/InsightSnapshot.swift`, `Sources/App/InsightInspector.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Tests/InsightEngineTests.swift`, `Tests/MeetingWorkspaceTests.swift`.
+
+---
+
+<a id="dec-20260905-007"></a>
+## DEC-20260905-007: Make the meeting the persistent owner of preparation
+
+- **Date:** 2026-09-05
+- **Status:** Superseded for vocabulary source metadata by [DEC-20260906-002](#dec-20260906-002); other decisions remain accepted.
+- **Scope:** Meeting lifecycle, data ownership, local attachments, vocabulary, titles
+- **Replaces:** New-meeting/unfinished-selection semantics in [DEC-20260905-004](#dec-20260905-004). UUID selection persistence remains.
+
+### Context and decision
+
+Preparation needs a saved meeting before recording. Creating records only at Start and deleting empty recordings would discard documents and settings when users never speak or capture cannot start.
+
+- New Meeting persists a draft with creation time and selects preparation. Quick Start uses the same owner. Persisted `draft` is distinct from transient capture startup; interrupted recordings recover paused, while drafts remain drafts.
+- Preserve preparation after startup failure and empty End. Deleting a meeting explicitly cascades through documents, vocabulary, definitions, snapshots, and transcript.
+- Keep UTF-8 Markdown as managed text copies in SwiftData, bounded at 3 MB/file and 30 MB/meeting. Attachment is local; extraction is a separate explicit AI action. Identical copies deduplicate; changed content is a distinct attachment, removable explicitly. Confirmed terms keep original filename/excerpt after attachment removal.
+- Reuse vocabulary extraction/review/retry with a meeting-owned save destination. Meeting spellings precede personal vocabulary; both English recognizers freeze one combined list at Start/Resume. Chinese recognition remains outside this customization path.
+- Explicit user titles take precedence over generated titles. Creation and recording-start times remain distinguishable. Current UI edits save through explicit actions, and language edits persist on change.
+
+### Rejected alternatives and rationale
+
+A generic multi-meeting project hierarchy, external file bookmarks, document retrieval, and preparation migrations add scope without serving the core workflow. Managed text copies keep preparation independent of file moves and require no new library. A parallel global import destination is retained as a current personal-vocabulary feature, not a compatibility adapter. Meeting extraction never mutates that destination.
+
+### Impact and validation
+
+`MeetingWorkspace` extends SwiftData ownership; the coordinator no longer deletes empty records or uses a start-only creation path. The preparation View reuses the existing importer and candidate rows. Tests verify on-disk reopen, copy limits, empty/failed-start retention, source provenance, vocabulary isolation, title priority, cascade deletion, and selection. See [validation](phase-2-validation.md).
+
+- **Files:** `Sources/History/MeetingWorkspace.swift`, `Sources/History/MeetingHistory.swift`, `Sources/Meeting/MeetingPreparationView.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Sources/Capture/VocabularyImportController.swift`, `Tests/MeetingWorkspaceTests.swift`, `Tests/MeetingSelectionTests.swift`.
+
+---
+
 <a id="dec-20260905-006"></a>
 ## DEC-20260905-006: Use English throughout the product and documentation
 
@@ -72,7 +424,8 @@ The user requested English for all Chinese text in the app and documentation. UI
 ## DEC-20260905-004: Restore the last selection instead of selecting the newest unfinished meeting
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [DEC-20260905-007](#dec-20260905-007) for draft creation/recovery, and [DEC-20260905-011](#dec-20260905-011) for missing/deleted-selection behavior.
 - **Scope:** Main-window selection, startup recovery, session switching
 
 ### Context and decision
@@ -163,7 +516,7 @@ The official English name became SameWave, with old names removed and no compati
 ## DEC-20260905-001: Review Markdown vocabulary incrementally, retain results, and save selected terms
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded for vocabulary commit/dismissal semantics and picker order by [DEC-20260906-005](#dec-20260906-005), source metadata by [DEC-20260906-002](#dec-20260906-002), and request details/timing by [DEC-20260906-003](#dec-20260906-003); serial budgets, progressive results, and incomplete-only retry remain accepted.
 - **Scope:** Vocabulary import/review, cancellation/retry, persistence, diagnostics
 - **Replaces:** Stop-clears-results in [016](#dec-20260904-016), and return-to-Settings-to-save in [014](#dec-20260904-014), [010](#dec-20260904-010), and [008](#dec-20260904-008). File-picker order, separate window, close-to-cancel, and serial budgets remain.
 
@@ -586,7 +939,8 @@ Reuse provider/Schema for an end-to-end workflow without dependencies or duplica
 ## DEC-20260904-007: Prefer refined source for historical insights
 
 - **Date:** 2026-09-04
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [DEC-20260905-009](#dec-20260905-009). Historical insights now use original source with retained exact evidence.
 - **Scope:** Historical insight input, partial refinement, live insight/title factual sources
 
 ### Context
@@ -627,7 +981,8 @@ Per-line priority matches refinement display, using better text without requirin
 ## DEC-20260904-006: Send only vocabulary matched in the current insight context
 
 - **Date:** 2026-09-04
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [DEC-20260905-009](#dec-20260905-009). Insights now send the complete applicable vocabulary.
 - **Scope:** Insight prompts, vocabulary activation, third-party disclosure
 - **Replaces:** [005](#dec-20260904-005)'s exclusion of vocabulary from live insights. Full refinement vocabulary and no title vocabulary remain.
 
@@ -967,7 +1322,7 @@ Explicit Save/snapshots make behavior predictable and streams consistent. Conten
 
 - **Date:** 2026-09-03
 - **Status:** Superseded
-- **Superseded by:** [DEC-20260904-004](#dec-20260904-004) replaces tolerant JSON parsing. Responsibility separation and context budgets remain.
+- **Superseded by:** [DEC-20260904-004](#dec-20260904-004) replaces tolerant JSON parsing. [DEC-20260905-009](#dec-20260905-009) replaces the recent-only insight budget. Responsibility separation remains.
 - **Scope:** AI ownership, input budgets, live-session isolation
 
 ### Context
