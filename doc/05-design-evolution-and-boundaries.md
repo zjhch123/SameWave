@@ -12,7 +12,7 @@ This trades product breadth for simpler, more deterministic implementation.
 
 Two paths share this pattern:
 
-- Translation replaces pending requests within a Section with its latest generation.
+- Translation replaces pending requests within a Section with its latest generation, while publishing completed generations that advance visible progress. Pending source does not invalidate every in-flight result.
 - Insights keep one automatic request and evaluate the latest complete input after interval/content gates. Manual generation takes priority; explicit batches fill available slots under a shared cap of six active insight requests.
 
 Interim ASR is volatile. Replaying every hypothesis in order adds latency without value; resources should catch up with the user's current view.
@@ -40,7 +40,7 @@ The main target has no third-party dependencies. Apple frameworks supply capture
 
 ### 1.7 Lifecycle transitions await actual completion
 
-Pause/end no longer guess completion through delays. Capture, bounded audio streams, Speech finalization, main-actor callbacks, translation in-flight work, and SwiftData save have explicit boundaries. Only Translation uses a five-second ceiling because its system service is outside app control; timeout saves source and rejects late writes.
+Pause/end no longer guess completion through delays. Capture, bounded audio streams, Speech finalization, main-actor callbacks, translation in-flight work, and SwiftData save have explicit boundaries. Translation draining uses a five-second ceiling because its system service is outside app control; timeout preserves source. Prepared requests separately expire after 15 seconds, fail current/queued work, and cancel the session. Session identity rejects writes after unmounting.
 
 ## 2. Architectural evolution
 
@@ -53,7 +53,8 @@ The product has grown from a caption utility into a meeting workspace with trans
 | Menu bar + floating NSPanel | Dock + menu bar + three-column window | One workspace for history, captions, insights |
 | Live captions/export only | Incremental SwiftData history and recovery | Persistent meeting records |
 | Single overwritten insight | Meeting-owned immutable input/result snapshots | Persistent live history and full summaries |
-| Simple translation queue | Per-Section mailbox + generation | Avoid interim backlog and stale writes |
+| Simple translation queue | Per-Section mailbox + progressive result generations | Avoid interim backlog, translation starvation, and stale writes |
+| Final-bound utterance Sections | Recognition activity plus cumulative word ownership | Separate resumed turns before ASR finalization while keeping continuous overlap readable |
 | Local caption utility | Optional strict JSON Schema insights/refinement | In-meeting assistance and post-meeting cleanup |
 | Boolean lifecycle + 900 ms save delay | Explicit state + awaitable finalization | Avoid illegal transitions, lost final words, stale-session writes |
 | Unsafe Sendable + minimal checking | Actor/MainActor isolation + complete checking | Compiler-checked capture/recognition boundaries |
@@ -64,16 +65,9 @@ Old implementations are no longer selectable paths. [`Sources/`](../Sources/) an
 
 ## 3. Requirements versus implementation
 
-[Conversation rendering requirements](conversation-rendering-requirements.md) describes explicit `IDLE/SINGLE/OVERLAP`, speech-start/end events, and correction-only changes after sealing. The current ASR API supplies interim/final text rather than reliable two-stream VAD events, so implementation uses a single floor acquired by final commits.
+[Conversation rendering requirements](conversation-rendering-requirements.md) separates chronological display turns from unfinished recognition hypotheses. Continuous overlapping growth stays in each speaker's active paragraph. A return after one second without added recognition opens a turn after an intervening speaker; matched/revised words retain earlier ownership. A final may correct several sealed fragments without moving the continuation above an intervening speaker.
 
-This is simple, resists partial-result jitter, and suits a single-column UI, but:
-
-- Turns switch after the acoustic interruption begins.
-- Actual overlap is serialized by final-result arrival order.
-- Sealed-ASR correction is not explicitly implemented.
-- Long pauses do not independently end turns; a continuing speaker may remain in the same Section.
-
-Strict compliance with the baseline requires more than another enum in `CaptionStore`: capture/recognition must first provide trustworthy per-stream speech start/end events, with defined text ownership and correction semantics during overlap.
+Native English interim timestamps covered the whole cumulative hypothesis, so they could not provide immediate word boundaries. Word alignment with Apple's tokenizer and Swift collection differences supplies text ownership; a monotonic one-second recognition-inactivity rule distinguishes returns from continuous overlap. A SpeechDetector/DictationTranscriber probe did not report activity, including with padded silence. ASR batching or wholesale rewrites can still shift boundaries; this is observed recognition activity, not acoustic VAD or exact diarization. Long silence alone does not end a turn, and all remote people still share one capture identity. See [DEC-20260907-004](DECISIONS.md#dec-20260907-004).
 
 ## 4. Current boundaries and technical debt
 

@@ -12,39 +12,24 @@ struct TranslationPump: ViewModifier {
     let bridge: TranslationBridge
     let languagePair: MeetingLanguagePair
 
-    private var config: TranslationSession.Configuration {
-        TranslationSession.Configuration(
-            source: Locale.Language(identifier: languagePair.source.translationIdentifier),
-            target: Locale.Language(identifier: languagePair.target.translationIdentifier)
-        )
-    }
+    @State private var configuration: TranslationSession.Configuration?
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if languagePair.needsTranslation {
-            content
-                .translationTask(config) { session in
-                    do {
-                        try await session.prepareTranslation()
-
-                        // Pull the next request, translate it, repeat. The bridge coalesces
-                        // per section so the pump never falls behind under dense speech.
-                        while let req = await bridge.next() {
-                            do {
-                                let translated = try await Self.translate(req, session: session)
-                                bridge.onTranslated?(req, translated)
-                            } catch {
-                                if !Task.isCancelled { bridge.onFailed?(req) }
-                            }
-                            bridge.complete(req)
-                        }
-                    } catch {
-                        bridge.failPending()
-                    }
-                }
-        } else {
-            content
-        }
+        content
+            .translationTask(configuration) { session in
+                await bridge.run(
+                    prepare: { try await session.prepareTranslation() },
+                    translate: { try await Self.translate($0, session: session) },
+                    cancel: { session.cancel() }
+                )
+            }
+            .onChange(of: languagePair, initial: true) { _, pair in
+                configuration = pair.needsTranslation ? TranslationSession.Configuration(
+                    source: Locale.Language(identifier: pair.source.translationIdentifier),
+                    target: Locale.Language(identifier: pair.target.translationIdentifier)
+                ) : nil
+            }
+            .onChange(of: bridge.revision) { _, _ in configuration?.invalidate() }
     }
 
     /// Translate one request. When it carries leading context (`context ||| target`),

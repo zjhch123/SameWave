@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class MeetingHistoryStoreTests: XCTestCase {
+    func testInterruptedCumulativeHypothesesPersistInTurnOrderWithoutDuplicates() throws {
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+        let store = CaptionStore()
+        store.updateSource("The release is ready", speaker: .remote, isFinal: false, at: .now.advanced(by: .seconds(-2)))
+        store.updateSource("My reply", speaker: .mine, isFinal: false)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        store.updateSource("The release is ready for review", speaker: .remote, isFinal: false)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        store.updateSource("The release was ready for review.", speaker: .remote, isFinal: true)
+        store.updateSource("My reply continues", speaker: .mine, isFinal: false, at: .now.advanced(by: .seconds(2)))
+        store.endTurn(.remote)
+        store.endTurn(.mine)
+        try history.finish(record, sections: store.sections, endedAt: .now)
+        let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
+        XCTAssertEqual(lines.map(\.sectionId), [0, 1, 2, 3])
+        XCTAssertEqual(lines.map(\.sourceText), ["The release was ready", "My reply", "for review.", "continues"])
+        XCTAssertEqual(lines.map(\.isMine), [false, true, false, true])
+        XCTAssertEqual(record.meetingStatus, .ended)
+        let markdown = TranscriptExporter.markdown(record: record)
+        XCTAssertTrue(markdown.contains("**1. [\(lines[0].timeText)] Other party:** The release was ready"))
+        XCTAssertTrue(markdown.contains("**2. [\(lines[1].timeText)] Me:** My reply"))
+        XCTAssertTrue(markdown.contains("**3. [\(lines[2].timeText)] Other party:** for review."))
+        XCTAssertTrue(markdown.contains("**4. [\(lines[3].timeText)] Me:** continues"))
+    }
+
     func testSyncUpsertsBySectionIDAndDeletesPrunedLines() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)

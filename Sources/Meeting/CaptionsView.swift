@@ -1,14 +1,6 @@
 import SwiftUI
 
-/// The live transcript stage: a centered single-column text stream rendered in
-/// section-id order. The active speaker gets the only open section; a finalized
-/// sentence from the other speaker seals it and opens the next section. Interims from
-/// the non-active stream cannot reorder the transcript.
-///
-/// Each section shows a speaker label (mine → "You" in accent blue; remote → "Speaker"
-/// in meta gray), the selected target language as the large primary line, and the
-/// source text as a small muted secondary line. A still-translating section shows a subtle
-/// "Translating" indicator (spec Rule B — translation state affects only the UI hint).
+/// Renders chronological speaker turns, using source until a translation arrives.
 struct CaptionsView: View {
     let store: CaptionStore
     var isListening = false
@@ -33,17 +25,14 @@ struct CaptionsView: View {
     static let accent      = Color(red: 0.0,   green: 0.443, blue: 0.890)   // #0071e3
     static let danger      = Color(red: 0.863, green: 0.149, blue: 0.149)   // #dc2626
 
-    /// Shown while a sealed section's translation is still in flight, and as the
-    /// placeholder for the primary line before any translation lands.
-    static let translatingHint = "Translating…"
-
     /// HH:mm formatter for the per-line spoken time.
     static func timeString(_ date: Date) -> String { DateFormat.clock.string(from: date) }
 
     /// Cheap change signal so the scroll view knows to re-pin to the bottom.
     private var scrollSignal: String {
-        guard let last = store.sections.last else { return "0" }
-        return "\(store.sections.count)|\(last.id)|\(last.targetText.count)|\(last.committedSource.count)|\(last.interimSource.count)|\(translationSignal(last.translationState))"
+        store.sections.suffix(2).map { section in
+            "\(section.id)|\(section.sourceText)|\(section.targetText)|\(translationSignal(section.translationState))"
+        }.joined(separator: "\n")
     }
 
     private func translationSignal(_ state: TranslationState) -> Int {
@@ -126,9 +115,7 @@ struct CaptionsView: View {
         let target = section.targetText.trimmed
         let source = section.sourceText
         let failed = section.translationState == .failed
-        let translating = section.contentState == .sealed
-            && (section.translationState == .pending || section.translationState == .translating)
-        let primary = failed ? source : target
+        let primary = failed || target.isEmpty ? source : target
         VStack(alignment: .leading, spacing: 6) {
             // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
@@ -139,30 +126,25 @@ struct CaptionsView: View {
                 Text(Self.timeString(section.startedAt))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Self.meta.opacity(0.7))
-                if translating {
-                    Text(Self.translatingHint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Self.meta.opacity(0.8))
-                } else if failed {
+                if failed {
                     Text("Translation failed · Showing source text")
                         .font(.system(size: 11))
                         .foregroundStyle(Self.danger)
                 }
             }
 
-            // Translation is primary when available. A failed translation falls back
-            // to the source as the primary line instead of looking permanently busy.
-            Text(primary.isEmpty ? Self.translatingHint : primary)
+            // Show source immediately until the first translation is ready.
+            Text(primary)
                 .font(.system(size: 25, weight: .medium))
                 .tracking(-0.2)
-                .foregroundStyle(primary.isEmpty ? Self.muted : Self.fg)
+                .foregroundStyle(Self.fg)
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Source text = small muted secondary line. Never shown in same-language mode
             // (it would duplicate the primary), nor when it's identical to the target.
-            if !failed && !hideSourceEcho && !source.isEmpty && source != target {
+            if !failed && !hideSourceEcho && !source.isEmpty && source != primary {
                 Text(source)
                     .font(.system(size: 14))
                     .foregroundStyle(Self.muted)

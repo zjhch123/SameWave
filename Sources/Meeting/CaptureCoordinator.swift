@@ -61,7 +61,6 @@ final class CaptureCoordinator {
     private var microphoneCapture: MicrophoneCapture?
     private var microphoneSpeech: NativeSpeechEngine?
     private var isChangingMicrophone = false
-    private var lastProvisionalText: [Speaker: String] = [:]
 
     init(speechVocabularySettings: SpeechVocabularySettings, defaults: UserDefaults = .standard) {
         self.speechVocabularySettings = speechVocabularySettings
@@ -71,8 +70,7 @@ final class CaptureCoordinator {
             self.store.applyTranslation(
                 translated,
                 id: request.sectionId,
-                generation: request.generation,
-                final: request.isFinal
+                generation: request.generation
             )
             self.persistTranslationIfPaused()
         }
@@ -185,7 +183,6 @@ final class CaptureCoordinator {
 
         await tearDownPipelines()
         sealOpenTurn()
-        lastProvisionalText.removeAll()
         let translationsFinished = await translation.waitUntilIdle(timeout: .seconds(5))
 
         sessionState = .paused
@@ -201,6 +198,7 @@ final class CaptureCoordinator {
 
     func resume() async {
         guard sessionState == .paused, let activeRecord else { return }
+        translation.restart()
         activeVocabulary = sourceLanguage == .english
             ? activeRecord.effectiveVocabulary(global: globalVocabulary) : []
         sessionState = .starting
@@ -543,41 +541,24 @@ final class CaptureCoordinator {
 
     private func handleInterim(_ text: String, speaker: Speaker) {
         guard sessionState == .recording || sessionState == .starting else { return }
-        let text = text.trimmed
-        guard !text.isEmpty else { return }
-        let (sectionID, sealedID) = store.updateInterim(text, speaker: speaker)
-        if let sealedID { scheduleTranslation(id: sealedID, final: true) }
-        guard let sectionID else { return }
-
-        if languagePair.needsTranslation {
-            guard lastProvisionalText[speaker] != text else { return }
-            lastProvisionalText[speaker] = text
-            scheduleTranslation(id: sectionID, final: false)
-        } else {
-            store.setNativeCaption(id: sectionID)
-        }
+        updateCaptions(store.updateSource(text, speaker: speaker, isFinal: false))
     }
 
-    private func handleCommit(_ recognized: String, speaker: Speaker) {
+    private func handleCommit(_ text: String, speaker: Speaker) {
         guard sessionState != .idle else { return }
-        let text = recognized.trimmed
-        guard !text.isEmpty else { return }
-        let (sectionID, sealedID) = store.appendCommitted(text, speaker: speaker)
-        if let sealedID { scheduleTranslation(id: sealedID, final: true) }
-        lastProvisionalText[speaker] = nil
-
-        if languagePair.needsTranslation {
-            scheduleTranslation(id: sectionID, final: false)
-        } else {
-            store.setNativeCaption(id: sectionID)
-        }
+        updateCaptions(store.updateSource(text, speaker: speaker, isFinal: true))
         tickInsights()
     }
 
-    private func sealTurn(_ speaker: Speaker) {
-        if let sectionID = store.endTurn(speaker) {
-            scheduleTranslation(id: sectionID, final: true)
+    private func updateCaptions(_ sectionIDs: [Int]) {
+        for id in sectionIDs {
+            if languagePair.needsTranslation { scheduleTranslation(id: id) }
+            else { store.setNativeCaption(id: id) }
         }
+    }
+
+    private func sealTurn(_ speaker: Speaker) {
+        updateCaptions(store.endTurn(speaker))
     }
 
     private func sealOpenTurn() {
@@ -585,24 +566,23 @@ final class CaptureCoordinator {
         sealTurn(.mine)
     }
 
-    private func scheduleTranslation(id: Int, final: Bool) {
+    private func scheduleTranslation(id: Int) {
         guard languagePair.needsTranslation else { return }
         guard let section = store.section(id: id), !section.sourceText.isEmpty else {
-            if final { translation.cancel(sectionId: id) }
+            translation.cancel(sectionId: id)
             return
         }
         let target = section.sourceText
         let context = section.priorContext.joined(separator: " ").trimmed
         let hasContext = !context.isEmpty
         let source = hasContext ? context + " ||| " + target : target
-        let generation = store.beginTranslation(id: id)
+        guard let generation = store.beginTranslation(id: id) else { return }
         translation.enqueue(
             sessionID: sessionID,
             generation: generation,
             sectionId: id,
             source: source,
             target: target,
-            isFinal: final,
             hasContext: hasContext
         )
     }
@@ -611,11 +591,11 @@ final class CaptureCoordinator {
 
     private func beginFreshSession() {
         translation.cancelPending()
+        translation.restart()
         sessionID = UUID()
         activeVocabulary = sourceLanguage == .english
             ? (activeRecord?.effectiveVocabulary(global: globalVocabulary) ?? globalVocabulary) : []
         store.clear()
-        lastProvisionalText.removeAll()
         let now = Date()
         sessionStartedAt = now
         meetingStartedAt = now
@@ -783,7 +763,6 @@ final class CaptureCoordinator {
         meetingStartedAt = nil
         pausedElapsed = 0
         sessionState = .idle
-        lastProvisionalText.removeAll()
         if !keepingTranscript {
             store.clear()
             statusMessage = ""

@@ -114,6 +114,8 @@ struct Section: Identifiable, Equatable, Sendable {
     var interimSource = ""
     var targetText = ""
     var generation = 0
+    var translatedGeneration = 0
+    var requestedSource = ""
     var startedAt = Date()
     var priorContext: [String] = []
 

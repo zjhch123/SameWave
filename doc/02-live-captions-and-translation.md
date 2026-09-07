@@ -1,6 +1,6 @@
 # Live Captions and Translation Pipeline
 
-> This describes the current implementation. See [Conversation rendering requirements](conversation-rendering-requirements.md) for the design baseline; section 5.3 lists known differences.
+> This describes the current implementation. See [Conversation rendering requirements](conversation-rendering-requirements.md) for the rendering contract and [DEC-20260907-003](DECISIONS.md#dec-20260907-003) for the overlap and translation decisions.
 
 ## 1. The two inputs define speaker identity
 
@@ -90,140 +90,103 @@ The last final ASR result is therefore in the store before sealing and final per
 |---|---|
 | `id` | Monotonically increasing within a session; display order |
 | `speaker` | `.mine` or `.remote` |
-| `contentState` | `.open` / `.sealed`: whether new source text is accepted |
+| `contentState` | `.open` / `.sealed`: whether newly added speech can extend this display turn |
 | `translationState` | `.pending` / `.translating` / `.done` / `.failed` |
-| `committedSource` | Final ASR sentences |
-| `interimSource` | Current volatile hypothesis |
+| `committedSource` | Final ASR fragments assigned to this turn |
+| `interimSource` | This turn's fragment of a cumulative volatile hypothesis |
 | `targetText` | Current translation |
-| `generation` | Translation version for rejecting stale results |
+| `generation` / `requestedSource` | Latest requested source snapshot and its version |
+| `translatedGeneration` | Latest displayed result version; prevents translation regression |
 | `startedAt` | Section opening time |
 | `priorContext` | Speaker context frozen when opened |
 
-Content and translation states are orthogonal. Sealing prohibits new source text but does not cancel translation.
+Content and translation states are orthogonal. Sealing prevents newly added speech from extending an old turn, but allows recognition corrections to its existing words and does not cancel translation.
 
-## 5. Actual state machine: single floor
+## 5. Chronological turns during overlap
 
-[`CaptionStore`](../Sources/Meeting/CaptionStore.swift) currently permits at most one open Section:
+[`CaptionStore`](../Sources/Meeting/CaptionStore.swift) owns at most one open display turn per speaker, separately from each unfinished recognition hypothesis. Each speaker's first words appear immediately. During continuous overlap, both paragraphs can grow without creating a row per alternating word. A speaker returning after at least one second without added words opens after an intervening speaker, even before ASR finalization. Remote → mine → remote with a break in remote recognition therefore produces three Sections while recognition is still volatile. A gap without an intervening speaker does not split the latest paragraph. Ordering follows observed recognition activity, not precise acoustic onset.
 
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> OpenA: A interim or final
-    OpenA --> OpenA: A interim / final
-    OpenA --> OpenB: B final\nSeal A, create B
-    OpenB --> OpenA: A final\nSeal B, create A
-    OpenA --> Idle: pause / stop / endTurn(A)
-    OpenB --> Idle: pause / stop / endTurn(B)
-```
+### 5.1 Cumulative source ownership
 
-Floor acquisition has two asymmetric rules:
+[`SpeechHypothesis`](../Sources/Meeting/SpeechHypothesis.swift) uses Apple's `NLTokenizer` word boundaries and Swift collection differences to match each revised hypothesis to its previous text. Display spelling, punctuation, and separators are preserved; matching ignores case and punctuation.
 
-- Idle floor: interim can open a Section for early feedback.
-- Occupied floor: the other speaker's interim is ignored; only a final commit can switch the floor.
+- Matched words retain their Section IDs. Replacements inherit the removed words' IDs; insertions before an existing matched word belong to that earlier fragment. These corrections do not acquire the floor.
+- Unmatched trailing words extend the utterance and refresh its monotonic activity time. Continuous growth reuses the speaker's active Section; growth after a one-second gap opens a later Section when another speaker has intervened. Correction-only callbacks do not refresh activity. New Sections omit the cumulative prefix.
+- A final commits each owned fragment once to its Section, corrects its spelling, clears interim text, and releases the recognition hypothesis. It can correct several sealed Sections without reordering them.
+- A completely retracted fragment is removed, including its translation. IDs are never reused within the session, so late translation results cannot restore it.
+- Same-speaker utterances share a Section for up to six committed fragments. The next utterance opens a fresh Section at its first interim or direct final.
+- Pause/end drains ASR and then promotes any remaining fragments once, including those in sealed Sections. Empty or nonlexical callbacks never acquire the floor.
 
-This prevents noise, echoes, and crossing partials from continually splitting turns. Section order follows final commits that acquire the floor, not precise acoustic onset time.
-
-### 5.1 Final commits
-
-`appendCommitted`:
-
-1. Acquires the floor for the speaker, sealing the previous Section on a switch.
-2. Appends the final sentence to `committedSource` and clears interim text.
-3. Updates that speaker's recent-sentence window.
-4. Returns the current Section ID and any newly sealed ID for translation scheduling.
-
-A speaker's uninterrupted contribution stays in one Section. After six final sentences, the next sentence opens another Section. This limits bubble size rather than defining semantic sentence boundaries.
-
-### 5.2 Interim results
-
-`updateInterim` updates only an open Section's volatile tail. Nonfinal interim from the speaker without the floor is hidden. On sealing, interim-only content is promoted to committed text so already visible words do not disappear; truly empty Sections are pruned.
-
-### 5.3 Differences from the product state-machine baseline
-
-| Topic | Requirements | Current implementation |
-|---|---|---|
-| New turn | Immediate switch on `onSpeechStart(other)` | Switch on the other's final ASR commit |
-| Silence | Seal on `onSpeechEnd` | No continuous silence/VAD sealing; primarily speaker switch, six-sentence limit, pause/stop |
-| Overlap | Explicit `OVERLAP`, tracking both speakers | Single floor, at most one open Section |
-| Interrupted speaker continues | New Section at speech start | Reacquire floor and open at next final commit |
-| Sealed source correction | Correction-only updates allowed | No separate sealed-ASR correction entry; generation handles stale translations only |
-
-These are deliberate implementation simplifications. Requirements pseudocode is not the current runtime contract.
+A native English `DictationTranscriber` probe with `audioTimeRange` enabled returned one coarse range for the entire interim hypothesis; detailed word timing arrived only at finalization. A separate SpeechDetector probe alongside DictationTranscriber returned no activity results, including for padded silence. The app therefore uses text revision ownership and a one-second recognition-inactivity boundary for display. It does not claim acoustic VAD: delayed or batched ASR results can shift a boundary, and wholesale rewrites or changed tokenization can blur corrections versus new speech. Inactivity alone does not create a turn. Capture channels retain their identities, including recognized echoes; multiple remote participants remain one Speaker.
 
 ## 6. Translation scheduling
 
-When source and target differ, each valid interim/final can trigger retranslation. Sealing submits an authoritative `isFinal=true` request. Same-language pairs create no translation requests.
+When source and target differ, a changed source snapshot triggers translation. Duplicate interims, identical finals, and sealing unchanged text do not create another generation or request. A failed snapshot may be retried. Same-language pairs create no translation requests.
 
-### 6.1 Coalescing mailbox
+### 6.1 Coalescing mailbox and consumer lifetime
 
-[`TranslationBridge`](../Sources/Meeting/TranslationBridge.swift) is not an unbounded FIFO:
+[`TranslationBridge`](../Sources/Meeting/TranslationBridge.swift) keeps one pending snapshot per Section, replacing older waiting snapshots for that Section. Different Sections retain FIFO fairness, and one request executes at a time. An in-flight result can provide useful progress while the latest snapshot waits. Explicit pending/in-flight accounting supports pause/end's bounded idle wait.
 
-- Requests are keyed by `sectionId`.
-- A newer snapshot replaces a pending request for the same Section.
-- Different Sections retain independent slots, dequeued in earliest-waiting order.
-- In-flight requests cannot be recalled, but generation checks reject stale results.
-- Every request carries a session UUID, preventing writes into a later meeting.
-- Explicit pending/in-flight counts support `waitUntilIdle` for pause/end rather than guessed sleep durations.
+Each `run` owns its wake-up stream and consumer UUID. Cancelling an idle SwiftUI Translation task cannot close the mailbox for future consumers. Preparation failure, consumer cancellation, and request timeout settle all owned work and fail subsequent requests immediately until restart. An individual request error or empty response fails that request and lets the next Section proceed. No failure is represented as a successful empty translation.
 
-The latest state controls load, rather than fixed-time throttling.
+A prepared translation request has a 15-second deadline, including any target-only delimiter recovery. On timeout, the bridge marks work failed, calls the public macOS 26 `TranslationSession.cancel()`, and rejects late responses even if the framework does not promptly return. This deadline does not include first-use model preparation/downloads. Start/resume invalidates the SwiftUI configuration to prepare a fresh session. The existing five-second pause/end wait remains independent: source can be saved while a slow request is still completing.
 
-Success, failure, and cancellation all complete in-flight accounting. A failed request marks its Section `.failed` and preserves source text. If Translation session preparation fails, waiting requests fail explicitly instead of remaining stuck on Translating.
+### 6.2 Progress and generation checks
 
-### 6.2 Generation checks
+A response may update `targetText` when its generation is newer than the last displayed result and no newer than the latest request. It does not have to match the latest requested generation to provide interim progress. Thus sustained ASR updates cannot continually invalidate every useful translation. An older displayed version remains marked translating while current source waits; only completion of the latest snapshot marks it done, whether its Section is open or sealed. A new source snapshot moves done back to translating.
 
-Each scheduling operation increments the Section's `generation`. Only a result matching the current generation can update `targetText`, preventing a late older request from overwriting newer text.
+Failures affect only the current requested generation. Session UUID checks in the coordinator and consumer UUID checks in the bridge reject old-meeting and old-consumer callbacks. Restored Sections are sealed; a missing saved translation is failed and displays source rather than pretending work is running.
 
 ### 6.3 Context window
 
 Translation context is independent of the six-sentence UI limit:
 
-- Each speaker retains the latest five committed sentences, approximately 240 characters maximum.
+- A new Section takes the latest five same-speaker source fragments from earlier Sections, including unfinished text, with an approximately 240-character budget. At least the newest fragment is retained even if it exceeds that budget.
 - A new Section freezes `priorContext`.
 - Input is `context + " ||| " + target`.
 - After Apple Translation returns, extract the text after the last delimiter. If the delimiter is missing, translate the target alone.
 
 Frozen snapshots prevent context drift and preserve continuity across a speaker's Sections.
 
-## 7. Speaker-switch sequence
+## 7. Overlap sequence
 
 ```mermaid
 sequenceDiagram
-    participant RA as Remote ASR
-    participant C as CaptureCoordinator
+    participant R as Remote ASR
+    participant M as Microphone ASR
     participant S as CaptionStore
-    participant B as TranslationBridge
-    participant T as TranslationPump
-    RA->>C: final("Can we ship Friday?")
-    C->>S: appendCommitted(remote)
-    S-->>C: section 0
-    C->>B: enqueue(section 0, live)
-    T->>B: next()
-    B-->>T: Latest section 0 request
-    T->>T: Apple Translation
-    T-->>S: applyTranslation(generation)
-    Note over C,S: My final arrives and acquires the floor
-    C->>S: appendCommitted(mine)
-    S-->>C: section 1 + sealed section 0
-    C->>B: enqueue(section 0, final)
-    C->>B: enqueue(section 1, live)
+    participant T as TranslationBridge
+    R->>S: interim (remote utterance)
+    S->>T: section 0 snapshot
+    M->>S: interim (reply)
+    S->>T: section 1 snapshot
+    Note over S: Both streams may grow continuously in their own Sections
+    Note over R: At least one second without added remote words
+    R->>S: cumulative interim with added speech
+    S->>T: section 2 continuation with remote context
+    Note over S: Seal old remote turn; keep its prefix in section 0
+    T-->>S: section 0 result (visible progress)
+    R->>S: corrected final (cumulative utterance)
+    S->>T: changed snapshots for sections 0 and 2
+    Note over S: Commit each owned fragment once; keep turn order
 ```
 
 ## 8. Language pairs
 
 - Independent source and target menus both use the fixed English labels English and Simplified Chinese, yielding four combinations.
 - Source determines both ASR locales: `en-US` or `zh-CN`. English vocabulary applies only to an English source.
-- Different languages use `TranslationSession` to produce `targetText`, displayed above secondary source text.
+- Different languages use `TranslationSession` to produce `targetText`, displayed above secondary source text. Until a translation exists, source is the primary caption and is shown once. Pending/updating work has no spinner or Translating text; explicit failures retain their source/failure label.
 - Matching languages create neither a Translation session nor requests. The coordinator sets `targetText = sourceText`; the UI hides duplicate source echo.
 - Both menus are disabled after starting to keep recognizers, translation, and the persisted pair consistent throughout the meeting.
 
 ## 9. Key invariants
 
-1. At most one open Section at a time.
-2. Section IDs increase monotonically; array order is display order.
-3. `contentState` does not govern whether translation can continue.
-4. Old translations cannot overwrite a newer generation.
-5. Pending requests may coalesce within one Section, never evict another Section.
-6. Restored Sections are sealed/done; the next utterance opens a new Section.
+1. At most one open turn per speaker; dense overlapping growth stays readable in two paragraphs.
+2. IDs increase monotonically; first-observed Section order never changes.
+3. Existing words retain ownership across corrections/finals; a return after recognition inactivity opens after an intervening speaker without waiting for finalization.
+4. Translation completion is independent of sealing and advances by displayed generation.
+5. Pending requests coalesce within one Section, never evict another Section.
+6. Restored Sections are sealed, with done or missing-translation failure state.
 7. Same-language meetings send no translation requests and show no duplicate text.
-8. Old-session ASR/translation callbacks cannot modify a new session.
-9. Pause/end drains queued audio and awaits final ASR before persistence; translation has a bounded wait.
+8. Old-session and old-consumer callbacks cannot modify new work.
+9. Pause/end drains ASR before sealing, preserves both interim tails, and bounds the translation wait.
