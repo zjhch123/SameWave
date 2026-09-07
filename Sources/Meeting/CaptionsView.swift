@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Renders sections in first-observed order. Both speakers' unfinished utterances
-/// remain visible during overlap, and translation progress is independent of ASR.
+/// Renders chronological speaker turns, using source until a translation arrives.
 struct CaptionsView: View {
     let store: CaptionStore
     var isListening = false
@@ -25,10 +24,6 @@ struct CaptionsView: View {
     static let borderSoft  = Color(red: 0.910, green: 0.910, blue: 0.929)   // #e8e8ed
     static let accent      = Color(red: 0.0,   green: 0.443, blue: 0.890)   // #0071e3
     static let danger      = Color(red: 0.863, green: 0.149, blue: 0.149)   // #dc2626
-
-    /// Shown while a sealed section's translation is still in flight, and as the
-    /// placeholder for the primary line before any translation lands.
-    static let translatingHint = "Translating…"
 
     /// HH:mm formatter for the per-line spoken time.
     static func timeString(_ date: Date) -> String { DateFormat.clock.string(from: date) }
@@ -120,8 +115,7 @@ struct CaptionsView: View {
         let target = section.targetText.trimmed
         let source = section.sourceText
         let failed = section.translationState == .failed
-        let translating = section.translationState == .pending || section.translationState == .translating
-        let primary = failed ? source : target
+        let primary = failed || target.isEmpty ? source : target
         VStack(alignment: .leading, spacing: 6) {
             // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
@@ -132,30 +126,25 @@ struct CaptionsView: View {
                 Text(Self.timeString(section.startedAt))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Self.meta.opacity(0.7))
-                if translating && !target.isEmpty {
-                    Text(Self.translatingHint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Self.meta.opacity(0.8))
-                } else if failed {
+                if failed {
                     Text("Translation failed · Showing source text")
                         .font(.system(size: 11))
                         .foregroundStyle(Self.danger)
                 }
             }
 
-            // Translation is primary when available. A failed translation falls back
-            // to the source as the primary line instead of looking permanently busy.
-            Text(primary.isEmpty ? Self.translatingHint : primary)
+            // Show source immediately until the first translation is ready.
+            Text(primary)
                 .font(.system(size: 25, weight: .medium))
                 .tracking(-0.2)
-                .foregroundStyle(primary.isEmpty ? Self.muted : Self.fg)
+                .foregroundStyle(Self.fg)
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Source text = small muted secondary line. Never shown in same-language mode
             // (it would duplicate the primary), nor when it's identical to the target.
-            if !failed && !hideSourceEcho && !source.isEmpty && source != target {
+            if !failed && !hideSourceEcho && !source.isEmpty && source != primary {
                 Text(source)
                     .font(.system(size: 14))
                     .foregroundStyle(Self.muted)

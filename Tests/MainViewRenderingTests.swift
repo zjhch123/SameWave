@@ -7,28 +7,33 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
-    func testOverlappingCaptionsAndTranslationCompletionRenderWhileBothSectionsAreOpen() async throws {
+    func testChronologicalCaptionsShowSourceAndTranslationWithoutBusyText() async throws {
         let store = CaptionStore()
-        store.updateInterim("The release is ready", speaker: .remote)
-        store.updateInterim("I have a question", speaker: .mine)
-        for section in store.sections {
-            let generation = try XCTUnwrap(store.beginTranslation(id: section.id))
-            store.applyTranslation(section.sourceText, id: section.id, generation: generation)
-        }
+        store.updateSource("The release is ready", speaker: .remote, isFinal: false, at: .now.advanced(by: .seconds(-2)))
+        store.updateSource("I have a question", speaker: .mine, isFinal: false)
+        store.updateSource("The release is ready for review", speaker: .remote, isFinal: false)
+        XCTAssertEqual(store.sections.map(\.sourceText), ["The release is ready", "I have a question", "for review"])
+        for section in store.sections { XCTAssertNotNil(store.beginTranslation(id: section.id)) }
         try await render(CaptionsView(store: store, isListening: true),
-            size: NSSize(width: 700, height: 500), name: "overlapping-captions-complete",
-            expectedLabels: ["Speaker", "You", "The release is ready", "I have a question"],
+            size: NSSize(width: 700, height: 500), name: "chronological-captions-pending",
+            expectedLabels: ["Speaker", "You", "The release is ready", "I have a question", "for review"],
             absentLabels: ["Translating"])
-        store.updateInterim("The release is ready for review", speaker: .remote)
+        store.applyTranslation("Ready to release", id: 0, generation: store.sections[0].generation)
+        try await render(CaptionsView(store: store, isListening: true),
+            size: NSSize(width: 700, height: 500), name: "chronological-captions-complete",
+            expectedLabels: ["Ready to release", "The release is ready", "I have a question", "for review"],
+            absentLabels: ["Translating"])
+        store.updateSource("The release was ready for review", speaker: .remote, isFinal: false)
         XCTAssertNotNil(store.beginTranslation(id: 0))
         try await render(CaptionsView(store: store, isListening: true),
-            size: NSSize(width: 700, height: 500), name: "overlapping-captions-progress",
-            expectedLabels: ["Speaker", "You", "Translating", "The release is ready for review", "I have a question"])
+            size: NSSize(width: 700, height: 500), name: "chronological-captions-progress",
+            expectedLabels: ["Ready to release", "The release was ready", "I have a question", "for review"],
+            absentLabels: ["Translating"])
         store.failTranslation(id: 0, generation: store.sections[0].generation)
         try await render(CaptionsView(store: store, isListening: true),
-            size: NSSize(width: 700, height: 500), name: "overlapping-captions-failure",
-            expectedLabels: ["Translation failed", "The release is ready for review", "I have a question"],
-            absentLabels: ["Translating"])
+            size: NSSize(width: 700, height: 500), name: "chronological-captions-failure",
+            expectedLabels: ["Translation failed", "The release was ready", "I have a question", "for review"],
+            absentLabels: ["Translating", "Ready to release"])
     }
 
     func testBackgroundRefinementRemainsVisibleWhileAnotherMeetingIsSelected() async throws {
@@ -452,9 +457,10 @@ final class MainViewRenderingTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(60))
         host.layoutSubtreeIfNeeded()
         var scroll = try XCTUnwrap(findVocabularyScroll(in: host))
-        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
-                                          wheelCount: 1, wheel1: -650, wheel2: 0, wheel3: 0))
-        scroll.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: wheel)))
+        // Position the native clip view directly: a synthetic wheel event inherits
+        // the desktop pointer location and can be rejected outside this test window.
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 650))
+        scroll.reflectScrolledClipView(scroll.contentView)
         try await Task.sleep(for: .milliseconds(60))
         XCTAssertEqual(editor.scrollOffset, 650, accuracy: 1)
         navigation.openAISettings()
@@ -474,7 +480,8 @@ final class MainViewRenderingTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         scroll = try XCTUnwrap(findVocabularyScroll(in: host))
         XCTAssertEqual(scroll.contentView.bounds.origin.y, 650, accuracy: 1)
-        scroll.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: wheel)))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: 1_300))
+        scroll.reflectScrolledClipView(scroll.contentView)
         try await Task.sleep(for: .milliseconds(60))
         XCTAssertEqual(editor.scrollOffset, 1_300, accuracy: 1)
         let document = try XCTUnwrap(scroll.documentView)

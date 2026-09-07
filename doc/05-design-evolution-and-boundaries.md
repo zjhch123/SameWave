@@ -54,7 +54,7 @@ The product has grown from a caption utility into a meeting workspace with trans
 | Live captions/export only | Incremental SwiftData history and recovery | Persistent meeting records |
 | Single overwritten insight | Meeting-owned immutable input/result snapshots | Persistent live history and full summaries |
 | Simple translation queue | Per-Section mailbox + progressive result generations | Avoid interim backlog, translation starvation, and stale writes |
-| Final-commit floor acquisition | One unfinished utterance per speaker | Display overlap immediately without duplicating interim revisions |
+| Final-bound utterance Sections | Recognition activity plus cumulative word ownership | Separate resumed turns before ASR finalization while keeping continuous overlap readable |
 | Local caption utility | Optional strict JSON Schema insights/refinement | In-meeting assistance and post-meeting cleanup |
 | Boolean lifecycle + 900 ms save delay | Explicit state + awaitable finalization | Avoid illegal transitions, lost final words, stale-session writes |
 | Unsafe Sendable + minimal checking | Actor/MainActor isolation + complete checking | Compiler-checked capture/recognition boundaries |
@@ -65,9 +65,9 @@ Old implementations are no longer selectable paths. [`Sources/`](../Sources/) an
 
 ## 3. Requirements versus implementation
 
-[Conversation rendering requirements](conversation-rendering-requirements.md) now defines overlap using the callbacks the pipeline actually receives. Both speakers' interims display immediately, unfinished utterances retain their Section through revisions and finalization, and an interrupted speaker's next utterance opens after the interrupter.
+[Conversation rendering requirements](conversation-rendering-requirements.md) separates chronological display turns from unfinished recognition hypotheses. Continuous overlapping growth stays in each speaker's active paragraph. A return after one second without added recognition opens a turn after an intervening speaker; matched/revised words retain earlier ownership. A final may correct several sealed fragments without moving the continuation above an intervening speaker.
 
-This replaces final-commit floor acquisition, which hid the other speaker during long utterances. It also avoids speculative VAD events or splitting cumulative hypotheses at uncertain word boundaries. Each speaker has at most one open Section; an older unfinished utterance may continue updating until its final arrives. Long silences alone do not end a turn, and all remote people still share one capture identity. See [DEC-20260907-003](DECISIONS.md#dec-20260907-003).
+Native English interim timestamps covered the whole cumulative hypothesis, so they could not provide immediate word boundaries. Word alignment with Apple's tokenizer and Swift collection differences supplies text ownership; a monotonic one-second recognition-inactivity rule distinguishes returns from continuous overlap. A SpeechDetector/DictationTranscriber probe did not report activity, including with padded silence. ASR batching or wholesale rewrites can still shift boundaries; this is observed recognition activity, not acoustic VAD or exact diarization. Long silence alone does not end a turn, and all remote people still share one capture identity. See [DEC-20260907-004](DECISIONS.md#dec-20260907-004).
 
 ## 4. Current boundaries and technical debt
 

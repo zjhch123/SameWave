@@ -116,7 +116,8 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 - [`CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift): lifecycle, dual-stream assembly, ASR routing, translation and persistence scheduling.
 - [`MeetingModels.swift`](../Sources/Meeting/MeetingModels.swift): speakers, languages, lifecycle, Section content/translation state types.
-- [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift): per-speaker utterance ownership, overlap segmentation, source text, translation progress.
+- [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift): chronological display turns, source fragments, translation progress.
+- [`SpeechHypothesis.swift`](../Sources/Meeting/SpeechHypothesis.swift): cumulative recognition word alignment and ownership across interruptions.
 - [`TranslationBridge.swift`](../Sources/Meeting/TranslationBridge.swift): latest pending request per Section, in-flight tracking, awaitable idle boundary.
 - [`TranslationPump.swift`](../Sources/Meeting/TranslationPump.swift): long-lived `TranslationSession`, translation execution and results.
 

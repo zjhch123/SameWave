@@ -14,7 +14,7 @@ The app, executable, Swift module, project, target, and scheme all use the name 
 - Recognize both audio streams locally with Apple `SpeechAnalyzer`.
 - Manage English product names, personal names, and acronyms through Settings > Vocabulary. With AI configured, generate vocabulary for review from one or more Markdown files to improve recognition and preserve terminology in refinement and insights.
 - Select English or Simplified Chinese independently for source and target. Use local Apple Translation when they differ; display recognition directly when they match.
-- Organize turns into Sections. Translated captions emphasize the target text with the source beneath it; same-language captions avoid duplicate text.
+- Start a new paragraph when a speaker returns after a break in recognition and another speaker has intervened, without waiting for recognition to finalize. Continuous overlapping speech keeps each speaker's paragraph readable. Show source immediately until translation arrives, then emphasize the target with distinct source beneath it. There is no translation busy label; same-language captions avoid duplicate text.
 - Save preparation before recording and transcripts incrementally to SwiftData, with pause, resume, crash recovery, history, and Markdown export.
 - Reopen the last selected meeting. Interrupted recordings reopen paused; prepared drafts remain drafts. A missing or deleted selection chooses a remaining meeting, or the empty state when none remain.
 - Configure AI once in the AI Services settings tab. Insights, refinement, meeting titles, and Markdown vocabulary generation share that configuration, each with its own typed output contract.

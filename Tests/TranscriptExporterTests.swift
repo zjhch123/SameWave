@@ -10,9 +10,9 @@ final class TranscriptExporterTests: XCTestCase {
                 let sourceText = source == .english ? "Let's review the plan." : "我们来讨论计划。"
                 let targetText = target == .english ? "Let's review the plan." : "我们来讨论计划。"
                 let store = CaptionStore()
-                let result = store.appendCommitted(sourceText, speaker: .remote)
-                let generation = try XCTUnwrap(store.beginTranslation(id: result.sectionId))
-                store.applyTranslation(targetText, id: result.sectionId, generation: generation)
+                store.updateSource(sourceText, speaker: .remote, isFinal: true)
+                let generation = try XCTUnwrap(store.beginTranslation(id: 0))
+                store.applyTranslation(targetText, id: 0, generation: generation)
 
                 let markdown = TranscriptExporter.markdown(store: store, showsSourceEcho: pair.needsTranslation)
 

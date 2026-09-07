@@ -122,16 +122,16 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 - System audio only: remote works; disabled microphone creates no mine Section.
 - Both streams: speaker labels remain correctly assigned.
-- Other → me → other: Section order follows first-observed utterances.
-- Overlap: both interims appear immediately; alternating revisions stay in their own Sections. Late finals correct the original Section once; continuation opens after the interruption. Repeat with speaker identities reversed.
+- Other → me → other: after at least one second without added remote words, the return opens a third paragraph before either recognizer finalizes. Repeated returns create later turns without copying cumulative prefixes; dense overlapping growth stays in two paragraphs.
+- Overlap: added trailing words refresh activity; spelling/punctuation/middle-word corrections retain ownership without taking the floor or extending activity. Late finals commit every owned fragment once. Repeat with identities reversed, repeated words, Chinese, and retracted continuations.
 - Long monologue: the seventh utterance opens a new Section on its first interim or direct final; translation retains context.
-- Empty partials do not create Sections. Recognized partials from either channel remain visible without alternating-update fragmentation.
+- Empty/nonlexical partials do not create Sections. Pause/end preserves fragments from all pending hypotheses, including sealed turns.
 - Add, remove, and duplicate vocabulary terms; save and reopen to verify normalization/persistence.
 - Saving vocabulary during recording leaves current recognizers unchanged; pause/resume activates the new list for both English streams.
 
 ### 8.2 Translation
 
-- Growing interim text does not produce a long UI backlog.
+- Growing interim text does not produce a long UI backlog. Before the first translation, source appears once as the primary caption. No pending, progressive, completed, or failed state displays Translating or a translation spinner.
 - During continuous speech, earlier useful results appear while newer snapshots wait; late older replies never overwrite a newer displayed result.
 - Both open and sealed Sections reach done when current source is translated; identical final/seal events do not restart work.
 - Failure marks the Section failed, preserves source, and does not block pause/end indefinitely. Preparation failure also fails subsequent requests. A prepared request exceeding 15 seconds fails and cancels its session; pause/resume prepares a fresh one.
@@ -180,7 +180,7 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 `Tests/` protects:
 
-1. `CaptionStore` symmetric overlap, utterance ownership/continuation, six-sentence split, partial-tail retention, restore IDs/context, progressive translation, and source deduplication.
+1. `CaptionStore` symmetric returns before finalization, controlled inactivity boundaries, dense simultaneous growth, cumulative word ownership, native English snapshot replay, corrections/retractions, six-fragment split, frozen context, all-tail retention, restore IDs, progressive translation, and source deduplication.
 2. `TranslationBridge` replacement, cross-Section fairness, 100-update progress, idle drain, cancellation/restart, preparation failure, empty/error responses, deadlines, and stale replies.
 3. `MeetingHistoryStore.sync/finish` upsert, stale deletion, and empty-workspace retention; draft/attachment on-disk reopen and cascade ownership.
 4. Full insight context, explicit budgets, strict JSON Schema/evidence, automatic gates, manual priority, cancellation, history versions, and save retry.
@@ -195,13 +195,25 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 Hosted XCTest launches detect `XCTestBundlePath`: app assembly uses an in-memory history container, skips restoring personal meeting selection, and does not request speech/microphone permission. AI settings also avoid loading the real key. Tests create their own in-memory or temporary on-disk stores and controlled providers. Passing domain tests does not prove real capture, permission reuse, translation, or recognition accuracy; those remain signed-app smoke checks.
 
-## Live caption regression validation (2026-09-07)
+## Initial live caption regression validation (2026-09-07)
 
 For issues #12 and #13, XcodeGen and the unsigned Debug build passed, followed by 203/203 XCTest cases on scheme SameWave, destination `platform=macOS,arch=arm64`. Native test renders show both open speakers, progressive translation, completed translations without a busy label, and explicit source-preserving failures.
 
 The signed desktop build passed strict signature verification and process checks. In a dedicated `Caption regression smoke test` meeting, synthetic English audio played through the system output and was also picked up by the microphone. Both capture streams displayed interim source and Chinese translations during playback. Pause drained recognition and cleared translation progress; resume accepted a new spoken passage and translated both streams. End saved the four substantive Sections, original English, and Chinese output in history. The retained smoke record contains synthetic text; no AI insights were requested.
 
-This verifies real local capture/recognition/translation and pause/resume/end on this machine. It does not measure natural two-person interruption timing or recognition accuracy under other microphones, noise, and language-resource conditions; deterministic overlap tests cover the ownership and ordering cases independently of Speech timing.
+This initial run verified local capture/recognition/translation and pause/resume/end. Its tests still expected one open Section per unfinished recognizer; the subsequent user report showed that this expectation allowed continuations to extend an older paragraph. It did not validate the corrected immediate three-turn behavior. See [the replacement decision](DECISIONS.md#dec-20260907-004) and current rendering requirements.
+
+## Turn correction validation (2026-09-07)
+
+Final XcodeGen and unsigned Debug build passed. Full XCTest passed 213/213 on scheme SameWave, destination `platform=macOS,arch=arm64`. The desktop app was replaced and launched with the existing Apple Development signature; strict signature verification and the installed executable's process check passed. The Mac locked before the final signed-app dual-input rerun, so that check remains unverified. Automated native renders, controlled activity/ownership tests, and persistence/export checks passed; recognition latency and real conversational boundary quality remain manual checks.
+
+Regressions require a returning speaker's new paragraph before either recognizer finalizes, while dense simultaneous growth remains in two readable paragraphs. The controlled monotonic clock tests the one-second recognition-inactivity boundary without sleeping. Cases also cover 20 repeated interruptions, corrections that do not refresh activity, late finals spanning several turns, repeated words, Chinese/mixed source, retractions, all-tail preservation, translation scheduling, and ordered persistence/export.
+
+A native English DictationTranscriber probe using progressive long dictation and audioTimeRange showed one coarse interval per cumulative interim; per-word intervals appeared only in the final. A SpeechDetector probe alongside it returned no activity events, including with two-second silent intervals. Selected actual recognition text snapshots are replayed through production CaptionStore with interleaved replies and controlled arrival times. Native SwiftUI renders verify source-first pending captions in three paragraphs, progressive/completed translation, and explicit failure, all without Translating. These checks do not assert precise acoustic boundaries or perfect alignment of arbitrary recognizer rewrites.
+
+A pre-final signed-app probe exposed excessive segmentation when both capture channels heard the same synthetic speech and every new word acquired the floor. That rejected behavior is retained only as a synthetic history record named `Turn boundary regression smoke test`; it motivated the dense-overlap regression and activity rule. It is not passing evidence for the final implementation.
+
+The vocabulary scroll-retention fixture also exposed a desktop dependency during the full test gate: its synthetic wheel event inherited the real pointer location, outside the test window, and was ignored. It now positions the native clip view directly, as its existing bottom-of-list check already did, then verifies the same saved offsets across tab changes, arrivals, and reopening. This removes pointer dependence without changing vocabulary production code or relaxing assertions.
 
 ## Phase 2 acceptance
 

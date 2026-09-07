@@ -146,15 +146,15 @@ final class TranslationBridgeTests: XCTestCase {
         }
         let consumer = run(bridge, probe: probe)
         defer { consumer.cancel(); probe.finishAll() }
-        store.updateInterim("one", speaker: .remote)
+        store.updateSource("one", speaker: .remote, isFinal: false)
         enqueue(bridge, section: 0, generation: try XCTUnwrap(store.beginTranslation(id: 0)), text: "one")
         try await Phase2Fixture.waitUntil { probe.requests.count == 1 }
         for index in 2...100 {
             let text = "sentence version \(index)"
-            store.updateInterim(text, speaker: .remote)
+            store.updateSource(text, speaker: .remote, isFinal: false)
             enqueue(bridge, section: 0, generation: try XCTUnwrap(store.beginTranslation(id: 0)), text: text)
         }
-        store.updateInterim("my reply", speaker: .mine)
+        store.updateSource("my reply", speaker: .mine, isFinal: false)
         enqueue(bridge, section: 1, generation: try XCTUnwrap(store.beginTranslation(id: 1)), text: "my reply")
         probe.finish(0, text: "First useful translation")
         try await Phase2Fixture.waitUntil { probe.requests.count == 2 }

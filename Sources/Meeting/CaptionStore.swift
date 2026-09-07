@@ -1,9 +1,9 @@
 import Foundation
 import Observation
 
-/// Owns source sections and translation progress on the main actor. Each speaker's
-/// unfinished utterance retains its section across overlap; new utterances are
-/// ordered by their first observed ASR result, without waiting for the other stream.
+/// Owns display turns independently of cumulative recognition. Continuous overlap
+/// retains each speaker's paragraph; speech returning after an interruption opens
+/// a later one, while corrections retain the existing words' ownership.
 @MainActor
 @Observable
 final class CaptionStore {
@@ -16,17 +16,15 @@ final class CaptionStore {
     /// paragraph's context.
     private let maxSentencesPerSection = 6
 
-    /// TRANSLATION context window: how many of a speaker's preceding sentences are
-    /// frozen onto a new section as leading context, and a char budget to bound the
-    /// combined translation input's latency. Independent of the display cap.
     private let contextWindowSentences = 5
     private let contextWindowMaxChars = 240
-    /// Rolling last-N committed sentences per speaker, independent of section
-    /// boundaries — the source of each new section's `priorContext` snapshot.
-    private var recentSentences: [Speaker: [String]] = [:]
-
     private var nextId = 0
     private var openSections: [Speaker: Int] = [:]
+    private var hypotheses: [Speaker: SpeechHypothesis] = [:]
+    /// Recognition activity, not callback arrival alone: corrections do not extend
+    /// it. A one-second gap in added words distinguishes a return from dense overlap.
+    private let turnInactivity: Duration = .seconds(1)
+    private var lastGrowth: [Speaker: ContinuousClock.Instant] = [:]
 
     // MARK: - Lookup
 
@@ -41,32 +39,41 @@ final class CaptionStore {
     /// The most recent context window for `speaker` (chronological, newest last),
     /// bounded by sentence count and a char budget — frozen onto a section at open.
     private func contextSnapshot(for speaker: Speaker) -> [String] {
+        let sentences = sections.filter { $0.speaker == speaker }.flatMap { section in
+            section.committedSource + (section.interimSource.isEmpty ? [] : [section.interimSource])
+        }
         var picked: [String] = []
         var chars = 0
-        for sentence in (recentSentences[speaker] ?? []).reversed() {   // newest → oldest
+        for sentence in sentences.reversed() {
             if picked.count >= contextWindowSentences { break }
             if chars + sentence.count > contextWindowMaxChars && !picked.isEmpty { break }
             picked.append(sentence)
             chars += sentence.count
         }
-        return picked.reversed()   // back to chronological order
+        return picked.reversed()
     }
 
     // MARK: - Source sections
 
-    /// Revisions and finals belong to the speaker's unfinished utterance, even if
-    /// the other speaker has opened a later section. Only a new utterance can split.
-    private func sectionForUtterance(_ speaker: Speaker) -> (sectionId: Int, sealed: Int?) {
-        var sealed: Int?
-        if let id = openSections[speaker], let current = section(id: id) {
-            if !current.interimSource.isEmpty || current.committedSource.count < maxSentencesPerSection {
-                return (id, nil)
-            }
-            sealed = endTurn(speaker)
+    private func isGrowing(_ speaker: Speaker, at time: ContinuousClock.Instant) -> Bool {
+        guard let last = lastGrowth[speaker] else { return false }
+        return last.duration(to: time) < turnInactivity
+    }
+
+    private func takeTurn(_ speaker: Speaker, at time: ContinuousClock.Instant) -> (opened: Int, sealed: [Int]) {
+        if let id = openSections[speaker], let current = section(id: id),
+           current.committedSource.count < maxSentencesPerSection,
+           sections.last?.id == id || isGrowing(speaker, at: time) {
+            return (id, [])
         }
-        if let previous = sections.last, previous.speaker != speaker,
-           previous.contentState == .open, previous.interimSource.isEmpty {
-            sealed = endTurn(previous.speaker)
+        // Close idle or finalized contributions, retaining unfinished continuous
+        // overlap. The recognizer hypothesis survives either kind of display seal.
+        let sealed = openSections.filter { owner, _ in
+            owner == speaker || !isGrowing(owner, at: time) || hypotheses[owner] == nil
+        }
+        for (owner, id) in sealed {
+            mutate(id: id) { $0.contentState = .sealed }
+            openSections.removeValue(forKey: owner)
         }
         let id = nextId
         nextId += 1
@@ -74,52 +81,67 @@ final class CaptionStore {
         section.priorContext = contextSnapshot(for: speaker)
         sections.append(section)
         openSections[speaker] = id
-        return (id, sealed)
+        return (id, Array(sealed.values))
     }
 
-    /// Stop accepting ASR for this speaker, preserving the last visible hypothesis
-    /// if finalization could not commit it. Translation remains independent.
+    /// Apply one cumulative ASR snapshot. Only added speech can acquire the floor;
+    /// corrections retain their words' section IDs, including after sealing.
+    /// Returns every affected section for native captions and translation scheduling.
     @discardableResult
-    func endTurn(_ speaker: Speaker) -> Int? {
-        guard let id = openSections.removeValue(forKey: speaker) else { return nil }
-        mutate(id: id) { section in
-            section.contentState = .sealed
-            let tail = section.interimSource.trimmed
-            if !tail.isEmpty { section.committedSource.append(tail) }
-            section.interimSource = ""
+    func updateSource(_ text: String, speaker: Speaker, isFinal: Bool,
+                      at time: ContinuousClock.Instant = .now) -> [Int] {
+        guard !text.trimmed.isEmpty else { return [] }
+        let previous = hypotheses[speaker] ?? SpeechHypothesis()
+        var words = previous.revising(text)
+        guard !words.isEmpty else { return [] }
+        var changed = Set(previous.words.compactMap(\.sectionID))
+        if words.contains(where: { $0.sectionID == nil }) {
+            let turn = takeTurn(speaker, at: time)
+            changed.formUnion(turn.sealed)
+            lastGrowth[speaker] = time
+            for index in words.indices where words[index].sectionID == nil {
+                words[index].sectionID = turn.opened
+            }
         }
-        if let index = indexOf(id: id), sections[index].sourceText.isEmpty {
-            sections.remove(at: index)
-        }
-        return id
-    }
-
-    @discardableResult
-    func appendCommitted(_ sentence: String, speaker: Speaker) -> (sectionId: Int, sealed: Int?) {
-        let (id, previousSealed) = sectionForUtterance(speaker)
-        let text = sentence.trimmed
-        if !text.isEmpty {
+        changed.formUnion(words.compactMap(\.sectionID))
+        for id in changed {
+            // A speaker switch can also seal the other speaker's section. Its
+            // hypothesis remains owned by that recognizer and is not rewritten here.
+            guard section(id: id)?.speaker == speaker else { continue }
+            let fragment = words.filter { $0.sectionID == id }.map(\.text).joined().trimmed
             mutate(id: id) { section in
-                section.committedSource.append(text)
+                if isFinal && !fragment.isEmpty { section.committedSource.append(fragment) }
+                section.interimSource = isFinal ? "" : fragment
+            }
+        }
+        hypotheses[speaker] = isFinal ? nil : SpeechHypothesis(words: words)
+        if isFinal, let id = openSections[speaker], sections.last?.id != id {
+            mutate(id: id) { $0.contentState = .sealed }
+            openSections.removeValue(forKey: speaker)
+            changed.insert(id)
+        }
+        // A recognizer can retract an entire fragment. Remove its display row and
+        // identity so a late translation cannot bring the deleted words back.
+        sections.removeAll { changed.contains($0.id) && $0.sourceText.isEmpty }
+        openSections = openSections.filter { section(id: $0.value) != nil }
+        return changed.sorted()
+    }
+
+    /// Pause/end promotes each pending fragment once, including those belonging to
+    /// already sealed turns. Normal speaker switches never finalize another ASR stream.
+    @discardableResult
+    func endTurn(_ speaker: Speaker) -> [Int] {
+        var changed = Set(hypotheses.removeValue(forKey: speaker)?.words.compactMap(\.sectionID) ?? [])
+        if let id = openSections.removeValue(forKey: speaker) { changed.insert(id) }
+        lastGrowth.removeValue(forKey: speaker)
+        for id in changed {
+            mutate(id: id) { section in
+                section.contentState = .sealed
+                if !section.interimSource.isEmpty { section.committedSource.append(section.interimSource) }
                 section.interimSource = ""
             }
-            recentSentences[speaker, default: []].append(text)
-            let overflow = recentSentences[speaker]!.count - contextWindowSentences
-            if overflow > 0 { recentSentences[speaker]!.removeFirst(overflow) }
         }
-        // A late final corrects its original bubble once. The speaker's continuation
-        // starts a new section after the interruption, never extending an older turn.
-        let sealed = sections.last?.id == id ? previousSealed : endTurn(speaker)
-        return (id, sealed)
-    }
-
-    @discardableResult
-    func updateInterim(_ text: String, speaker: Speaker) -> (sectionId: Int?, sealed: Int?) {
-        let text = text.trimmed
-        guard !text.isEmpty else { return (nil, nil) }
-        let (id, sealed) = sectionForUtterance(speaker)
-        mutate(id: id) { $0.interimSource = text }
-        return (id, sealed)
+        return changed.sorted()
     }
 
     // MARK: - Translation (Rule B — independent axis)
@@ -174,8 +196,9 @@ final class CaptionStore {
     func clear() {
         sections.removeAll()
         openSections.removeAll()
+        hypotheses.removeAll()
+        lastGrowth.removeAll()
         nextId = 0
-        recentSentences.removeAll()
     }
 
     /// Rebuild the transcript from a persisted meeting so a resumed / recovered
@@ -188,8 +211,9 @@ final class CaptionStore {
     func restore(sections restored: [(id: Int, speaker: Speaker, source: String,
                                       target: String, startedAt: Date)]) {
         sections.removeAll()
-        recentSentences.removeAll()
         openSections.removeAll()
+        hypotheses.removeAll()
+        lastGrowth.removeAll()
         var maxId = -1
         for r in restored {
             var s = Section(id: r.id, speaker: r.speaker)
@@ -200,12 +224,6 @@ final class CaptionStore {
             s.targetText = r.target
             s.startedAt = r.startedAt
             sections.append(s)
-            if !src.isEmpty {
-                recentSentences[r.speaker, default: []].append(src)
-                if recentSentences[r.speaker, default: []].count > contextWindowSentences {
-                    recentSentences[r.speaker]?.removeFirst()
-                }
-            }
             maxId = max(maxId, r.id)
         }
         nextId = maxId + 1

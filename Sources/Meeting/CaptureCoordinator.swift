@@ -541,38 +541,24 @@ final class CaptureCoordinator {
 
     private func handleInterim(_ text: String, speaker: Speaker) {
         guard sessionState == .recording || sessionState == .starting else { return }
-        let text = text.trimmed
-        guard !text.isEmpty else { return }
-        let (sectionID, sealedID) = store.updateInterim(text, speaker: speaker)
-        if let sealedID { scheduleTranslation(id: sealedID) }
-        guard let sectionID else { return }
-
-        if languagePair.needsTranslation {
-            scheduleTranslation(id: sectionID)
-        } else {
-            store.setNativeCaption(id: sectionID)
-        }
+        updateCaptions(store.updateSource(text, speaker: speaker, isFinal: false))
     }
 
-    private func handleCommit(_ recognized: String, speaker: Speaker) {
+    private func handleCommit(_ text: String, speaker: Speaker) {
         guard sessionState != .idle else { return }
-        let text = recognized.trimmed
-        guard !text.isEmpty else { return }
-        let (sectionID, sealedID) = store.appendCommitted(text, speaker: speaker)
-        if let sealedID { scheduleTranslation(id: sealedID) }
-
-        if languagePair.needsTranslation {
-            scheduleTranslation(id: sectionID)
-        } else {
-            store.setNativeCaption(id: sectionID)
-        }
+        updateCaptions(store.updateSource(text, speaker: speaker, isFinal: true))
         tickInsights()
     }
 
-    private func sealTurn(_ speaker: Speaker) {
-        if let sectionID = store.endTurn(speaker) {
-            scheduleTranslation(id: sectionID)
+    private func updateCaptions(_ sectionIDs: [Int]) {
+        for id in sectionIDs {
+            if languagePair.needsTranslation { scheduleTranslation(id: id) }
+            else { store.setNativeCaption(id: id) }
         }
+    }
+
+    private func sealTurn(_ speaker: Speaker) {
+        updateCaptions(store.endTurn(speaker))
     }
 
     private func sealOpenTurn() {
