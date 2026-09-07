@@ -122,19 +122,20 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 - System audio only: remote works; disabled microphone creates no mine Section.
 - Both streams: speaker labels remain correctly assigned.
-- Other → me → other: Section order follows final commit order.
-- Overlap: current single-floor serialization behaves as expected.
-- Long monologue: the seventh final sentence opens a new Section; translation retains context.
-- Noisy partials: non-floor interim does not cause unstable segmentation.
+- Other → me → other: Section order follows first-observed utterances.
+- Overlap: both interims appear immediately; alternating revisions stay in their own Sections. Late finals correct the original Section once; continuation opens after the interruption. Repeat with speaker identities reversed.
+- Long monologue: the seventh utterance opens a new Section on its first interim or direct final; translation retains context.
+- Empty partials do not create Sections. Recognized partials from either channel remain visible without alternating-update fragmentation.
 - Add, remove, and duplicate vocabulary terms; save and reopen to verify normalization/persistence.
 - Saving vocabulary during recording leaves current recognizers unchanged; pause/resume activates the new list for both English streams.
 
 ### 8.2 Translation
 
 - Growing interim text does not produce a long UI backlog.
-- A late old generation cannot overwrite a newer translation.
-- A sealed Section reaches done after a speaker switch.
-- Failure marks the Section failed, preserves source, and does not block pause/end indefinitely.
+- During continuous speech, earlier useful results appear while newer snapshots wait; late older replies never overwrite a newer displayed result.
+- Both open and sealed Sections reach done when current source is translated; identical final/seal events do not restart work.
+- Failure marks the Section failed, preserves source, and does not block pause/end indefinitely. Preparation failure also fails subsequent requests. A prepared request exceeding 15 seconds fails and cancels its session; pause/resume prepares a fresh one.
+- Change language pairs while the mailbox is idle, then start/resume and verify new requests complete. Restore a paused meeting with a missing translation and verify source/failure, without Translating.
 - English→English and Simplified Chinese→Simplified Chinese send no requests and show no duplicate source.
 - Both cross-language directions display the selected target. Menu names stay English and Simplified Chinese.
 - If the translator rewrites the context delimiter, target-only translation remains available.
@@ -179,8 +180,8 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 `Tests/` protects:
 
-1. `CaptionStore` floor switches, six-sentence split, non-floor interim, restore IDs/context, generation.
-2. `TranslationBridge` replacement, cross-Section order, idle drain.
+1. `CaptionStore` symmetric overlap, utterance ownership/continuation, six-sentence split, partial-tail retention, restore IDs/context, progressive translation, and source deduplication.
+2. `TranslationBridge` replacement, cross-Section fairness, 100-update progress, idle drain, cancellation/restart, preparation failure, empty/error responses, deadlines, and stale replies.
 3. `MeetingHistoryStore.sync/finish` upsert, stale deletion, and empty-workspace retention; draft/attachment on-disk reopen and cascade ownership.
 4. Full insight context, explicit budgets, strict JSON Schema/evidence, automatic gates, manual priority, cancellation, history versions, and save retry.
 5. Refinement line/character batch limits; per-meeting progress, concurrent owners, navigation, title independence, deletion, partial failure, retry, and scoped persistence rollback.
@@ -193,6 +194,14 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 12. English identity, output templates, metadata, title/insight prompts, and selected-language preservation.
 
 Hosted XCTest launches detect `XCTestBundlePath`: app assembly uses an in-memory history container, skips restoring personal meeting selection, and does not request speech/microphone permission. AI settings also avoid loading the real key. Tests create their own in-memory or temporary on-disk stores and controlled providers. Passing domain tests does not prove real capture, permission reuse, translation, or recognition accuracy; those remain signed-app smoke checks.
+
+## Live caption regression validation (2026-09-07)
+
+For issues #12 and #13, XcodeGen and the unsigned Debug build passed, followed by 203/203 XCTest cases on scheme SameWave, destination `platform=macOS,arch=arm64`. Native test renders show both open speakers, progressive translation, completed translations without a busy label, and explicit source-preserving failures.
+
+The signed desktop build passed strict signature verification and process checks. In a dedicated `Caption regression smoke test` meeting, synthetic English audio played through the system output and was also picked up by the microphone. Both capture streams displayed interim source and Chinese translations during playback. Pause drained recognition and cleared translation progress; resume accepted a new spoken passage and translated both streams. End saved the four substantive Sections, original English, and Chinese output in history. The retained smoke record contains synthetic text; no AI insights were requested.
+
+This verifies real local capture/recognition/translation and pause/resume/end on this machine. It does not measure natural two-person interruption timing or recognition accuracy under other microphones, noise, and language-resource conditions; deterministic overlap tests cover the ownership and ordering cases independently of Speech timing.
 
 ## Phase 2 acceptance
 

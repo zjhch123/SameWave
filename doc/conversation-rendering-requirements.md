@@ -1,229 +1,58 @@
-# One-on-One Live Meeting Translation — Conversation Rendering Requirements and State Machine
+# Live Meeting Conversation Rendering Requirements
 
-> Audience: developers
-> Goal: define conversation Section segmentation, sealing, and translation rendering for one-on-one live translation.
-> Type: product design baseline, not a direct description of current runtime behavior.
-> Implementation comparison: [Live captions and translation](02-live-captions-and-translation.md), [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift), and [`CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift).
+> Current contract for one-on-one system-audio and microphone captions. See [the pipeline reference](02-live-captions-and-translation.md) and [DEC-20260907-003](DECISIONS.md#dec-20260907-003).
 
----
+## 1. Speaker symmetry and immediate feedback
 
-## 1. Core concepts
+- Either speaker's first nonempty ASR interim or final opens a Section immediately, including short acknowledgments.
+- One unfinished Section per speaker may remain open during overlap. Both speakers' source text updates without waiting for the other's final result or translation.
+- IDs and display order follow the first observed result that opens each Section. Do not reorder Sections when final recognition or translation arrives.
+- Capture channels define identity: microphone is You, system audio is Speaker. Multiple remote people share the system-audio identity.
 
-- **Section:** continuous speech by one person, uninterrupted by the other. Each Section belongs to one speaker and contains source and target text; translation may arrive asynchronously.
-- **Speaker symmetry:** ownership depends only on who speaks, with no special treatment for me versus the other participant. The first speaker owns Section 0.
-- **Sealing:** stop appending new ASR source text, but **allow corrections to existing source text** and asynchronous translation completion.
-- **Orthogonal rules:** segmentation (Rule A) and translation (Rule B) are independent. Translation state never decides segmentation.
+## 2. Utterance ownership and interruption
 
----
+- A speaker's interim revisions and final result belong to the same unfinished utterance. The final replaces its interim tail without duplicating the hypothesis.
+- If the other speaker opens a later Section during that utterance, keep the interrupted Section open for its remaining ASR revisions and final. Seal it when the final arrives; its next utterance opens a new Section after the interruption.
+- If the previous speaker has already committed their utterance, the new speaker's first result seals the previous Section immediately.
+- Adjacent utterances by one speaker share a Section until six sentences are committed. Split before the next interim or direct final, preserving translation context.
+- Pause/end finalizes ASR and seals both speakers. If ASR leaves a partial tail, preserve it alongside any earlier committed sentences.
+- Empty interim callbacks neither create a Section nor interrupt someone else.
 
-## 2. Two core rules
+The pipeline has ASR interim/final callbacks, without acoustic speech-start/end or continuous VAD. Do not infer word-level interruption boundaries from revised text or split every alternating partial. No sealed-source correction or duplicated interim-promotion path is required.
 
-**Rule A — Segmentation**
+## 3. Independent translation progress
 
-When speech switches from the current Section's owner to the other person, immediately seal the current Section and open one for the new speaker. If the interrupted speaker continues, that continuation is also a **new Section**.
+- Source segmentation never waits for translation. Open and sealed Sections can both be translating or done.
+- Translation begins for changed source snapshots only. Identical interims, finals, and sealing must not invalidate useful work.
+- Display each completed result that advances the displayed generation, even when newer source is queued. Never replace a newer displayed result with an older completion.
+- Mark done only when the latest requested snapshot completes. A later source update returns to translating.
+- A failed or empty translation shows source with a failure state. A missing translation after restore must not show perpetual work in progress.
+- Same-language captions bypass Translation and suppress duplicate source text.
 
-**Rule B — Independent translation**
+## 4. Scheduling and lifecycle
 
-Sealing stops only new source appends. Translation continues independently until complete. **Translation state never participates in segmentation decisions**; it only determines whether the UI shows Translating.
+- Coalesce pending snapshots per Section and retain FIFO fairness across Sections under one active request.
+- Reject callbacks from an older meeting or replaced translation consumer.
+- Consumer cancellation must not poison the wake-up mechanism for the next language pair/session. Preparation failure must also settle requests arriving after failure.
+- Bound prepared translation requests to 15 seconds. A deadline failure settles work, cancels the session, and rejects late results. Model preparation/downloads remain a separate phase.
+- Start/resume prepares a fresh Translation session. Pause/end waits up to five seconds for queued work after draining recognition, then preserves source and reports incomplete work where applicable.
 
-> All scenarios follow from these two rules.
+## 5. Required overlap walkthrough
 
----
+| Event | Sections and visible source |
+|---|---|
+| Remote interim | Section 0 opens with remote source |
+| My interim | Section 1 opens immediately; Section 0 remains available for its unfinished utterance |
+| Alternating revisions | Sections 0 and 1 update in place; no duplicate Sections |
+| Remote final | Section 0 receives the corrected final once and seals |
+| Remote continuation interim | Section 2 opens after Section 1 with frozen remote context |
+| My late final | Section 1 receives its corrected final once and seals |
+| Pause/end | All final results drain, remaining tails survive, and both speakers seal |
 
-## 3. Derived scenarios
+Reverse the speaker identities and require identical behavior. Translation may complete between any of these events without changing the Section ordering or ASR ownership.
 
-Assume the other participant speaks first; the reverse is symmetric.
+## 6. Repeatable validation
 
-Initial state: the other participant speaks → Section 0 (other).
+`CaptionStoreTests` covers symmetric overlap, late finals, continuation order, source retention, six-sentence splitting, duplicate snapshots, progressive translation, failure, and restore. `TranslationBridgeTests` covers dense input, fairness, idle/in-flight cancellation, preparation failure, empty/error responses, timeout, restart, and stale replies. Native rendering tests verify both speakers and progress/failure labels. Persistence tests verify that interim autosaves become final source without duplicate rows.
 
-When I start speaking:
-
-| Case | Other participant's state | Result |
-|---|---|---|
-| 3.1 | Still speaking; interrupted | Seal Section 0, translation continues; open Section 1 for me; their continuation opens Section 2 |
-| 3.2 | Finished speaking; translation still finishing | Seal Section 0, translation continues; open Section 1 for me |
-| 3.3 | Speech and translation both complete | Open Section 1 for me |
-
-> Cases 3.2 and 3.3 have identical segmentation; only 3.2 still shows Translating on Section 0.
-
----
-
-## 4. Confirmed boundary rules
-
-1. **Speaker symmetry:** the first speaker owns Section 0 regardless of identity.
-2. **Symmetric interruption:** the same rules apply in either direction.
-3. **Overlap order:** insert the interrupter's Section first, then the interrupted speaker's continuation. In 3.1, Section 1 (me) precedes Section 2 (other continuing).
-4. **Interrupted-sentence context:** reuse the existing sliding window when interruption splits a sentence, preserving cross-Section meaning rather than translating fragments independently.
-5. **Short acknowledgments/fillers** such as “mm-hm,” “OK,” or “yeah” use exactly the same triggers as ordinary speech, including sealing and new Sections. Prefer simple logic without exceptions.
-6. **ASR revisions:** permit corrections after sealing; prohibit only new content appends.
-
----
-
-## 5. State definitions
-
-### 5.1 Section lifecycle
-
-```text
-ACTIVE      Receiving this speaker's ASR source; appends and corrections allowed
-SEALED      No new source appends; existing source may be corrected; translation pending/active
-TRANSLATING Translation is being generated asynchronously; may coexist with SEALED
-DONE        Source frozen and translation complete; terminal state
-```
-
-`SEALED` and `TRANSLATING` are orthogonal dimensions. Prefer two fields:
-
-- `contentState`: `OPEN | SEALED` — whether new source is accepted.
-- `translationState`: `PENDING | TRANSLATING | DONE`.
-
-Unless ambiguous, “state” below refers to `contentState`.
-
-### 5.2 Section structure
-
-```text
-Section {
-  id               : int          // Global increasing ID; display-order basis
-  speaker          : SpeakerId    // Symmetric identity; ownership only
-  contentState     : OPEN | SEALED
-  translationState : PENDING | TRANSLATING | DONE
-  sourceText       : string       // OPEN: append/correct; SEALED: correct only
-  targetText       : string       // Asynchronous translation appends
-  startTime        : timestamp    // Overlap ordering
-}
-```
-
-### 5.3 Global controller state
-
-```text
-IDLE          Nobody speaking
-SINGLE        One speaker ACTIVE
-OVERLAP       Both speakers active; interruption in progress
-```
-
----
-
-## 6. Section transitions
-
-```text
-        ┌──────── Append/correct source ────────┐
-        ▼                                       │
-   [ CREATE ] ──► ACTIVE(OPEN) ──────────────────┘
-                     │
-                     │ Seal: other speaker starts
-                     ▼
-                  SEALED ─── Correct source ────┐
-                     │  ▲                       │
-                     │  └───────────────────────┘
-                     │
- Translation work ───┼──────────────────────────►
-                     ▼
-   PENDING ──► TRANSLATING ──► DONE
-                     ▲   │
-                     └───┘ Append translated chunks
-
- Terminal condition: contentState == SEALED && translationState == DONE ⇒ DONE
-```
-
-Sealing and translation are decoupled. Sealing is `ACTIVE → SEALED`; translation advances independently through `PENDING/TRANSLATING/DONE` without blocking segmentation.
-
----
-
-## 7. Controller transitions
-
-| Current | Event | Next | Meaning |
-|---|---|---|---|
-| IDLE | onSpeechStart(A) | SINGLE | Create Section(A) |
-| SINGLE | onSpeechStart(B), B differs from current speaker | OVERLAP | Seal A; create Section(B) |
-| SINGLE | onSpeechEnd(A) | IDLE | Seal A |
-| SINGLE | onSpeechStart(A), same speaker; theoretically absent | SINGLE | Ignore/merge |
-| OVERLAP | onSpeechEnd(one speaker) | SINGLE | Other remains active |
-| OVERLAP | onSpeechEnd(both in succession) | IDLE | Seal all |
-| OVERLAP | onSpeechStart(interrupted speaker continuing) | OVERLAP | Create a continuation Section |
-
----
-
-## 8. Events and actions
-
-| Event | Condition | Action |
-|---|---|---|
-| `onSpeechStart(spk)` | No current ACTIVE Section | Create Section(spk) → ACTIVE; controller → SINGLE |
-| `onSpeechStart(spk)` | Another speaker has an ACTIVE Section | Seal it (`OPEN→SEALED`); create Section(spk) → ACTIVE; controller → OVERLAP |
-| `onAsrUpdate(spk, text)` | Speaker's Section OPEN | Append/correct sourceText |
-| `onAsrUpdate(spk, text)` | Speaker's Section SEALED | **Correct existing sourceText only**; reject additions |
-| `onSpeechEnd(spk)` | Any | Mark speaker inactive; controller → IDLE if none active, otherwise SINGLE |
-| `onTranslationChunk(id, t)` | Any | Append targetText; translationState → TRANSLATING |
-| `onTranslationDone(id)` | Any | translationState → DONE; Section DONE if contentState==SEALED |
-
-> Short acknowledgments have no special handling: `onSpeechStart` treats “mm-hm/OK/yeah” like any other speech and triggers sealing.
-
----
-
-## 9. Interruption walkthrough (case 3.1)
-
-```text
-t0  Other participant speaks → Section 0 (other, ACTIVE)
-t1  I interrupt
-      · Section 0: OPEN → SEALED; translation continues
-      · Create Section 1 (me, ACTIVE)
-      · Controller → OVERLAP
-t2  Other participant continues
-      · Create Section 2 (other, ACTIVE)
-t3  I finish: onSpeechEnd(me)
-      · Section 1 → SEALED
-      · Controller → SINGLE; other participant remains active
-```
-
-Display strictly by ascending `section.id`. Creating the interrupter first and the continuation second naturally satisfies boundary rule 3: Section 1 before Section 2.
-
----
-
-## 10. Segmentation pseudocode
-
-```python
-def on_speech_start(spk):
-    cur = active_section_of_other_speaker(spk)
-    if cur is not None:
-        seal(cur)                     # OPEN -> SEALED; schedule translation
-    new_sec = create_section(spk)     # Increasing ID, ACTIVE/OPEN
-    new_sec.startTime = now()
-    update_controller_state()
-
-def on_asr_update(spk, text):
-    sec = active_section_of(spk)
-    if sec.contentState == OPEN:
-        sec.sourceText = merge_append_or_correct(sec.sourceText, text)
-    else:  # SEALED
-        sec.sourceText = correct_only(sec.sourceText, text)  # Reject new content
-    reschedule_translation(sec)
-
-def seal(sec):
-    sec.contentState = SEALED
-    schedule_translation(sec)         # Enter PENDING
-
-def on_translation_chunk(id, chunk):
-    sec = get(id)
-    sec.targetText += chunk
-    sec.translationState = TRANSLATING
-
-def on_translation_done(id):
-    sec = get(id)
-    sec.translationState = DONE
-    # Terminal state derives from contentState==SEALED && translationState==DONE
-```
-
----
-
-## 11. Translation context: sliding window
-
-When interruption splits a sentence across Sections, such as the tail of Section 0 and head of Section 2, translation must not treat each independently. Reuse the existing sliding window: include neighboring prior context from the same speaker when translating a Section to preserve meaning across boundaries.
-
-```python
-def translate(sec):
-    context = sliding_window(sec.speaker, before=sec)  # Reuse existing mechanism
-    submit(source=sec.sourceText, context=context)
-```
-
----
-
-## 12. Open engineering question
-
-- **Concurrent translation across Sections:** repeated interruptions can leave multiple SEALED Sections with `translationState != DONE`, such as Sections 0 and 2. Developers should choose scheduling, queues, and performance strategies: serial execution, parallel work with frozen context, priorities, or another justified approach.
+Real capture latency, Speech model accuracy, and Apple Translation speed remain platform-dependent signed-app smoke checks; deterministic tests validate state and scheduling rather than those services' quality.

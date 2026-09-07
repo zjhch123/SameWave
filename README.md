@@ -19,7 +19,8 @@ The app, executable, Swift module, project, target, and scheme all use the name 
 - Reopen the last selected meeting. Interrupted recordings reopen paused; prepared drafts remain drafts. A missing or deleted selection chooses a remaining meeting, or the empty state when none remain.
 - Configure AI once in the AI Services settings tab. Insights, refinement, meeting titles, and Markdown vocabulary generation share that configuration, each with its own typed output contract.
 - Use built-in Qwen and Kimi models that support Structured Outputs. Custom services accept a domain, a versioned URL, or a complete endpoint; Test Connection verifies a nested structured-output contract.
-- Manage recording, pausing, and ending through an explicit state machine. Drain audio, ASR, and translation before the final save.
+- Show both speakers' live captions during overlap and update translations as results arrive, even while speech continues.
+- Manage recording, pausing, and ending through an explicit state machine. Drain audio and ASR before the final save, with a bounded wait for translation.
 
 ## Requirements
 

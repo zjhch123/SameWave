@@ -116,7 +116,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 - [`CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift): lifecycle, dual-stream assembly, ASR routing, translation and persistence scheduling.
 - [`MeetingModels.swift`](../Sources/Meeting/MeetingModels.swift): speakers, languages, lifecycle, Section content/translation state types.
-- [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift): single-floor ownership, segmentation, source text, translation versions.
+- [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift): per-speaker utterance ownership, overlap segmentation, source text, translation progress.
 - [`TranslationBridge.swift`](../Sources/Meeting/TranslationBridge.swift): latest pending request per Section, in-flight tracking, awaitable idle boundary.
 - [`TranslationPump.swift`](../Sources/Meeting/TranslationPump.swift): long-lived `TranslationSession`, translation execution and results.
 
@@ -163,7 +163,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 ### 5.8 Tests and concurrency
 
-- [`CaptionStoreTests.swift`](../Tests/CaptionStoreTests.swift): segmentation, floor, restore, generation invariants.
+- [`CaptionStoreTests.swift`](../Tests/CaptionStoreTests.swift): segmentation, overlap ownership, restore, translation progress invariants.
 - [`TranslationBridgeTests.swift`](../Tests/TranslationBridgeTests.swift): coalescing, cross-Section ordering, idle drain.
 - [`MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift): in-memory upsert, pruning, and empty-workspace retention. `MeetingWorkspaceTests.swift` also verifies on-disk reopen and artifact ownership.
 - [`InsightEngineTests.swift`](../Tests/InsightEngineTests.swift): full input, scheduling, priority, cancellation, versioned persistence, failures, and strict result parsing.

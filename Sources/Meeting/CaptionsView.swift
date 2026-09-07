@@ -1,14 +1,7 @@
 import SwiftUI
 
-/// The live transcript stage: a centered single-column text stream rendered in
-/// section-id order. The active speaker gets the only open section; a finalized
-/// sentence from the other speaker seals it and opens the next section. Interims from
-/// the non-active stream cannot reorder the transcript.
-///
-/// Each section shows a speaker label (mine → "You" in accent blue; remote → "Speaker"
-/// in meta gray), the selected target language as the large primary line, and the
-/// source text as a small muted secondary line. A still-translating section shows a subtle
-/// "Translating" indicator (spec Rule B — translation state affects only the UI hint).
+/// Renders sections in first-observed order. Both speakers' unfinished utterances
+/// remain visible during overlap, and translation progress is independent of ASR.
 struct CaptionsView: View {
     let store: CaptionStore
     var isListening = false
@@ -42,8 +35,9 @@ struct CaptionsView: View {
 
     /// Cheap change signal so the scroll view knows to re-pin to the bottom.
     private var scrollSignal: String {
-        guard let last = store.sections.last else { return "0" }
-        return "\(store.sections.count)|\(last.id)|\(last.targetText.count)|\(last.committedSource.count)|\(last.interimSource.count)|\(translationSignal(last.translationState))"
+        store.sections.suffix(2).map { section in
+            "\(section.id)|\(section.sourceText)|\(section.targetText)|\(translationSignal(section.translationState))"
+        }.joined(separator: "\n")
     }
 
     private func translationSignal(_ state: TranslationState) -> Int {
@@ -126,8 +120,7 @@ struct CaptionsView: View {
         let target = section.targetText.trimmed
         let source = section.sourceText
         let failed = section.translationState == .failed
-        let translating = section.contentState == .sealed
-            && (section.translationState == .pending || section.translationState == .translating)
+        let translating = section.translationState == .pending || section.translationState == .translating
         let primary = failed ? source : target
         VStack(alignment: .leading, spacing: 6) {
             // Speaker label + spoken time + translation status (UI-only).
@@ -139,7 +132,7 @@ struct CaptionsView: View {
                 Text(Self.timeString(section.startedAt))
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Self.meta.opacity(0.7))
-                if translating {
+                if translating && !target.isEmpty {
                     Text(Self.translatingHint)
                         .font(.system(size: 11))
                         .foregroundStyle(Self.meta.opacity(0.8))

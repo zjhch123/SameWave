@@ -18,7 +18,7 @@ Start saves the selected draft's language pair and recording start/status before
 
 ### Pause and resume
 
-Pause stops automatic insight work, accumulates active recording time, stops capture and autosave, drains ASR callbacks, seals the floor, and waits at most five seconds for translation. It then saves the transcript and paused status. A failed save retains the mounted transcript for retry and prevents switching.
+Pause stops automatic insight work, accumulates active recording time, stops capture and autosave, drains ASR callbacks, seals both speakers, and waits at most five seconds for translation. It then saves the transcript and paused status. A failed save retains the mounted transcript for retry and prevents switching.
 
 Resume freezes the current combined meeting/personal vocabulary for both English recognizers, preserves prior Sections and elapsed time, and rebuilds capture. Failure returns to paused. Automatic insight scheduling starts a fresh interval/content baseline at successful start/resume; it does not generate merely because old transcript text exists.
 

@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class MeetingHistoryStoreTests: XCTestCase {
+    func testOverlappingFinalsAndUnfinishedTailsPersistWithoutDuplicates() throws {
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+        let store = CaptionStore()
+        store.updateInterim("First hypothesis", speaker: .remote)
+        store.updateInterim("Reply hypothesis", speaker: .mine)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        store.appendCommitted("Corrected first sentence.", speaker: .remote)
+        store.appendCommitted("Corrected reply.", speaker: .mine)
+        store.updateInterim("Unfinished tail", speaker: .mine)
+        store.endTurn(.remote)
+        store.endTurn(.mine)
+        try history.finish(record, sections: store.sections, endedAt: .now)
+        let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
+        XCTAssertEqual(lines.map(\.sectionId), [0, 1])
+        XCTAssertEqual(lines.map(\.sourceText), ["Corrected first sentence.", "Corrected reply. Unfinished tail"])
+        XCTAssertEqual(record.meetingStatus, .ended)
+    }
+
     func testSyncUpsertsBySectionIDAndDeletesPrunedLines() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)

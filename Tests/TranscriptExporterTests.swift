@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class TranscriptExporterTests: XCTestCase {
-    func testExportsEnglishTemplatesWhilePreservingAllFourLanguagePairs() {
+    func testExportsEnglishTemplatesWhilePreservingAllFourLanguagePairs() throws {
         for source in MeetingLanguage.allCases {
             for target in MeetingLanguage.allCases {
                 let pair = MeetingLanguagePair(source: source, target: target)
@@ -11,8 +11,8 @@ final class TranscriptExporterTests: XCTestCase {
                 let targetText = target == .english ? "Let's review the plan." : "我们来讨论计划。"
                 let store = CaptionStore()
                 let result = store.appendCommitted(sourceText, speaker: .remote)
-                let generation = store.beginTranslation(id: result.sectionId)
-                store.applyTranslation(targetText, id: result.sectionId, generation: generation, final: true)
+                let generation = try XCTUnwrap(store.beginTranslation(id: result.sectionId))
+                store.applyTranslation(targetText, id: result.sectionId, generation: generation)
 
                 let markdown = TranscriptExporter.markdown(store: store, showsSourceEcho: pair.needsTranslation)
 

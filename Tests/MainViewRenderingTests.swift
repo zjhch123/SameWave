@@ -7,6 +7,30 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testOverlappingCaptionsAndTranslationCompletionRenderWhileBothSectionsAreOpen() async throws {
+        let store = CaptionStore()
+        store.updateInterim("The release is ready", speaker: .remote)
+        store.updateInterim("I have a question", speaker: .mine)
+        for section in store.sections {
+            let generation = try XCTUnwrap(store.beginTranslation(id: section.id))
+            store.applyTranslation(section.sourceText, id: section.id, generation: generation)
+        }
+        try await render(CaptionsView(store: store, isListening: true),
+            size: NSSize(width: 700, height: 500), name: "overlapping-captions-complete",
+            expectedLabels: ["Speaker", "You", "The release is ready", "I have a question"],
+            absentLabels: ["Translating"])
+        store.updateInterim("The release is ready for review", speaker: .remote)
+        XCTAssertNotNil(store.beginTranslation(id: 0))
+        try await render(CaptionsView(store: store, isListening: true),
+            size: NSSize(width: 700, height: 500), name: "overlapping-captions-progress",
+            expectedLabels: ["Speaker", "You", "Translating", "The release is ready for review", "I have a question"])
+        store.failTranslation(id: 0, generation: store.sections[0].generation)
+        try await render(CaptionsView(store: store, isListening: true),
+            size: NSSize(width: 700, height: 500), name: "overlapping-captions-failure",
+            expectedLabels: ["Translation failed", "The release is ready for review", "I have a question"],
+            absentLabels: ["Translating"])
+    }
+
     func testBackgroundRefinementRemainsVisibleWhileAnotherMeetingIsSelected() async throws {
         let history = try Phase2Fixture.history()
         let defaults = Phase2Fixture.defaults(self)
