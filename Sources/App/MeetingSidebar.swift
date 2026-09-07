@@ -110,7 +110,8 @@ struct MeetingSidebar: View {
                 detail: detail,
                 highlighted: isUnfinished,
                 selected: isSelected,
-                showsRecordingDot: isRecording
+                showsRecordingDot: isRecording,
+                activity: coordinator.backgroundActivity(for: record.id)
             )
         }
         .buttonStyle(.plain)
@@ -124,12 +125,20 @@ struct MeetingSidebar: View {
     }
 
     private func sidebarRow(title: String, subtitle: String, detail: String? = nil, highlighted: Bool,
-                            selected: Bool, showsRecordingDot: Bool = false) -> some View {
+                            selected: Bool, showsRecordingDot: Bool = false, activity: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(selected ? CaptionsView.accent : CaptionsView.fg)
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(selected ? CaptionsView.accent : CaptionsView.fg)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let activity {
+                    ProgressView().controlSize(.mini)
+                        .help(activity)
+                        .accessibilityLabel(activity)
+                }
+            }
             HStack(spacing: 5) {
                 if showsRecordingDot {
                     Circle().fill(CaptionsView.danger).frame(width: 5, height: 5)

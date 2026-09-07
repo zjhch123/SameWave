@@ -59,7 +59,7 @@ final class AISettingsDraft {
         settings.customAPIAddress = customAPIAddress
         settings.customModel = customModel
         settings.insightContextTokenBudget = contextBudget
-        settings.apiKey = apiKey
+        if apiKey != settings.apiKey { settings.apiKey = apiKey }
         cancelRequests()
     }
 

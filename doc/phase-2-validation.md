@@ -12,10 +12,38 @@ This report describes the current implementation and repeatable acceptance cover
 - Documents, confirmed terms, definitions, and snapshots belong to one meeting. Deletion cascades; remaining selection is passive.
 - English recognizers freeze the same meeting-plus-personal vocabulary at Start/Resume. Meeting terms never mutate personal settings.
 - Every successful insight appends its frozen input, result, cutoff, configuration, vocabulary, and timestamps. Selected historical versions remain selected.
+- Switching meetings preserves explicit AI work and its app-session progress/errors. Refinement and title results save to their original owner; successful deletion invalidates work.
 - Manual work is independent of automatic gates. Six active insight requests share one cap; automatic work occupies at most one slot.
 - Cancellation and ownership checks reject late replies. Generation/save failures retain prior history and allow local save retry.
 - Full insight input includes original source through the cutoff or fails visibly before transmission; no truncation or hidden recent-only analysis occurs.
 - Shared vocabulary actions commit to the displayed scope. Dismissal preserves unfinished vocabulary work; settings checks cancel without discarding editable preferences.
+
+## Single-request insight selection verification (2026-09-07)
+
+- XcodeGen and unsigned Debug build pass. Full `SameWave` scheme XCTest on `platform=macOS` (arm64) passes 190/190 after removing the focused point-count limit.
+- `InsightDensityTests` accepts twenty points without local truncation, checks the absence of both minimum and maximum point counts in Schema, and retains the existing text-bound and empty-points checks. Existing engine tests continue to exercise one provider completion per result.
+- Four synthetic source cases were sent to the configured service using the current single prompt: repeated unrelated chatter plus a later WFH authority correction; five independent commitments with one completed; a question about an absent topic; and release advice with a disputed cause. Manual comparison against known source facts confirmed four separate remaining commitments with dates, HR rather than manager authority, the distinction between proposed and effective attendance policy, an empty list for the absent topic, and an unconfirmed rather than invented release cause.
+- The release case still included a possibly unnecessary observation about an unagreed delivery date. These small qualitative checks establish specific observed behavior, not a general relevance score or a guarantee that prompt instructions are always followed. Shorter output is not the acceptance criterion. No personal meeting content was sent by the probe and no saved meeting was changed.
+- The application retains one completion call with the full frozen source. No editorial pass, extra service, persistent analysis layer, or dependency was added.
+
+## Model context and initial density verification (2026-09-07)
+
+The three-point policy below was subsequently superseded by the single-request selection policy above. Its context-window and complete-source checks remain applicable.
+
+- XcodeGen and unsigned Debug build pass. Full `SameWave` scheme XCTest on `platform=macOS` (arm64) passes 190/190.
+- `InsightContextWindowTests` verifies the 1M default, retained explicit values, Cancel/draft isolation, and a complete 97-section Chinese request with 273 vocabulary terms that fails locally at 32K and dispatches after saving 1M. Settings changes during generation leave its frozen input intact; subsequent failure retains the successful snapshot.
+- `InsightDensityTests` verifies the provider Schema and local validator agree on 300-character conclusions, three points, and 240 characters per point. Empty points remain valid. Oversized output fails validation instead of being cut locally.
+- `./build.sh` replaced and launched `~/Desktop/SameWave.app` with the existing Apple Development signature. Strict signature verification and the desktop process check pass; generated Info.plist and entitlements have no changes.
+- Read-only inspection of the signed app and its newly saved results confirms both custom insights for the reported meeting use 1M and contain all 97 original sections (8,388 characters). Each result has three points; the advice card has 715 output characters versus 3,340 in its earlier successful version. The WFH result incorporates later discussion absent from the old result. Original transcript and historical versions remain stored. This is one real-meeting observation, not a general semantic-quality benchmark.
+
+## Issues #9 and #10 verification (2026-09-06)
+
+- XcodeGen and unsigned Debug build pass. Full `SameWave` scheme XCTest on `platform=macOS` (arm64) passes 186/186, including ten additional cases for meeting-owned work and its presentation.
+- Controlled providers deliberately ignore cancellation. Tests cover switching away/back during multi-batch refinement, two independent meetings, background title persistence, user-title protection, retained failures/retry, partial success, deletion without late writes or additional batches, and scoped persistence rollback.
+- Insights tests cover shared six-request capacity across meetings, independent batch Stop, standalone summary queueing, coalesced clicks, retained original evidence, and deleting queued work. Existing automatic scheduling and immutable-history checks still pass.
+- Native 940×480 and 1120×760 renders show the original meeting's sidebar activity while another meeting is selected and after returning. The text check accounts for wrapping in the narrow transcript column.
+- Vocabulary prompt checks cover abbreviations/names/specialized terms, the relevance-and-repetition exception for ordinary words, meaningful multiword names, source-only examples, and the 50-term ceiling. Provider response validation and multiword normalization remain tested. Actual semantic extraction quality was not benchmarked against a live service.
+- `./build.sh` replaced and launched `~/Desktop/SameWave.app` with the configured Apple Development identity. `codesign --verify --deep --strict` and the desktop process check passed. Native signed-app smoke opened another saved meeting and returned to the original selection successfully. Actual provider operations were exercised with controlled providers in XCTest, not with personal meeting content in the signed app.
 
 ## Requirement coverage
 

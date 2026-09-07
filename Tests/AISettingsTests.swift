@@ -50,7 +50,6 @@ final class AISettingsTests: XCTestCase {
         let history = try MeetingHistoryStore(configuration: ModelConfiguration(isStoredInMemoryOnly: true))
         let insights = InsightEngine(settings: settings, history: history)
         let refiner = TranscriptRefiner(settings: settings, vocabularySettings: vocabulary)
-        let title = MeetingTitleGenerator(settings: settings)
         let editor = VocabularyEditorStore(aiSettings: settings, settings: vocabulary)
         let importer = editor.importer
 
@@ -73,7 +72,7 @@ final class AISettingsTests: XCTestCase {
             XCTAssertEqual(error as? LLMError, .notConfigured)
         }
         do {
-            _ = try await title.generateIfNeeded(for: record)
+            _ = try await MeetingTitleGenerator.generateIfNeeded(for: record, provider: settings.makeProvider())
             XCTFail("Titles must require the shared AI configuration")
         } catch {
             XCTAssertEqual(error as? LLMError, .notConfigured)

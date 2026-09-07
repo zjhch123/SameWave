@@ -76,6 +76,7 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
     case server(Int)            // other non-2xx
     case network(String)        // transport failure (offline, DNS, timeout)
     case invalidRequest(String) // 400, including an unsupported/invalid JSON Schema
+    case contextWindowExceeded(estimate: Int, limit: Int) // local preflight; no request was sent
     case badResponse            // 2xx but body wasn't the expected shape
     case emptyContent           // model returned no usable content
     case schemaViolation        // assistant content did not match the requested schema
@@ -91,6 +92,8 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
         case .server(let c): return "The service returned an error (\(c))."
         case .network(let m): return "Network request failed: \(m)"
         case .invalidRequest(let m): return "The AI service rejected the request: \(m)"
+        case .contextWindowExceeded(let estimate, let limit):
+            return "This meeting exceeds the configured model context window (conservative estimate: \(estimate.formatted()) tokens including output; configured: \(limit.formatted())). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate."
         case .badResponse:   return "Could not parse the service response."
         case .emptyContent:  return "The service returned no usable content."
         case .schemaViolation:

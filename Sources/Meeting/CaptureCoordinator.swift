@@ -15,16 +15,7 @@ final class CaptureCoordinator {
     private(set) var sessionStartedAt: Date?
     /// nil shows the mounted session, or the empty state when none is mounted.
     var selectedHistoryRecord: MeetingRecord? {
-        didSet {
-            if oldValue?.id != selectedHistoryRecord?.id {
-                if let id = oldValue?.id { insights?.cancelMeeting(id) }
-                if selectedHistoryRecord != nil, let id = activeRecordID { insights?.cancelMeeting(id) }
-                if selectedHistoryRecord == nil, sessionState == .recording, let activeRecord {
-                    insights?.startRecording(activeRecord, sections: store.sections)
-                }
-            }
-            persistSelection()
-        }
+        didSet { persistSelection() }
     }
 
     private var pausedElapsed: TimeInterval = 0
@@ -50,8 +41,7 @@ final class CaptureCoordinator {
     private var activeVocabulary: [String] = []
     var history: MeetingHistoryStore?
     var insights: InsightEngine?
-    var refiner: TranscriptRefiner?
-    var titleGenerator: MeetingTitleGenerator?
+    private(set) var refinements: [UUID: MeetingRefinementController] = [:]
     @ObservationIgnored private var vocabularyEditors: [UUID: VocabularyEditorStore] = [:]
 
     private var activeRecord: MeetingRecord? {
@@ -108,6 +98,24 @@ final class CaptureCoordinator {
             })
         vocabularyEditors[meetingID] = editor
         return editor
+    }
+
+    func refinement(for record: MeetingRecord, settings: AISettings,
+                    providerFactory: (() -> (any LLMProvider)?)? = nil) -> MeetingRefinementController? {
+        if let controller = refinements[record.id] { return controller }
+        guard let history else { return nil }
+        let controller = MeetingRefinementController(meetingID: record.id, settings: settings,
+            vocabulary: speechVocabularySettings, history: history, providerFactory: providerFactory)
+        refinements[record.id] = controller
+        return controller
+    }
+
+    func backgroundActivity(for meetingID: UUID) -> String? {
+        var activities: [String] = []
+        if refinements[meetingID]?.isRefining == true { activities.append("Refining transcript") }
+        if refinements[meetingID]?.isGeneratingTitle == true { activities.append("Generating title") }
+        if insights?.isWorking(on: meetingID) == true { activities.append("Generating insights") }
+        return activities.isEmpty ? nil : activities.joined(separator: "; ")
     }
 
     // MARK: - Lifecycle
@@ -171,7 +179,7 @@ final class CaptureCoordinator {
     func pause() async -> Bool {
         guard sessionState == .recording else { return false }
         freezeElapsedTime()
-        if let id = activeRecordID { insights?.cancelMeeting(id) }
+        if let id = activeRecordID { insights?.stopRecording(id) }
         sessionState = .pausing
         statusMessage = "Pausing…"
 
@@ -239,7 +247,7 @@ final class CaptureCoordinator {
     func stop() async {
         guard sessionState.hasActiveSession, sessionState != .stopping else { return }
         if sessionStartedAt != nil { freezeElapsedTime() }
-        if let id = activeRecordID { insights?.cancelMeeting(id) }
+        if let id = activeRecordID { insights?.stopRecording(id) }
         sessionState = .stopping
         statusMessage = "Finishing…"
 
@@ -322,8 +330,8 @@ final class CaptureCoordinator {
         do {
             let wasActive = record.id == activeRecordID
             let wasSelected = selectedHistoryRecord?.id == record.id
-            insights?.cancelMeeting(record.id)
             try history.delete(record)
+            refinements.removeValue(forKey: record.id)?.invalidate()
             vocabularyEditors.removeValue(forKey: record.id)?.invalidate()
             insights?.cancelMeeting(record.id, deleting: true)
             if wasActive { resetSession(keepingTranscript: false) }
@@ -765,7 +773,7 @@ final class CaptureCoordinator {
     }
 
     private func resetSession(keepingTranscript: Bool) {
-        if let id = activeRecordID { insights?.cancelMeeting(id) }
+        if let id = activeRecordID { insights?.stopRecording(id) }
         autosaveTask?.cancel()
         autosaveTask = nil
         translation.cancelPending()

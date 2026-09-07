@@ -16,6 +16,68 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260907-002"></a>
+## DEC-20260907-002: Select material insights within one generation request
+
+- **Date:** 2026-09-07
+- **Status:** Accepted
+- **Scope:** Focused insight selection and generation complexity
+- **Replaces:** The three-point limit and three-item summary preference in [DEC-20260907-001](#dec-20260907-001). Its model context configuration and local error behavior remain adopted.
+- **Context:** The user rejected point counts as a measure of quality: a small list can still contain verbose, low-value material or bundle unrelated obligations. The user also explicitly required one AI prompt without an additional review call or special processing pipeline.
+- **Decision:** Keep one provider completion per insight, with the existing frozen full original input and result contract. Remove the focused point-count maximum from Schema, validation, and prompts, and remove the three-item summary preference. Within the single prompt, select candidates by relevance to the actual question, support in original source, and effect on understanding, decisions, actions, risks, or dependencies. Apply a deletion test: omit an item if removing it would not change what the user should understand or do. Reconcile explicit corrections, merge repeated claims, preserve independent commitments, and distinguish facts, inferences, advice, support, and authorization. Missing details merit attention only when they block the decision or are assigned follow-ups. Do not invent preventive tasks from things the meeting did not decide. Keep existing text-format safeguards and the structured-summary schema; they do not determine importance. Previous AI answers are not supplied as evidence.
+- **Rejected alternatives:** Restoring a different fixed count preserves the wrong selection criterion. Combining independent tasks into a single bullet hides obligations. A second editorial request adds latency, cost, and request-state complexity that the user explicitly excluded. Mechanical deletion by string similarity cannot judge decision relevance or factual distinctions.
+- **Rationale/tradeoffs:** One prompt improves the selection criteria without another engine, request stage, model field, or dependency. The number of points can grow when there are more independent material facts. Semantic judgment is still model-dependent: formatting tests and shorter outputs cannot prove factual accuracy or optimal relevance.
+- **Impact and validation:** XcodeGen and unsigned Debug build pass. Full SameWave / platform=macOS (arm64) XCTest passes 190/190. Schema/parser tests accept twenty points without cutting content and verify no minimum or maximum count while retaining text validation. A disposable probe used the configured service with four synthetic cases: later WFH correction with repeated unrelated chatter, four remaining independent obligations after one completion, an absent topic, and release advice with an unconfirmed cause. The outputs preserved the four obligations and dates, HR authority, proposal uncertainty, and empty points for the absent topic. The release answer still included an unagreed-date observation; this is not evidence of perfect relevance. The probe did not send personal meeting content or alter saved meetings. No experimental review stage was added to the app.
+- **Files:** `Sources/Insights/InsightModels.swift`, `Tests/InsightDensityTests.swift`, `README.md`, `doc/04-ai-insights-and-refinement.md`, `doc/phase-2-spec.md`, `doc/phase-2-validation.md`.
+
+---
+
+<a id="dec-20260907-001"></a>
+## DEC-20260907-001: Configure model capacity and keep focused insights concise
+
+- **Date:** 2026-09-07
+- **Status:** Superseded for the three-point limit and summary item preference by [DEC-20260907-002](#dec-20260907-002); model context configuration and local error reporting remain adopted.
+- **Scope:** Insight context configuration, local error reporting, and generated information density
+- **Replaces:** The initial 32,768-token default and generic provider-error presentation in [DEC-20260905-009](#dec-20260905-009). Full original evidence, user configuration, immutable snapshots, and explicit oversized-input failures remain adopted.
+- **Context:** A 97-section Chinese meeting with 8,388 original characters crossed the default conservative byte-based preflight estimate partway through recording. The local error claimed the service rejected the request, while cards retained earlier successful results. The configured service was being used with a 1M model. Focused advice also expanded to twelve points and 3,340 characters, diluting the useful priorities as the meeting grew.
+- **Decision:** Expose Model context window (tokens) in AI Services with a 1,000,000-token default and the existing configurable range. Keep explicitly saved values. Save applies the value to newly created requests; queued/active inputs and saved versions retain their frozen source, provider, and window. Use a distinct local context-window error with actionable Settings instructions. Keep conservative preflight and full source; the provider remains authoritative about its actual capacity. Focused results request one direct conclusion of at most 300 characters and at most three prioritized points of at most 240 characters each, enforced by Schema and client validation. Merge overlapping advice, exclude generic filler, and use empty points when the requested topic lacks relevant discussion. Structured summaries prefer three short items per part but retain their existing allowance for distinct material actions, decisions, and blockers.
+- **Rejected alternatives:** A fixed low ceiling prevents ordinary meetings from reaching capable models. Guessing capacity from model names or treating byte counts as exact tokenization is unreliable across compatible gateways. Silently cutting source would lose early agreements or later corrections. Hiding a long answer behind disclosure does not improve generated information density. Applying the focused three-point ceiling to complete summaries could omit separate commitments.
+- **Rationale/tradeoffs:** User-declared capacity matches the selected model without adding discovery or tokenizer dependencies. The conservative estimate can still reject input near the configured limit, and a 1M default is not proof of server capacity. Focused cards trade exhaustive coverage for prioritized guidance; immutable versions and structured summaries retain their separate purposes. Semantic ranking remains model-dependent.
+- **Impact and validation:** XcodeGen, unsigned Debug build, and all 190 XCTest cases pass on SameWave / platform=macOS (arm64). Tests reproduce a complete 97-section/273-term request rejected at 32K and accepted after saving 1M, verify draft isolation and frozen active input, retain prior results after failure, and check matching Schema/client density limits. The signed desktop app passes signature and process checks. Two new saved results from the reported meeting contain all 97 original sections, use 1M, and have three points each; focused advice is 715 characters. No transcript or historical snapshot was rewritten.
+- **Files:** `Sources/AI/AISettings.swift`, `Sources/AI/AISettingsDraft.swift`, `Sources/AI/AISettingsView.swift`, `Sources/AI/LLMProvider.swift`, `Sources/Insights/InsightModels.swift`, `Tests/InsightContextWindowTests.swift`, `Tests/InsightDensityTests.swift`, `doc/04-ai-insights-and-refinement.md`.
+
+---
+
+<a id="dec-20260906-010"></a>
+## DEC-20260906-010: Select recognition vocabulary by usefulness and preserve meaningful names
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** Markdown vocabulary extraction policy
+- **Context:** Issue #10 reports too many ordinary words and repeated product phrases. The user clarified that its proposed universal whitespace splitting is advisory and authorized a judgment-based prompt improvement. Splitting every personal or product name can leave ordinary, ambiguous components that are less useful to speech recognition.
+- **Decision:** Prioritize explicitly present abbreviations/acronyms, personal names, internal codenames, and specialized terminology. Ordinary words require both central relevance and repetition; headings/capitals alone do not establish value. Prefer compact spoken units, reuse meaningful product roots, and preserve multiword names when splitting loses identity. Keep this semantic choice in the prompt, without unconditional client tokenization or a static English blacklist. The 50-term ceiling is not a quota; prompt examples must never be copied when absent from the source.
+- **Rejected alternatives:** Requiring every abbreviation to name an entity excludes useful specialized acronyms. Universal whitespace splitting breaks names such as Grace Hopper and Visual Studio. Generic stopword filtering cannot distinguish a term's contextual importance.
+- **Rationale/tradeoffs:** Recognition value depends on context and naming, so the provider handles relevance while existing client validation enforces structure, size, and deduplication. Model judgment remains variable; deterministic tests verify the prompt contract and that multiword responses survive review normalization, not empirical extraction accuracy.
+- **Impact and validation:** Replaces the named-entity-only selection rule recorded in [DEC-20260904-012](#dec-20260904-012). Existing batching, retries, review, saved vocabulary, and explicit sends remain unchanged. Vocabulary generator and full app tests pass; no real-provider extraction benchmark was run.
+- **Files:** `Sources/Insights/VocabularyGenerator.swift`, `Tests/VocabularyGeneratorTests.swift`, `doc/02-live-captions-and-translation.md`, `doc/04-ai-insights-and-refinement.md`.
+
+---
+
+<a id="dec-20260906-009"></a>
+## DEC-20260906-009: Keep explicit AI work with its meeting across navigation
+
+- **Date:** 2026-09-06
+- **Status:** Accepted
+- **Scope:** AI task ownership, cancellation, scheduling, and result persistence
+- **Context:** Issue #9 exposed view-owned refinement/title tasks and selection-driven insight cancellation. Leaving a meeting discarded progress, and a new manual request could cancel another meeting's work.
+- **Decision:** CaptureCoordinator retains a MeetingRefinementController per meeting for the app session. It owns refinement/title task handles, progress, and errors; the refiner handles batches and history owns writes. Selection and view recreation do not cancel explicit AI work. Insights retain per-meeting batch identities and one app-wide ordered queue under the existing six-active-request cap. Standalone requests wait when all slots are occupied. Replacements and Stop affect only their own meeting; pause/end stops automatic work while manual requests keep their frozen input. Successful deletion invalidates that meeting's work before any late response can write. Completion checks tokens and original UUID ownership, independent of selection. The sidebar displays active/queued work. Completed results persist; unfinished jobs and errors last only until app exit.
+- **Rejected alternatives:** Retaining hidden views would leave task ownership in presentation. Cancelling on selection contradicts expected navigation behavior. One engine per meeting would lose the shared concurrency cap. A persistent background-job system adds restart semantics outside this requirement. Saving by selected record risks cross-meeting writes. Global rollback of refinement fields can erase unrelated edits.
+- **Rationale/tradeoffs:** Existing domain owners can retain work without a generic job framework or data migration. Meetings can progress independently, with bounded insight concurrency and scoped refinement-write recovery. Explicit Stop/deletion still rejects providers that ignore cancellation. Users must leave the app running for unfinished requests.
+- **Impact and validation:** Supersedes selection/lifecycle cancellation and cross-meeting manual replacement in [DEC-20260905-008](#dec-20260905-008), [DEC-20260905-016](#dec-20260905-016), [DEC-20260905-017](#dec-20260905-017), and [DEC-20260904-002](#dec-20260904-002); other contracts remain adopted. Tests verify switching/return, two independent refinement owners, background saves/titles, retry, partial batches, deletion with ignored cancellation, shared insight capacity, independent Stop, summary queueing, and scoped save failure. Native renders verify background activity at 940×480 and 1120×760. See [Phase 2 validation](phase-2-validation.md).
+- **Files:** `Sources/Insights/MeetingRefinementController.swift`, `Sources/Insights/TranscriptRefiner.swift`, `Sources/Insights/InsightEngine.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Sources/History/MeetingHistory.swift`, `Sources/App/MeetingStage.swift`, `Sources/App/MeetingSidebar.swift`, `Sources/App/InsightInspector.swift`, related tests.
+
+---
+
 <a id="dec-20260906-008"></a>
 ## DEC-20260906-008: Let the AI settings draft own asynchronous service checks
 
@@ -148,7 +210,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260905-017: Run custom insight batches with bounded parallelism
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded for AI task lifetime and cross-meeting replacement by [DEC-20260906-009](#dec-20260906-009). The shared concurrency cap and other contracts remain accepted.
 - **Scope:** Insight request concurrency and batch completion
 - **Replaces:** Serial batch dispatch in [DEC-20260905-016](#dec-20260905-016) and the single manual slot as a batch constraint in [DEC-20260905-008](#dec-20260905-008). Frozen inputs/provider, independent history, and cancellation behavior remain adopted.
 - **Context:** The user wants independent insight requests to run concurrently, with a maximum of six to eight, instead of waiting for each preceding result.
@@ -164,7 +226,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260905-016: Queue explicit custom insight batches through the manual slot
 
 - **Date:** 2026-09-05
-- **Status:** Superseded by [DEC-20260905-017](#dec-20260905-017) for serial dispatch; grouping, frozen requests/provider, history, and cancellation retained.
+- **Status:** Superseded for AI task lifetime and cross-meeting replacement by [DEC-20260906-009](#dec-20260906-009). Superseded by [DEC-20260905-017](#dec-20260905-017) for serial dispatch; grouping, frozen requests/provider, history, and cancellation retained.
 - **Scope:** Custom insight presentation and manual generation scheduling
 - **Context:** The user requested a Custom Insights heading with one Generate action for all editable insights, alongside the existing Meeting Insights controls. Calling the previous single-item action repeatedly would cancel every request except the last.
 - **Decision:** Group editable definitions, including the editable Overview preset, under Custom Insights. Generate freezes their reading order, configurations, original source cutoff, provisional text, vocabulary, provider, model label, and request time, then dispatches one item at a time through the existing manual slot. Exclude the independent meeting-wide summary. Retain per-card history and actions, show queued status, and offer Stop for the batch or an individual item. Save each success independently and continue after individual preflight, provider, or save failures. Block a new batch until included unsaved results are saved. Repeated clicks coalesce; lifecycle cancellation and replacement manual requests discard pending work and reject late results.
@@ -275,7 +337,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260905-009: Use complete original evidence or report an explicit input limit
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded for the initial context-window default and local error presentation by [DEC-20260907-001](#dec-20260907-001); full original evidence, configurable windows, and explicit preflight remain adopted.
 - **Scope:** Insight context, vocabulary disclosure, factual source, long-meeting behavior
 - **Replaces:** Historical refined-source preference in [DEC-20260904-007](#dec-20260904-007), matched-only vocabulary in [DEC-20260904-006](#dec-20260904-006), and the insight recent-window policy in [DEC-20260903-002](#dec-20260903-002). Title-specific recent input remains.
 
@@ -308,7 +370,7 @@ Removed the old insight cutoff, match filter, and refined-input path. Titles ret
 ## DEC-20260905-008: Save each custom insight with its immutable request and result
 
 - **Date:** 2026-09-05
-- **Status:** Superseded by [DEC-20260905-017](#dec-20260905-017) for the manual concurrency limit; definitions, snapshots, automatic gates, standalone manual priority, and persistence behavior retained.
+- **Status:** Superseded for AI task lifetime and cross-meeting replacement by [DEC-20260906-009](#dec-20260906-009). Superseded by [DEC-20260905-017](#dec-20260905-017) for the manual concurrency limit; definitions, snapshots, automatic gates, standalone manual priority, and persistence behavior retained.
 - **Scope:** Insight definitions, scheduling, cancellation, history, summary versions, persistence failure
 
 ### Context and decision
@@ -724,7 +786,7 @@ Two byte limits manage local and operation-wide resources while allowing useful 
 
 - **Date:** 2026-09-04
 - **Status:** Superseded
-- **Superseded by:** [013](#dec-20260904-013) replaces the combined 3 MB reading limit. Request budget, serial work, retries, partial success, review, and explicit saving remain.
+- **Superseded by:** [013](#dec-20260904-013) replaces the combined 3 MB reading limit. [DEC-20260906-010](#dec-20260906-010) replaces the named-entity-only extraction rule. Request budget, serial work, retries, partial success, review, and explicit saving remain.
 - **Scope:** AI input budget, retries, partial failure
 - **Replaces:** [011](#dec-20260904-011)'s 400,000 characters, 500 candidates, and 180-second timeout; all-or-nothing success in [008](#dec-20260904-008), [009](#dec-20260904-009), and [010](#dec-20260904-010). The then-current 3 MB selection cap, serial execution, review, and saving remained.
 
@@ -1154,7 +1216,7 @@ The saved field itself is a reliable request gate, without extra timestamps/stat
 
 - **Date:** 2026-09-04
 - **Status:** Superseded
-- **Superseded by:** [003](#dec-20260904-003) changes regeneration; [DEC-20260905-006](#dec-20260905-006) changes title language/length. Independent requests, storage, and display remain.
+- **Superseded by:** [003](#dec-20260904-003) changes regeneration; [DEC-20260905-006](#dec-20260905-006) changes title language/length. [DEC-20260906-009](#dec-20260906-009) replaces selection-driven cancellation. Independent requests, storage, and display remain.
 - **Scope:** Post-meeting AI orchestration, history model, presentation
 
 ### Context

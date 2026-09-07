@@ -31,7 +31,7 @@ final class InsightBatchTests: XCTestCase {
             try await Phase2Fixture.waitUntil { await provider.count == min(9, completed + 6) }
             try await provider.succeed(index, conclusion: "Result \(index)")
             try await Phase2Fixture.waitUntil { record.insightSnapshots.count == configurations.count + completed + 1 }
-            if completed < 8 { XCTAssertEqual(engine.batchMeetingID, record.id) }
+            if completed < 8 { XCTAssertTrue(engine.batchMeetingIDs.contains(record.id)) }
         }
         let allRequests = try await requests(provider)
         for input in allRequests {
@@ -43,7 +43,7 @@ final class InsightBatchTests: XCTestCase {
             XCTAssertEqual(input.kind, .manual)
             XCTAssertTrue(input.additionalInstructions.isEmpty)
         }
-        try await Phase2Fixture.waitUntil { engine.batchMeetingID == nil }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
         XCTAssertEqual(record.insightSnapshots.count, configurations.count * 2)
         XCTAssertEqual(engine.states.values.filter { $0 == .saved }.count, configurations.count)
         let peakActiveCount = await provider.peakActiveCount
@@ -67,7 +67,7 @@ final class InsightBatchTests: XCTestCase {
             try await Phase2Fixture.waitUntil { await originalProvider.count >= index + 1 }
             try await originalProvider.succeed(index)
         }
-        try await Phase2Fixture.waitUntil { engine.batchMeetingID == nil }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
         let replacementCount = await replacementProvider.count
         XCTAssertEqual(replacementCount, 0)
         XCTAssertEqual(record.insightSnapshots.count, record.definitions.count)
@@ -90,7 +90,7 @@ final class InsightBatchTests: XCTestCase {
         await provider.fail(0)
         try await provider.succeed(1)
         try await provider.succeed(2)
-        try await Phase2Fixture.waitUntil { engine.batchMeetingID == nil }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
         XCTAssertEqual(record.insightSnapshots.count, 2)
         XCTAssertEqual(engine.states[InsightKey(meetingID: record.id, definitionID: configurations[0].id)],
                        .failed(LLMError.rateLimited.localizedDescription))
@@ -111,8 +111,8 @@ final class InsightBatchTests: XCTestCase {
         try await Phase2Fixture.waitUntil { await provider.count == 6 }
         try await provider.succeed(0)
         try await Phase2Fixture.waitUntil { await provider.count == 7 }
-        engine.cancelBatch()
-        XCTAssertNil(engine.batchMeetingID)
+        engine.cancelBatch(record.id)
+        XCTAssertTrue(engine.batchMeetingIDs.isEmpty)
         XCTAssertEqual(engine.states.values.filter { $0 == .cancelled }.count, 7)
         for index in 1..<7 { try await provider.succeed(index, conclusion: "Late result") }
         await Task.yield()
@@ -130,7 +130,7 @@ final class InsightBatchTests: XCTestCase {
         engine.generate(record: record, configuration: definitions[7].configuration, kind: .manual,
                         sources: Phase2Fixture.source("New manual source"), vocabulary: [], elapsedSeconds: 30)
         try await Phase2Fixture.waitUntil { await provider.count == 7 }
-        XCTAssertNil(engine.batchMeetingID)
+        XCTAssertTrue(engine.batchMeetingIDs.isEmpty)
         for index in 0..<6 { try await provider.succeed(index, conclusion: "Obsolete batch result") }
         try await provider.succeed(6, conclusion: "Manual result")
         try await Phase2Fixture.waitUntil { record.insightSnapshots.count == 1 }
@@ -150,11 +150,11 @@ final class InsightBatchTests: XCTestCase {
         let input = try JSONDecoder().decode(InsightInput.self, from: Data(raw.utf8))
         XCTAssertEqual(input.configuration.id, definitions[7].id)
         for index in 1..<7 { try await provider.succeed(index) }
-        try await Phase2Fixture.waitUntil { engine.batchMeetingID == nil }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
         XCTAssertEqual(record.insightSnapshots.count, 7)
     }
 
-    func testCoordinatorUsesOriginalHistoryAndMeetingSwitchCancelsEntireBatch() async throws {
+    func testCoordinatorUsesOriginalHistoryAndMeetingSwitchPreservesEntireBatch() async throws {
         let (history, record, engine, provider) = try environment()
         var section = Section(id: 1, speaker: .mine)
         section.committedSource = ["Original agreement"]
@@ -173,11 +173,14 @@ final class InsightBatchTests: XCTestCase {
         let input = try JSONDecoder().decode(InsightInput.self, from: Data(raw.utf8))
         XCTAssertEqual(input.sources.first?.text, "Original agreement")
         coordinator.selectedHistoryRecord = try history.createDraft(languagePair: .englishToEnglish)
-        XCTAssertNil(engine.batchMeetingID)
-        XCTAssertTrue(engine.states.values.allSatisfy { $0 == .cancelled })
+        XCTAssertTrue(engine.batchMeetingIDs.contains(record.id))
+        XCTAssertTrue(engine.states.values.allSatisfy { $0 == .generating })
+        XCTAssertEqual(coordinator.backgroundActivity(for: record.id), "Generating insights")
         for index in 0..<3 { try await provider.succeed(index) }
-        await Task.yield()
-        XCTAssertTrue(record.insightSnapshots.isEmpty)
+        try await Phase2Fixture.waitUntil { record.insightSnapshots.count == 3 }
+        XCTAssertNil(coordinator.backgroundActivity(for: record.id))
+        await coordinator.openHistory(record)
+        XCTAssertEqual(coordinator.workspaceRecord?.id, record.id)
         let requestCount = await provider.count
         XCTAssertEqual(requestCount, 3)
     }
@@ -197,10 +200,10 @@ final class InsightBatchTests: XCTestCase {
         XCTAssertEqual(engine.states.values.filter { $0 == .generating }.count, 6)
         let allRequests = try await requests(provider)
         XCTAssertFalse(allRequests.contains { $0.configuration.id == definitions[8].id })
-        engine.cancelBatch()
+        engine.cancelBatch(record.id)
         for index in 0..<8 where index != 2 { try await provider.succeed(index) }
         await Task.yield()
-        XCTAssertNil(engine.batchMeetingID)
+        XCTAssertTrue(engine.batchMeetingIDs.isEmpty)
         XCTAssertTrue(record.insightSnapshots.isEmpty)
         XCTAssertFalse(engine.states.values.contains(.generating))
     }
@@ -229,11 +232,80 @@ final class InsightBatchTests: XCTestCase {
             try await Phase2Fixture.waitUntil { await provider.count >= index + 1 }
             try await provider.succeed(index)
         }
-        try await Phase2Fixture.waitUntil { engine.batchMeetingID == nil }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
         let peakActiveCount = await provider.peakActiveCount
         XCTAssertEqual(peakActiveCount, 6)
         XCTAssertEqual(record.insightSnapshots.count, 7)
         XCTAssertEqual(other.insightSnapshots.count, 1)
+    }
+
+    func testMultipleMeetingsShareCapacityAndStoppingOneDoesNotCancelTheOther() async throws {
+        let (history, first, engine, provider) = try environment(definitionCount: 6)
+        let second = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(second, .ended)
+        engine.generateAll(record: first, sources: Phase2Fixture.source("First meeting"), vocabulary: [], elapsedSeconds: 20)
+        try await Phase2Fixture.waitUntil { await provider.count == 6 }
+        engine.generateAll(record: second, sources: Phase2Fixture.source("Second meeting"), vocabulary: [], elapsedSeconds: 30)
+        XCTAssertEqual(engine.batchMeetingIDs, [first.id, second.id])
+        let secondKey = InsightKey(meetingID: second.id, definitionID: second.definitions[0].id)
+        XCTAssertEqual(engine.states[secondKey], .queued)
+        try await provider.succeed(0)
+        try await Phase2Fixture.waitUntil { await provider.count == 7 }
+        engine.cancelBatch(first.id)
+        XCTAssertEqual(engine.batchMeetingIDs, [second.id])
+        XCTAssertEqual(engine.states[secondKey], .generating)
+        for index in 1..<6 { try await provider.succeed(index, conclusion: "Cancelled first meeting") }
+        try await provider.succeed(6, conclusion: "Second meeting result")
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
+        XCTAssertEqual(first.insightSnapshots.count, 1)
+        XCTAssertEqual(try second.insightSnapshots.first?.decoded().result.conclusion, "Second meeting result")
+        let peak = await provider.peakActiveCount
+        XCTAssertEqual(peak, 6)
+    }
+
+    func testStandaloneSummaryQueuesBehindOtherMeetingWithoutCancellingIt() async throws {
+        let (history, first, engine, provider) = try environment(definitionCount: 6)
+        let second = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(second, .ended)
+        engine.generateAll(record: first, sources: Phase2Fixture.source(), vocabulary: [], elapsedSeconds: 20)
+        try await Phase2Fixture.waitUntil { await provider.count == 6 }
+        for _ in 0..<2 {
+            engine.generate(record: second, configuration: .summary, kind: .summary,
+                            sources: Phase2Fixture.source("Second summary"), vocabulary: [], elapsedSeconds: 30)
+        }
+        let key = InsightKey(meetingID: second.id, definitionID: InsightConfiguration.summary.id)
+        XCTAssertEqual(engine.states[key], .queued)
+        XCTAssertTrue(engine.batchMeetingIDs.contains(first.id))
+        try await provider.succeed(0)
+        try await Phase2Fixture.waitUntil { await provider.count == 7 }
+        try await provider.succeed(6, summary: Phase2Fixture.summary)
+        for index in 1..<6 { try await provider.succeed(index) }
+        try await Phase2Fixture.waitUntil { !engine.isWorking(on: first.id) && !engine.isWorking(on: second.id) }
+        XCTAssertEqual(first.insightSnapshots.count, 6)
+        XCTAssertEqual(second.insightSnapshots.count, 1)
+        let peak = await provider.peakActiveCount
+        XCTAssertEqual(peak, 6)
+    }
+
+    func testPausingOnlyCancelsAutomaticWorkAndDeletedQueuedMeetingCannotDispatch() async throws {
+        let (history, first, engine, provider) = try environment(definitionCount: 6)
+        engine.generateAll(record: first, sources: Phase2Fixture.source(), vocabulary: [], elapsedSeconds: 20)
+        try await Phase2Fixture.waitUntil { await provider.count == 6 }
+        engine.stopRecording(first.id)
+        XCTAssertTrue(engine.batchMeetingIDs.contains(first.id))
+        let second = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(second, .ended)
+        engine.generateAll(record: second, sources: Phase2Fixture.source(), vocabulary: [], elapsedSeconds: 20)
+        let id = second.id
+        try history.delete(second)
+        engine.cancelMeeting(id, deleting: true)
+        for index in 0..<6 { try await provider.succeed(index) }
+        try await Phase2Fixture.waitUntil { engine.batchMeetingIDs.isEmpty }
+        XCTAssertEqual(first.insightSnapshots.count, 6)
+        XCTAssertNil(try history.record(id: id))
+        XCTAssertFalse(engine.states.keys.contains { $0.meetingID == id })
+        let count = await provider.count
+        XCTAssertEqual(count, 6)
     }
 
     private func requests(_ provider: ControlledInsightProvider) async throws -> [InsightInput] {

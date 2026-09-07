@@ -130,6 +130,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 - [`InsightModels.swift`](../Sources/Insights/InsightModels.swift): the structured response, exact request evidence, and conservative full-input budget.
 - [`InsightEngine.swift`](../Sources/Insights/InsightEngine.swift): interval/content scheduling, manual priority, cancellation, immediate snapshot persistence, and local save retry.
+- [`MeetingRefinementController.swift`](../Sources/Insights/MeetingRefinementController.swift): one coordinator-retained owner per meeting for refinement/title tasks, progress, and errors across navigation; results save through history to the original meeting.
 - [`TranscriptRefiner.swift`](../Sources/Insights/TranscriptRefiner.swift): independent post-meeting proofreading, retranslation, glossary merging in batches.
 - [`MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift): one-shot title requests parallel to refinement, input budgets, output validation.
 - [`LLMProvider.swift`](../Sources/AI/LLMProvider.swift): minimal provider protocol, errors, provider configuration.
@@ -143,7 +144,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 ### 5.6 Presentation
 
 - [`MainView.swift`](../Sources/App/MainView.swift): three-column container, draggable Inspector width, long-lived translation-session attachment.
-- [`MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift): SwiftData history query, selection, deletion.
+- [`MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift): SwiftData history query, selection, deletion, and per-meeting background AI activity.
 - [`MeetingStage.swift`](../Sources/App/MeetingStage.swift): preparation/live/history stage, header, timer, capture controls; `MeetingPreparationView.swift` edits owned preparation.
 - [`InsightInspector.swift`](../Sources/App/InsightInspector.swift): peer insight cards, live/history generation, independent saved versions, offline reading, and save retry.
 - [`CaptionsView.swift`](../Sources/Meeting/CaptionsView.swift): live Section list.
@@ -167,7 +168,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift): in-memory upsert, pruning, and empty-workspace retention. `MeetingWorkspaceTests.swift` also verifies on-disk reopen and artifact ownership.
 - [`InsightEngineTests.swift`](../Tests/InsightEngineTests.swift): full input, scheduling, priority, cancellation, versioned persistence, failures, and strict result parsing.
 - [`OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift): Structured Outputs request contracts and built-in models.
-- [`TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift): line/character batch boundaries.
+- [`TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift): line/character batch boundaries. [`MeetingRefinementControllerTests.swift`](../Tests/MeetingRefinementControllerTests.swift) verifies retained progress, concurrent owners, background saves/titles, failure/retry, partial success, deletion, and scoped persistence recovery.
 - [`MeetingTitleGeneratorTests.swift`](../Tests/MeetingTitleGeneratorTests.swift): title requests, context, output bounds.
 - [`MeetingLanguageTests.swift`](../Tests/MeetingLanguageTests.swift): fixed labels, four pairs, same-language bypass.
 - [`SpeechVocabularySettingsTests.swift`](../Tests/SpeechVocabularySettingsTests.swift): defaults, normalization, persistence.

@@ -4,16 +4,14 @@ import XCTest
 
 @MainActor
 final class VocabularyGeneratorTests: XCTestCase {
-    func testPromptRequiresNamedEntitiesAndRejectsGenericTechnicalTerms() {
+    func testPromptPrioritizesSpecializedVocabularyWithoutMechanicallySplittingNames() {
         let prompt = VocabularyGenerator.systemPrompt
-
-        XCTAssertTrue(prompt.contains("Named-entity gate"))
-        XCTAssertTrue(prompt.contains("Speech-recognition value gate"))
-        XCTAssertTrue(prompt.contains("generic technical or business concepts"))
-        XCTAssertTrue(prompt.contains("Heading styles, initial capitals, ALL CAPS"))
-        XCTAssertTrue(prompt.contains("If uncertain whether both gates are met, omit the candidate"))
-        for example in ["SharePoint", "OneDrive for Business", "Primary", "ingestion", "sharding", "metadata"] {
-            XCTAssertTrue(prompt.contains(example))
+        for rule in ["abbreviations and acronyms", "people's names", "specialized terminology",
+                     "both central to the document's subject and repeatedly mentioned",
+                     "Repetition alone", "Do not mechanically split all names at spaces",
+                     "smallest useful spoken term", "Grace Hopper", "Visual Studio", "Power BI",
+                     "never return an example absent", "ceiling, not a target", "untrusted data"] {
+            XCTAssertTrue(prompt.contains(rule), rule)
         }
     }
 

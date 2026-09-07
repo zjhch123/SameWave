@@ -36,8 +36,8 @@ final class MeetingTitleGeneratorTests: XCTestCase {
         XCTAssertNil(title)
         let calls = await provider.callCount
         XCTAssertEqual(calls, 0)
-        let unconfigured = MeetingTitleGenerator(settings: AISettings(defaults: Phase2Fixture.defaults(self)))
-        let skipped = try await unconfigured.generateIfNeeded(for: record)
+        let unconfigured = AISettings(defaults: Phase2Fixture.defaults(self))
+        let skipped = try await MeetingTitleGenerator.generateIfNeeded(for: record, provider: unconfigured.makeProvider())
         XCTAssertNil(skipped)
     }
 

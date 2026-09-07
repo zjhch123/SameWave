@@ -81,11 +81,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let history {
             coordinator.insights = InsightEngine(settings: aiSettings, history: history)
         }
-        coordinator.refiner = TranscriptRefiner(
-            settings: aiSettings,
-            vocabularySettings: speechVocabularySettings
-        )
-        coordinator.titleGenerator = MeetingTitleGenerator(settings: aiSettings)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

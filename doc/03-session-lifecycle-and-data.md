@@ -18,17 +18,18 @@ Start saves the selected draft's language pair and recording start/status before
 
 ### Pause and resume
 
-Pause cancels pending insights, accumulates active recording time, stops capture and autosave, drains ASR callbacks, seals the floor, and waits at most five seconds for translation. It then saves the transcript and paused status. A failed save retains the mounted transcript for retry and prevents switching.
+Pause stops automatic insight work, accumulates active recording time, stops capture and autosave, drains ASR callbacks, seals the floor, and waits at most five seconds for translation. It then saves the transcript and paused status. A failed save retains the mounted transcript for retry and prevents switching.
 
 Resume freezes the current combined meeting/personal vocabulary for both English recognizers, preserves prior Sections and elapsed time, and rebuilds capture. Failure returns to paused. Automatic insight scheduling starts a fresh interval/content baseline at successful start/resume; it does not generate merely because old transcript text exists.
 
 ### End
 
-End cancels outstanding insight requests and follows the same capture/ASR/translation drain. Final text and ended status save together. Empty meetings remain saved. Successful completion selects the same meeting's history; live insight snapshots remain available. End does not request or relabel a full summary. A failed final save leaves the meeting paused with its source in memory and an explicit retry message.
+End stops automatic insight work and follows the same capture/ASR/translation drain. Final text and ended status save together. Empty meetings remain saved. Successful completion selects the same meeting's history; live insight snapshots remain available. End does not request or relabel a full summary. A failed final save leaves the meeting paused with its source in memory and an explicit retry message.
 
 ### Switching and recovery
 
 - Selecting another draft, paused meeting, or ended meeting suspends and saves the mounted recording first. Ended-history navigation uses the same coordinator boundary.
+- Manual insights, summaries, refinement, and title generation belong to their originating meeting and continue across navigation, pause/end, and New Meeting. The sidebar shows activity for every busy meeting. Capture pause/end stops automatic insight scheduling and its active automatic request. Explicit Stop or successful deletion invalidates affected AI work; cancellation tokens and owner lookup reject late responses. Active work and errors are app-session state; completed results persist, while unfinished requests do not resume after quitting.
 - Only one recording is mounted. Drafts mount without capture; paused records restore sealed Sections and resume IDs above the maximum saved Section ID.
 - Persist the displayed meeting UUID in UserDefaults `selectedMeetingID` whenever selection changes. History selection takes precedence over a mounted record.
 - On launch, interrupted `recording` records become paused. Drafts remain drafts. Restore the saved UUID; missing/invalid/deleted selections choose the most recently created stored meeting. Selection never starts capture.

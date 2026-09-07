@@ -4,25 +4,15 @@ import Foundation
 /// refinement. The caller owns cancellation and persistence so title and refinement can
 /// succeed or fail without coupling their outcomes.
 @MainActor
-final class MeetingTitleGenerator {
+enum MeetingTitleGenerator {
     private struct Response: Decodable {
         let title: String
     }
-
-    private let settings: AISettings
 
     /// A title-specific character budget. A title uses the
     /// latest complete conversation lines and does not wait for refined text.
     static let contextCharacterLimit = 6_000
     static let titleCharacterLimit = 60
-
-    init(settings: AISettings) {
-        self.settings = settings
-    }
-
-    func generateIfNeeded(for record: MeetingRecord) async throws -> String? {
-        try await Self.generateIfNeeded(for: record, provider: settings.makeProvider())
-    }
 
     static func generateIfNeeded(for record: MeetingRecord, provider: LLMProvider?) async throws -> String? {
         guard record.needsAITitle else { return nil }

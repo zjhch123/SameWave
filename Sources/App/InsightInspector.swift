@@ -63,14 +63,14 @@ struct InsightInspector: View {
     }
 
     private func customInsightsHeader(_ record: MeetingRecord) -> some View {
-        let generating = coordinator.insights?.batchMeetingID == record.id
+        let generating = coordinator.insights?.batchMeetingIDs.contains(record.id) == true
         return HStack(alignment: .firstTextBaseline) {
             Text("Custom Insights").font(.system(size: 11, weight: .medium))
                 .foregroundStyle(CaptionsView.muted)
             Spacer(minLength: 0)
             if generating { ProgressView().controlSize(.mini) }
             Button(generating ? "Stop" : "Generate") {
-                if generating { coordinator.insights?.cancelBatch() }
+                if generating { coordinator.insights?.cancelBatch(record.id) }
                 else { coordinator.generateAllInsights() }
             }
             .controlSize(.small)
@@ -94,7 +94,7 @@ struct InsightInspector: View {
                 $0.input.meetingID == record.id && $0.input.configuration.id == configuration.id
             }.sorted { $0.input.requestedAt < $1.input.requestedAt } ?? [],
             canGenerate: aiSettings.isConfigured && !coordinator.isTransitioning
-                && coordinator.insights?.batchMeetingID == nil
+                && coordinator.insights?.batchMeetingIDs.contains(record.id) != true
                 && record.meetingStatus != .draft && (!isSummary || record.meetingStatus == .ended),
             automatic: automatic,
             emptyMessage: isSummary ? "Generate a summary of the complete meeting."

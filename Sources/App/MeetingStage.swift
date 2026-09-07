@@ -1,4 +1,3 @@
-import SwiftData
 import SwiftUI
 
 struct MeetingStage: View {
@@ -69,14 +68,9 @@ private struct StageHeader: View {
     @Binding var sidebarOpen: Bool
     @Binding var selectedRecord: MeetingRecord?
     @Binding var showRefined: Bool
-    @Environment(\.modelContext) private var modelContext
     @Environment(AISettings.self) private var aiSettings
     @Environment(SettingsNavigation.self) private var settingsNavigation
-    @State private var saveError: String?
     @State private var showingPreparation = false
-    @State private var refinementTask: Task<Void, Never>?
-    @State private var titleTask: Task<Void, Never>?
-    @State private var refinementToken = UUID()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -111,6 +105,13 @@ private struct StageHeader: View {
                     .fixedSize()
                     .padding(.trailing, 4)
                 }
+                if let refinement = coordinator.refinements[record.id],
+                   let message = refinement.errorMessage ?? refinement.titleErrorMessage {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(CaptionsView.danger)
+                        .help(message)
+                        .accessibilityLabel(message)
+                }
                 refineButton(record)
                 iconButton("square.and.arrow.up", help: "Export Meeting") {
                     TranscriptExporter.exportRecord(record)
@@ -135,11 +136,6 @@ private struct StageHeader: View {
             }
         }
         .padding(.horizontal, 16)
-        .alert("Operation Failed", isPresented: showsSaveError) {
-            Button("OK") { saveError = nil }
-        } message: {
-            Text(saveError ?? "")
-        }
         .sheet(isPresented: $showingPreparation) {
             if let record = coordinator.workspaceRecord, let history = coordinator.history {
                 VStack(spacing: 0) {
@@ -152,15 +148,8 @@ private struct StageHeader: View {
             }
         }
         .onChange(of: coordinator.selectedRecordID) { _, _ in showingPreparation = false }
-        .onChange(of: selectedRecord?.id) { _, _ in cancelRefinement() }
-        .onDisappear { cancelRefinement() }
-    }
-
-    private var showsSaveError: Binding<Bool> {
-        Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )
+        .onChange(of: selectedRecord?.id) { _, _ in showRefined = true }
+        .onChange(of: selectedRecord?.refinedAt) { _, _ in showRefined = true }
     }
 
     private var recordingStatus: some View {
@@ -203,21 +192,23 @@ private struct StageHeader: View {
 
     private func refineButton(_ record: MeetingRecord) -> some View {
         let configured = aiSettings.isConfigured
-        let state = coordinator.refiner?.state ?? .idle
-        let busy: Bool = if case .refining = state { true } else { false }
-        let failed: Bool = if case .error = state { true } else { false }
+        let refinement = coordinator.refinements[record.id]
+        let state = refinement?.refiner.state ?? .idle
+        let busy = refinement?.isRefining == true
+        let failed = refinement?.errorMessage != nil
         let label: String = switch state {
         case .refining(let done, let total): "Refining \(done)/\(total)"
         case .error: "Refinement Failed — Retry"
         case .idle:
-            if !configured { "Configure AI Services" }
+            if failed { "Refinement Failed — Retry" }
+            else if !configured { "Configure AI Services" }
             else if record.hasRefinement { "Refine Again" }
             else { record.languagePair.needsTranslation ? "Refine Translation" : "Refine Transcript" }
         }
 
         return Button {
             if configured {
-                runRefinement(record)
+                coordinator.refinement(for: record, settings: aiSettings)?.start()
             } else {
                 settingsNavigation.openAISettings()
             }
@@ -233,94 +224,10 @@ private struct StageHeader: View {
             .foregroundStyle(failed ? CaptionsView.danger : CaptionsView.accent)
         }
         .buttonStyle(.plain)
-        .help(label)
+        .help(refinement?.errorMessage ?? refinement?.titleErrorMessage ?? label)
         .accessibilityLabel(label)
         .disabled(busy)
         .padding(.trailing, 6)
-    }
-
-    private func runRefinement(_ record: MeetingRecord) {
-        guard let refiner = coordinator.refiner else { return }
-        cancelRefinement()
-        let lines = record.lines
-        let languagePair = record.languagePair
-        let token = UUID()
-        refinementToken = token
-        if record.needsAITitle, let titleGenerator = coordinator.titleGenerator {
-            titleTask = Task { @MainActor in
-                do {
-                    guard let title = try await titleGenerator.generateIfNeeded(for: record) else { return }
-                    guard !Task.isCancelled,
-                          refinementToken == token,
-                          selectedRecord?.id == record.id,
-                          record.needsAITitle else { return }
-                    record.aiTitle = title
-                    do {
-                        try modelContext.save()
-                    } catch {
-                        modelContext.rollback()
-                        throw error
-                    }
-                } catch is CancellationError {
-                    return
-                } catch let error as LLMError {
-                    guard refinementToken == token, record.needsAITitle else { return }
-                    saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.errorDescription ?? "Unknown error")"
-                } catch {
-                    guard refinementToken == token, record.needsAITitle else { return }
-                    saveError = "Title generation failed. Transcript refinement is unaffected.\n\(error.localizedDescription)"
-                }
-            }
-        }
-        refinementTask = Task { @MainActor in
-            do {
-                let outcome = try await refiner.refine(
-                    lines: lines,
-                    languagePair: languagePair,
-                    priorGlossaryJSON: record.glossaryJSON
-                )
-                guard !Task.isCancelled,
-                      refinementToken == token,
-                      selectedRecord?.id == record.id else { return }
-                for line in lines {
-                    guard let refined = outcome.byIndex[line.orderIndex] else { continue }
-                    let source = refined.source.trimmed
-                    if !source.isEmpty {
-                        line.refinedSource = source
-                        if !languagePair.needsTranslation { line.refinedTarget = source }
-                    }
-                    if let target = refined.target?.trimmed, !target.isEmpty {
-                        line.refinedTarget = target
-                    }
-                }
-                record.glossaryJSON = outcome.glossaryJSON
-                record.refinedAt = Date()
-                do {
-                    try modelContext.save()
-                } catch {
-                    modelContext.rollback()
-                    throw error
-                }
-                showRefined = true
-            } catch is CancellationError {
-                return
-            } catch let error as LLMError {
-                guard refinementToken == token else { return }
-                saveError = error.errorDescription
-            } catch {
-                guard refinementToken == token else { return }
-                saveError = error.localizedDescription
-            }
-        }
-    }
-
-    private func cancelRefinement() {
-        refinementTask?.cancel()
-        refinementTask = nil
-        titleTask?.cancel()
-        titleTask = nil
-        refinementToken = UUID()
-        coordinator.refiner?.cancel()
     }
 
     private func iconButton(_ systemName: String, help: String,

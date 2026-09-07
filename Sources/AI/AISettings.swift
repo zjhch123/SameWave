@@ -8,6 +8,8 @@ import Security
 @MainActor
 @Observable
 final class AISettings {
+    static let defaultContextTokenBudget = 1_000_000
+
     /// Selected provider id (matches `LLMProviderConfig.id`). Persisted in UserDefaults.
     var selectedProviderID: String {
         didSet { defaults.set(selectedProviderID, forKey: Keys.provider) }
@@ -45,7 +47,7 @@ final class AISettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let savedBudget = defaults.integer(forKey: "insight.contextTokenBudget")
-        insightContextTokenBudget = savedBudget > 0 ? savedBudget : 32_768
+        insightContextTokenBudget = savedBudget > 0 ? savedBudget : Self.defaultContextTokenBudget
         let persistedProviderID = defaults.string(forKey: Keys.provider)
         let supportedProvider = persistedProviderID.flatMap { id in
             LLMProviderConfig.builtIn.first { $0.id == id }

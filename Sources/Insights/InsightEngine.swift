@@ -42,7 +42,7 @@ final class InsightEngine {
 
     private(set) var states: [InsightKey: State] = [:]
     private(set) var unsaved: [UUID: InsightSnapshotValue] = [:]
-    private(set) var batchMeetingID: UUID?
+    private(set) var batchMeetingIDs: Set<UUID> = []
     private let settings: AISettings
     private let history: MeetingHistoryStore
     private let providerFactory: () -> (any LLMProvider)?
@@ -52,8 +52,12 @@ final class InsightEngine {
     @ObservationIgnored private var tokens: [InsightKey: UUID] = [:]
     @ObservationIgnored private var recordingID: UUID?
     @ObservationIgnored private var schedule: AutomaticInsightSchedule?
-    @ObservationIgnored private var batchQueue: [InsightInput] = []
-    @ObservationIgnored private var batchProvider: (any LLMProvider)?
+    private struct PendingRequest {
+        let input: InsightInput
+        let provider: (any LLMProvider)?
+        var key: InsightKey { InsightKey(meetingID: input.meetingID, definitionID: input.configuration.id) }
+    }
+    @ObservationIgnored private var queue: [PendingRequest] = []
 
     init(settings: AISettings, history: MeetingHistoryStore,
          providerFactory: (() -> (any LLMProvider)?)? = nil,
@@ -107,67 +111,92 @@ final class InsightEngine {
         let input = makeInput(record: record, configuration: configuration, kind: kind,
                               sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
         let key = InsightKey(meetingID: record.id, definitionID: configuration.id)
-        if let existing = inputs[key], input.analyzesSameContent(as: existing) { return }
-        // A standalone manual selection supersedes older manual work. Generate All
-        // instead fills the shared request capacity with independent batch items.
+        let existing = inputs[key] ?? queue.first(where: { $0.key == key })?.input
+        if let existing, input.analyzesSameContent(as: existing) { return }
+        // Replacement requests affect only their own meeting; navigation owns no work.
         if kind != .automatic {
-            cancelBatch()
-            for (otherKey, otherInput) in Array(inputs) where otherInput.kind != .automatic || otherKey == key {
-                cancel(otherKey)
+            removeBatch(record.id)
+            for (otherKey, otherInput) in Array(inputs)
+                where otherKey.meetingID == record.id && otherInput.kind != .automatic {
+                removeRequest(otherKey)
+            }
+            for pending in queue where pending.key.meetingID == record.id && pending.input.kind != .automatic {
+                removeRequest(pending.key)
             }
         }
-        cancel(key)
-        dispatch(input, now: now)
+        removeRequest(key)
+        enqueue(input, provider: providerFactory())
+        dispatchQueued(now: now)
+    }
+
+    func isWorking(on meetingID: UUID) -> Bool {
+        states.contains { $0.key.meetingID == meetingID && ($0.value == .generating || $0.value == .queued) }
     }
 
     func canGenerateAll(_ record: MeetingRecord) -> Bool {
         let ids = Set(record.definitions.map(\.id))
-        return batchMeetingID == nil && record.meetingStatus != .draft && !ids.isEmpty
+        return !batchMeetingIDs.contains(record.id) && record.meetingStatus != .draft && !ids.isEmpty
             && !unsaved.values.contains { $0.input.meetingID == record.id && ids.contains($0.input.configuration.id) }
     }
 
     func generateAll(record: MeetingRecord, sources: [InsightSource], vocabulary: [String],
                      elapsedSeconds: TimeInterval, now: Date = .now) {
         guard canGenerateAll(record) else { return }
-        for (key, input) in Array(inputs) where input.kind != .automatic { cancel(key) }
-        let requests = record.insightReadingOrder.map {
-            makeInput(record: record, configuration: $0.configuration, kind: .manual,
-                      sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
+        for (key, input) in Array(inputs) where key.meetingID == record.id && input.kind != .automatic {
+            removeRequest(key)
         }
-        for input in requests { cancel(InsightKey(meetingID: record.id, definitionID: input.configuration.id)) }
-        batchQueue = requests
-        batchMeetingID = record.id
-        batchProvider = providerFactory()
-        for input in requests { states[InsightKey(meetingID: record.id, definitionID: input.configuration.id)] = .queued }
-        dispatchBatch(now: now)
+        for pending in queue where pending.key.meetingID == record.id && pending.input.kind != .automatic {
+            removeRequest(pending.key)
+        }
+        let provider = providerFactory()
+        for definition in record.insightReadingOrder {
+            let input = makeInput(record: record, configuration: definition.configuration, kind: .manual,
+                                  sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
+            removeRequest(InsightKey(meetingID: record.id, definitionID: definition.id))
+            enqueue(input, provider: provider)
+        }
+        batchMeetingIDs.insert(record.id)
+        dispatchQueued(now: now)
     }
 
-    func cancelBatch() {
-        guard let meetingID = batchMeetingID else { return }
-        batchMeetingID = nil
-        batchProvider = nil
-        for input in batchQueue {
-            states[InsightKey(meetingID: meetingID, definitionID: input.configuration.id)] = .cancelled
-        }
-        batchQueue.removeAll()
-        for (key, input) in Array(inputs) where key.meetingID == meetingID && input.kind != .automatic { cancel(key) }
+    func cancelBatch(_ meetingID: UUID) {
+        removeBatch(meetingID)
+        dispatchQueued()
     }
 
-    private func dispatchBatch(now: Date = .now) {
-        guard let meetingID = batchMeetingID else { return }
-        while !batchQueue.isEmpty && inputs.count < Self.maximumConcurrentRequests {
-            dispatch(batchQueue.removeFirst(), now: now)
+    private func removeBatch(_ meetingID: UUID) {
+        guard batchMeetingIDs.remove(meetingID) != nil else { return }
+        for pending in queue where pending.key.meetingID == meetingID && pending.input.kind == .manual {
+            removeRequest(pending.key)
         }
-        if batchQueue.isEmpty && !inputs.values.contains(where: { $0.meetingID == meetingID && $0.kind == .manual }) {
-            batchMeetingID = nil
-            batchProvider = nil
+        for (key, input) in Array(inputs) where key.meetingID == meetingID && input.kind == .manual {
+            removeRequest(key)
         }
     }
 
-    private func dispatch(_ input: InsightInput, now: Date) {
-        let key = InsightKey(meetingID: input.meetingID, definitionID: input.configuration.id)
-        schedule?.noteDispatch(input.configuration.id, now: now,
-                               finalizedCharacters: input.sources.reduce(0) { $0 + $1.text.count })
+    private func enqueue(_ input: InsightInput, provider: (any LLMProvider)?) {
+        let pending = PendingRequest(input: input, provider: provider)
+        queue.append(pending)
+        states[pending.key] = .queued
+    }
+
+    private func dispatchQueued(now: Date = .now) {
+        while !queue.isEmpty && inputs.count < Self.maximumConcurrentRequests {
+            dispatch(queue.removeFirst(), now: now)
+        }
+        batchMeetingIDs = batchMeetingIDs.filter { id in
+            queue.contains { $0.input.meetingID == id && $0.input.kind == .manual }
+                || inputs.values.contains { $0.meetingID == id && $0.kind == .manual }
+        }
+    }
+
+    private func dispatch(_ pending: PendingRequest, now: Date) {
+        let input = pending.input
+        let key = pending.key
+        if recordingID == input.meetingID {
+            schedule?.noteDispatch(input.configuration.id, now: now,
+                                   finalizedCharacters: input.sources.reduce(0) { $0 + $1.text.count })
+        }
         do {
             guard let owner = try history.record(id: input.meetingID),
                   input.kind == .summary || owner.definitions.contains(where: { $0.id == input.configuration.id }) else {
@@ -176,9 +205,7 @@ final class InsightEngine {
             guard input.kind != .summary || owner.meetingStatus == .ended else {
                 throw LLMError.invalidRequest("End the meeting before generating a full summary.")
             }
-            let selectedProvider = input.kind == .manual && batchMeetingID == input.meetingID
-                ? batchProvider : providerFactory()
-            guard let provider = selectedProvider else { throw LLMError.notConfigured }
+            guard let provider = pending.provider else { throw LLMError.notConfigured }
             let user = try InsightRequest.prepare(input)
             let token = UUID()
             tokens[key] = token
@@ -216,19 +243,35 @@ final class InsightEngine {
                                       definitionID: value.input.configuration.id))
     }
 
+    /// Pausing capture stops automatic scheduling, but explicit requests keep their frozen input.
+    func stopRecording(_ id: UUID) {
+        if recordingID == id { recordingID = nil; schedule = nil }
+        for (key, input) in Array(inputs) where key.meetingID == id && input.kind == .automatic {
+            removeRequest(key)
+        }
+        dispatchQueued()
+    }
+
     func cancelMeeting(_ id: UUID, deleting: Bool = false) {
-        if batchMeetingID == id { cancelBatch() }
-        for key in Array(tasks.keys) where key.meetingID == id { cancel(key) }
+        removeBatch(id)
+        for pending in queue where pending.key.meetingID == id { removeRequest(pending.key) }
+        for key in Array(tasks.keys) where key.meetingID == id { removeRequest(key) }
         if recordingID == id { recordingID = nil; schedule = nil }
         if deleting {
             unsaved = unsaved.filter { $0.value.input.meetingID != id }
             states = states.filter { $0.key.meetingID != id }
         }
+        dispatchQueued()
     }
 
     func cancel(_ key: InsightKey) {
+        removeRequest(key)
+        dispatchQueued()
+    }
+
+    private func removeRequest(_ key: InsightKey) {
         if states[key] == .queued {
-            batchQueue.removeAll { $0.meetingID == key.meetingID && $0.configuration.id == key.definitionID }
+            queue.removeAll { $0.key == key }
             states[key] = .cancelled
         }
         if let task = tasks.removeValue(forKey: key) {
@@ -237,7 +280,6 @@ final class InsightEngine {
             tokens[key] = nil
             states[key] = .cancelled
         }
-        dispatchBatch()
     }
 
     private func persist(_ value: InsightSnapshotValue, key: InsightKey) {
@@ -256,6 +298,6 @@ final class InsightEngine {
         tasks[key] = nil
         inputs[key] = nil
         tokens[key] = nil
-        dispatchBatch()
+        dispatchQueued()
     }
 }

@@ -7,6 +7,41 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testBackgroundRefinementRemainsVisibleWhileAnotherMeetingIsSelected() async throws {
+        let history = try Phase2Fixture.history()
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let first = try history.createDraft(languagePair: .englishToEnglish)
+        first.userTitle = "Release Planning"
+        var section = Section(id: 0, speaker: .remote)
+        section.committedSource = ["Review the release plan."]
+        try history.finish(first, sections: [section], endedAt: .now)
+        let second = try history.createDraft(languagePair: .englishToEnglish)
+        second.userTitle = "Design Review"
+        try history.finish(second, sections: [section], endedAt: .now)
+        let provider = ControlledRefinementProvider()
+        addTeardownBlock { await provider.failAll() }
+        let refinement = try XCTUnwrap(coordinator.refinement(for: first, settings: settings, providerFactory: { provider }))
+        refinement.start()
+        await coordinator.openHistory(second)
+        try await Phase2Fixture.waitUntil { await provider.count == 1 }
+        XCTAssertEqual(coordinator.backgroundActivity(for: first.id), "Refining transcript")
+        XCTAssertNil(coordinator.backgroundActivity(for: second.id))
+        try await render(MainView(coordinator: coordinator)
+            .environment(settings)
+            .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
+            .modelContainer(history.container), size: NSSize(width: 940, height: 480), name: "background-refinement-switch",
+            expectedLabels: ["Release Planning", "Design Review", "Review the", "release plan."])
+        await coordinator.openHistory(first)
+        try await render(MainView(coordinator: coordinator)
+            .environment(settings)
+            .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
+            .modelContainer(history.container), size: NSSize(width: 1120, height: 760), name: "background-refinement-return",
+            expectedLabels: ["Release Planning", "Review the release plan."])
+    }
+
     func testUserNamedHistoryKeepsItsDateInSidebar() async throws {
         let history = try Phase2Fixture.history()
         let defaults = Phase2Fixture.defaults(self)
@@ -555,7 +590,7 @@ final class MainViewRenderingTests: XCTestCase {
             size: NSSize(width: 240, height: 620), name: "phase2-custom-batch",
             expectedLabels: ["Custom Insights", "Stop", "Updating", "Your insight will appear here."],
             absentLabels: ["Generate when you’re ready."])
-        engine.cancelBatch()
+        engine.cancelBatch(record.id)
         try await render(InsightResultCard(meetingID: record.id, configuration: definition.configuration, snapshots: [],
             state: .queued, generate: {}, stop: {}), size: NSSize(width: 240, height: 340), name: "phase2-custom-queued",
             expectedLabels: ["Queued", "Stop", "Your insight will appear here."])

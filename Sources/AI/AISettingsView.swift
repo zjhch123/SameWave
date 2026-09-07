@@ -79,11 +79,11 @@ struct AISettingsView: View {
                 }
 
                 SwiftUI.Section {
-                    TextField("Insight context budget (tokens)", value: $draft.contextBudget, format: .number)
+                    TextField("Model context window (tokens)", value: $draft.contextBudget, format: .number)
                     if draft.contextBudget < 16_384 || draft.contextBudget > 2_000_000 {
-                        Text("Enter a budget from 16,384 to 2,000,000 tokens.").font(.caption).foregroundStyle(.red)
+                        Text("Enter a context window from 16,384 to 2,000,000 tokens.").font(.caption).foregroundStyle(.red)
                     }
-                    Text("Set this to your model's supported context window. Full insight requests use a conservative byte-based estimate including prompts, schema, and an 8,192-token output allowance. Oversized input is rejected without truncation. The service can still reject requests at its actual limit.")
+                    Text("Enter the selected model's supported context window, for example 1,000,000 for a 1M model. Save applies it to new insight requests. The check conservatively estimates the complete meeting, vocabulary, instructions, and output allowance; it does not measure exact tokens. No meeting text is truncated. The service enforces its actual limit.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 

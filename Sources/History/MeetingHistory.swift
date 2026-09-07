@@ -293,6 +293,42 @@ final class MeetingHistoryStore {
         try save()
     }
 
+    /// Restore only the affected fields if this write fails; other meeting work is independent.
+    func saveRefinement(_ outcome: TranscriptRefiner.Outcome, to record: MeetingRecord,
+                        persist: (ModelContext) throws -> Void = { try $0.save() }) throws {
+        let originals = record.lines.map { ($0, $0.refinedSource, $0.refinedTarget) }
+        let originalGlossary = record.glossaryJSON
+        let originalDate = record.refinedAt
+        for line in record.lines {
+            guard let refined = outcome.byIndex[line.orderIndex] else { continue }
+            let source = refined.source.trimmed
+            if !source.isEmpty {
+                line.refinedSource = source
+                if !record.languagePair.needsTranslation { line.refinedTarget = source }
+            }
+            if let target = refined.target?.trimmed, !target.isEmpty { line.refinedTarget = target }
+        }
+        record.glossaryJSON = outcome.glossaryJSON
+        record.refinedAt = .now
+        do { try persist(context) }
+        catch {
+            for (line, source, target) in originals {
+                line.refinedSource = source
+                line.refinedTarget = target
+            }
+            record.glossaryJSON = originalGlossary
+            record.refinedAt = originalDate
+            throw error
+        }
+    }
+
+    func saveGeneratedTitle(_ title: String, to record: MeetingRecord) throws {
+        let original = record.aiTitle
+        record.aiTitle = title
+        do { try context.save() }
+        catch { record.aiTitle = original; throw error }
+    }
+
     /// Keeps a failed write from leaking uncommitted model mutations into the next
     /// operation. The coordinator's `CaptionStore` remains the retry source of truth.
     func save() throws {

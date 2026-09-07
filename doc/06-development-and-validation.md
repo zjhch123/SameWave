@@ -166,8 +166,9 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 - Multiple requests reveal terms incrementally. Edits, deselection, and saves during generation survive later duplicate results. Stop retains results; retry handles incomplete requests only. Verify compact progress and inline error reasons without request details.
 - Leave manual vocabulary edits and an AI Services draft unsaved, then save selected generated terms. Only selected terms persist; manual and AI drafts remain pending. Reopen Settings and cancel AI edits; saved vocabulary must remain unchanged. Test manual multiline Add, saved-row Save/Cancel, Remove, duplicate feedback, and all-or-nothing invalid-line handling.
 - 401, 429, timeout, and non-JSON responses show the appropriate English error.
-- Dense commits respect 45-second/80-character automatic gates and one automatic slot. Standalone Generate Now starts immediately; Custom Insights Generate fills up to six concurrent requests, including any automatic work in that cap. Completion, failure, and individual Stop refill available capacity. Whole-batch Stop clears queued and active work. Every successful result is saved independently.
+- Dense commits respect 45-second/80-character automatic gates and one automatic slot. Standalone Generate Now starts when a shared slot is available; Custom Insights Generate fills up to six concurrent requests, including any automatic work in that cap. Completion, failure, and individual Stop refill available capacity. Whole-batch Stop clears queued and active work. Every successful result is saved independently.
 - Save a Preparation title with Save or Return, record and End, then refine: no title request should be sent. Reopen to verify persistence. With no saved title, refine and save a user title before its response returns; the late AI title must be discarded. Clearing a user title reuses any existing AI title, otherwise the next refinement may generate one.
+- Start refinement/title generation in history, switch meetings, return while it runs, and leave it again until completion. Progress and sidebar activity remain with the original meeting, and results save there. Repeat with Custom Insights and Meeting Insights; run requests in two meetings and verify independent Stop/errors under the shared six-request cap. Delete a busy meeting and verify late replies cannot restore it. App relaunch retains completed results, without resuming unfinished jobs.
 - One failed refinement batch neither erases successful batches nor overwrites originals.
 - Cross-language and same-language refinement prompts/fields differ correctly; direction follows the saved pair.
 - Historical/full-summary input retains all original source or fails preflight explicitly. Early agreements and late revisions both enter the request.
@@ -182,8 +183,8 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 2. `TranslationBridge` replacement, cross-Section order, idle drain.
 3. `MeetingHistoryStore.sync/finish` upsert, stale deletion, and empty-workspace retention; draft/attachment on-disk reopen and cascade ownership.
 4. Full insight context, explicit budgets, strict JSON Schema/evidence, automatic gates, manual priority, cancellation, history versions, and save retry.
-5. Refinement line/character batch limits.
-6. Vocabulary defaults, persisted empty state, whitespace cleanup, case-insensitive deduplication.
+5. Refinement line/character batch limits; per-meeting progress, concurrent owners, navigation, title independence, deletion, partial failure, retry, and scoped persistence rollback.
+6. Vocabulary defaults, persisted empty state, whitespace cleanup, case-insensitive deduplication, and extraction prompt priorities that preserve meaningful names.
 7. Fixed language labels, four pairs, bypass, persisted pair values.
 8. Markdown file/request budgets, Unicode fragmentation, incremental delivery, two retries and continuation, term-only review/persistence, omitted filenames.
 9. Import stop/retry/discard, non-destructive close, and stale-response isolation; retained edits/selections; save-time deduplication and draft isolation; native Settings tab switching/dismissal and review rendering.

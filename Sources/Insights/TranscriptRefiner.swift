@@ -51,15 +51,16 @@ final class TranscriptRefiner {
         let lines: [RefinedLine]
     }
 
-    private let settings: AISettings
+    private let providerFactory: () -> (any LLMProvider)?
     private let vocabularySettings: SpeechVocabularySettings
     private let batchLineLimit = 8
     private let batchCharacterLimit = 1_500
     private(set) var state: State = .idle
     private var runID = UUID()
 
-    init(settings: AISettings, vocabularySettings: SpeechVocabularySettings) {
-        self.settings = settings
+    init(settings: AISettings, vocabularySettings: SpeechVocabularySettings,
+         providerFactory: (() -> (any LLMProvider)?)? = nil) {
+        self.providerFactory = providerFactory ?? { settings.makeProvider() }
         self.vocabularySettings = vocabularySettings
     }
 
@@ -72,7 +73,7 @@ final class TranscriptRefiner {
                 priorGlossaryJSON: String?) async throws -> Outcome {
         let expectedRunID = UUID()
         runID = expectedRunID
-        guard let provider = settings.makeProvider() else {
+        guard let provider = providerFactory() else {
             state = .error(.notConfigured)
             throw LLMError.notConfigured
         }
@@ -97,6 +98,8 @@ final class TranscriptRefiner {
 
         state = .refining(done: 0, total: batches.count)
         for (index, batch) in batches.enumerated() {
+            try Task.checkCancellation()
+            guard runID == expectedRunID else { throw CancellationError() }
             let context = index > 0 ? Array(batches[index - 1].suffix(2)) : []
             do {
                 let raw = try await provider.complete(
@@ -138,6 +141,7 @@ final class TranscriptRefiner {
             }
         }
 
+        try Task.checkCancellation()
         guard runID == expectedRunID else { throw CancellationError() }
         guard successCount > 0 else {
             state = .error(lastError)
