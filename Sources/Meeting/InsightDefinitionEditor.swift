@@ -25,7 +25,7 @@ struct InsightDefinitionEditor: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(definition == nil ? "Add Insight" : "Edit Insight").font(.title2.bold())
+                    Text(definition == nil ? String(localized: "Add Insight") : String(localized: "Edit Insight")).font(.title2.bold())
                     TextField("Title", text: $title).textFieldStyle(.roundedBorder)
                     Text("What should this insight analyze?")
                     TextEditor(text: $prompt)
@@ -43,7 +43,7 @@ struct InsightDefinitionEditor: View {
                         ForEach(InsightScope.allCases) { Text($0.label).tag($0) }
                     }
                     Toggle("Generate automatically during recording", isOn: $automatic)
-                    Text("Generation sends the original transcript and complete applicable vocabulary to your AI service. Results are presented in English. Earlier results keep their original prompt, including after removing this insight.")
+                    Text("Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(24)
             }

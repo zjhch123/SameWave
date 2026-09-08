@@ -138,7 +138,7 @@ final class VocabularyImportController {
     func discardSuggestions() {
         guard !isRunning else { return }
         reset()
-        savedMessage = "Suggestions discarded"
+        savedMessage = String(localized: "Suggestions discarded")
     }
 
     func selectAll(_ selected: Bool) {
@@ -153,10 +153,10 @@ final class VocabularyImportController {
             let added = try saveCandidates(candidates.filter { $0.isSelected })
             candidates.removeAll { selectedIDs.contains($0.id) }
             saveError = nil
-            savedMessage = added > 0 ? "New terms saved: \(added)" : "All selected terms already exist; no duplicates were added"
+            savedMessage = added > 0 ? String(localized: "New terms saved: \(added)") : String(localized: "All selected terms already exist; no duplicates were added")
         } catch {
             savedMessage = nil
-            saveError = "Could not save terms. Your selection is retained; try adding the terms again. \(error.localizedDescription)"
+            saveError = String(localized: "Could not save terms. Your selection is retained; try adding the terms again. \(error.localizedDescription)")
         }
     }
 

@@ -83,7 +83,7 @@ struct MeetingSidebar: View {
         let subtitle: String
         let detail: String?
         if isUnfinished {
-            subtitle = record.meetingStatus == .draft ? "Preparation" : isRecording ? "Recording…" : "Paused"
+            subtitle = record.meetingStatus == .draft ? String(localized: "Preparation") : isRecording ? String(localized: "Recording…") : String(localized: "Paused")
             detail = nil
         } else if record.hasTitle {
             subtitle = record.displayDate

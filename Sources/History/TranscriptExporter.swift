@@ -33,7 +33,7 @@ enum TranscriptExporter {
         let refined = record.hasRefinement
         var md = header
         let refinedNote = refined ? " · AI-refined" : ""
-        md += "> Generated locally by SameWave · \(record.displayDate) · Sections: \(lines.count) · \(record.durationText)\(refinedNote)\n\n---\n\n"
+        md += "> Generated locally by SameWave · \(DateFormat.dayTime.string(from: record.startedAt)) · Sections: \(lines.count) · \(record.durationText)\(refinedNote)\n\n---\n\n"
         appendInsights(&md, record.insightSnapshots)
         for (i, line) in lines.enumerated() {
             let target = line.displayTarget(refined: refined).trimmed
@@ -103,14 +103,14 @@ enum TranscriptExporter {
         panel.allowedContentTypes = [.init(filenameExtension: "md")!]
         panel.nameFieldStringValue = "meeting-transcript-\(DateFormat.fileStamp.string(from: Date())).md"
         panel.canCreateDirectories = true
-        panel.title = "Export Meeting Transcript"
+        panel.title = String(localized: "Export Meeting Transcript")
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             do {
                 try md.write(to: url, atomically: true, encoding: .utf8)
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "Export Failed"
+                alert.messageText = String(localized: "Export Failed")
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
             }

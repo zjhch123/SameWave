@@ -22,10 +22,10 @@ struct MeetingContextView: View {
             ForEach(record.orderedDocuments) { document in
                 VocabularyDocumentRow(document: document.source) {
                     do { try history.removeAttachment(document); error = nil }
-                    catch { self.error = "Could not remove document: \(error.localizedDescription)" }
+                    catch { self.error = String(localized: "Could not remove document: \(error.localizedDescription)") }
                 }
             }
-            if loadingTask != nil { ProgressView("Reading local files…").controlSize(.small) }
+            if loadingTask != nil { ProgressView(String(localized: "Reading local files…")).controlSize(.small) }
             if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             Text("Local copies · UTF-8 Markdown · 3 MB per file · 30 MB per meeting")
                 .font(.caption).foregroundStyle(.secondary)

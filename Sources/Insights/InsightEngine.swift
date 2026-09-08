@@ -200,10 +200,10 @@ final class InsightEngine {
         do {
             guard let owner = try history.record(id: input.meetingID),
                   input.kind == .summary || owner.definitions.contains(where: { $0.id == input.configuration.id }) else {
-                throw LLMError.invalidRequest("This meeting or insight item has been deleted.")
+                throw LLMError.invalidRequest(String(localized: "This meeting or insight item has been deleted."))
             }
             guard input.kind != .summary || owner.meetingStatus == .ended else {
-                throw LLMError.invalidRequest("End the meeting before generating a full summary.")
+                throw LLMError.invalidRequest(String(localized: "End the meeting before generating a full summary."))
             }
             guard let provider = pending.provider else { throw LLMError.notConfigured }
             let user = try InsightRequest.prepare(input)
@@ -289,7 +289,7 @@ final class InsightEngine {
             states[key] = .saved
         } catch {
             unsaved[value.id] = value
-            states[key] = .unsaved("Generated but not saved. Retry Save before quitting. \(error.localizedDescription)")
+            states[key] = .unsaved(String(localized: "Generated but not saved. Retry Save before quitting. \(error.localizedDescription)"))
         }
     }
 

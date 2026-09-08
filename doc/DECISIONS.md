@@ -16,6 +16,54 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260908-003"></a>
+## DEC-20260908-003: Generate AI Insights in the active interface language
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Scope:** Insight generation language and immutable result versions
+- **Replaces:** The English-only insight output in [DEC-20260908-001](#dec-20260908-001) and [DEC-20260905-006](#dec-20260905-006). Native localization, generated meeting titles, English prompt source text, export templates, and documentation decisions retain their existing scope.
+- **Context:** The user requested that AI Insights follow the app language. The previous system prompt forced English even when the interface was Chinese. All insight request paths already share one system prompt and response contract.
+- **Decision:** Resolve English or Simplified Chinese from the native bundle's active language in the shared insight system prompt. Require conclusions, points, and every summary item to use that language, independently of transcript language and language requests in analysis instructions. Preserve proper names, justified vocabulary spelling, and JSON field names. Apply the same prompt to automatic, individual, batch, and full-summary requests; the context preflight continues counting that actual prompt. Language changes retain the established relaunch boundary. Keep saved snapshots immutable and append a new version when the user regenerates. Export includes each saved version verbatim.
+- **Rejected alternatives:** Reading the pending picker value could disagree with the currently displayed language. A separate insight-language setting would duplicate the requested app-wide choice. Translating stored results or translating an English response in a second request would rewrite history or add unnecessary work and another failure boundary. Localizing JSON field names would break the response contract.
+- **Rationale/tradeoffs:** One request produces content in the selected interface language without another model call, client translation, or persistence change. Existing English versions remain English until the user requests a new version. Language adherence is part of the model prompt; structural validation remains independent of language.
+- **Impact and validation:** XcodeGen, unsigned Debug build, and source/link/translation audits pass. `SameWave` on `platform=macOS,arch=arm64` passes 227/227 full English/US tests and 14/14 Chinese/CN localization/rendering tests. Controlled-provider tests verify all four generation paths with a different meeting language, exact request instructions, result parsing/persistence, old-version retention, and export. Chinese focused-result, summary, and editor renders were visually inspected; both languages passed rendering assertions. The signed desktop app was replaced and launched in its existing Chinese preference; signature/process checks and opening/cancelling the native insight editor passed. No real provider generation was run; model adherence is covered by the documented synthetic-meeting smoke procedure.
+- **Files:** `Sources/Insights/InsightModels.swift`, `Sources/Meeting/InsightDefinitionEditor.swift`, `Sources/Resources/Localizable.xcstrings`, `Tests/LocalizationTests.swift`, `Tests/MainViewRenderingTests.swift`, `Tests/Phase2TestSupport.swift`, README and product/AI/development references.
+
+---
+
+<a id="dec-20260908-002"></a>
+## DEC-20260908-002: Expose the native app language preference in General settings
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Scope:** Settings entry point, preference ownership, and language activation
+- **Replaces:** The system-settings-only language entry point in [DEC-20260908-001](#dec-20260908-001). Its native catalogs, launch-time activation, and content boundaries remain adopted.
+- **Context:** The user requested an in-app selector with Follow System, English, and Chinese, defaulting to Follow System. SwiftUI labels, Foundation messages, AppKit menus, and permission resources must continue selecting the same language.
+- **Decision:** Add General as the initial Settings tab. Save explicit selections immediately to the app-domain `AppleLanguages` preference and remove that key for Follow System. Read the persistent app domain to distinguish an override from inherited global languages, and use native bundle matching for an existing macOS per-app preference. Keep this preference independent of AI drafts and vocabulary edits. Explain beside the picker that the user must quit and reopen SameWave to apply a change. Let native bundles resolve the language on the next launch.
+- **Rejected alternatives:** A separate application language key would compete with the native macOS setting. Storing the current system language for Follow System would stop following future system changes. Updating only SwiftUI's locale would leave dynamic messages and native UI inconsistent. Automatic relaunch on selection would interrupt meetings and pending work.
+- **Rationale/tradeoffs:** One native preference controls every localization boundary without replacing bundle lookup or maintaining parallel translation state. Selection saves immediately, while the current app session keeps its launch language. The user decides when to quit, and existing session persistence handles that normal exit.
+- **Impact and validation:** XcodeGen and unsigned Debug build pass. `SameWave` on `platform=macOS,arch=arm64` passes 224/224 full English/US tests and 11/11 Chinese/CN preference, localization, and rendering tests. Tests cover default selection, persistence, native language matching, override removal, unrelated/global preferences, all three visible selections, and retained AI/vocabulary drafts. The source/link/translation audit passes. After signed desktop installation, native UI checks verified Chinese and English across quit/reopen, then restored Follow System and confirmed the override is absent. Done closes General with Return.
+- **Files:** `Sources/App/AppLanguageSettings.swift`, `Sources/App/GeneralSettingsView.swift`, `Sources/App/SettingsView.swift`, `Sources/Resources/Localizable.xcstrings`, `Tests/AppLanguageSettingsTests.swift`, settings/rendering fixtures, README, product/development references.
+
+---
+
+<a id="dec-20260908-001"></a>
+## DEC-20260908-001: Localize the interface with native English and Simplified Chinese catalogs
+
+- **Date:** 2026-09-08
+- **Status:** Superseded for the language settings entry point by [DEC-20260908-002](#dec-20260908-002) and generated insight language by [DEC-20260908-003](#dec-20260908-003). Native catalogs, launch-time activation, and preserved-content boundaries remain adopted.
+- **Scope:** Interface language, localization resources, content boundaries, and validation
+- **Replaces:** The English-only interface, permission text, and UI metadata formatting in [DEC-20260905-006](#dec-20260905-006). Its app identity, English prompts/generated AI output/export templates, and documentation decisions remain adopted.
+- **Context:** Issue #17 requests English and Chinese app support. UI literals alone do not cover status/errors, dynamic control labels, counts, permission explanations, or summary headings. Some English labels also feed prompts and export, while editable titles and saved content must remain verbatim.
+- **Decision:** Use Apple string catalogs with English source keys and Simplified Chinese translations. Let macOS choose the app language, including its per-app language preference, on launch. Use SwiftUI localized literals for view copy and `String(localized:)` for dynamic app-owned messages. Put singular/plural and multiple-count substitutions in the catalog. Localize displayed dates through native formatting; keep explicit English export dates. Localize fixed summary headings only at the view boundary. Initialize a new editable overview title in the app language, then treat it as persisted user content. Do not localize storage/protocol identifiers, speech language identifiers, prompt language names, documents, vocabulary, editable titles, transcripts, or saved AI results. Keep source copy, prompts, generated AI content, export templates, and documentation in English.
+- **Rejected alternatives:** A custom language manager, parallel settings preference, and in-process switching would duplicate native app language selection and require rebuilding cached state. Translating arbitrary dynamic strings by lookup could alter user content that happens to match a UI key. Translating persisted records or model output would broaden an interface request into data rewriting. English word fragments for counts do not support correct pluralization or Chinese grammar.
+- **Rationale/tradeoffs:** Native catalogs provide compiled resource selection, translator context, interpolation, and plural rules without a dependency or compatibility layer. Language changes require reopening the app. System/provider error details retain their original wording; app-owned wrappers are translated. Editable titles created in an earlier language remain in that language unless edited.
+- **Impact and validation:** XcodeGen and unsigned Debug build pass. `SameWave` on `platform=macOS,arch=arm64` passes all 219 tests with English/US and 6 localization/rendering tests with Simplified Chinese/CN. Tests cover compiled UI/permission bundles, unsupported-language selection, zero/one/multiple counts, two independent plural counts, diagnostic interpolation, native minimum-size views, and preserved content/export. The English source/link audit now also validates complete translations and placeholder contracts. Native rendered Chinese preparation, settings, vocabulary, summary, and editor views were inspected.
+- **Files:** `Sources/Resources/Localizable.xcstrings`, `Sources/Resources/InfoPlist.xcstrings`, `project.yml`, presentation/status/error call sites, `Tests/LocalizationTests.swift`, native rendering/export/identity tests, `scripts/check_localizations.py`, `AGENTS.md`, product/development references.
+
+---
+
 <a id="dec-20260907-004"></a>
 ## DEC-20260907-004: Separate conversational turns from cumulative recognition
 
@@ -465,7 +513,7 @@ A generic multi-meeting project hierarchy, external file bookmarks, document ret
 ## DEC-20260905-006: Use English throughout the product and documentation
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded for interface localization and UI metadata formatting by [DEC-20260908-001](#dec-20260908-001), and generated insight language by [DEC-20260908-003](#dec-20260908-003). App identity, English prompt source/generated meeting titles/export templates, and documentation remain adopted.
 - **Scope:** Product language, generated AI content, export templates, app naming, documentation
 - **Replaces:** The Chinese display/executable/module names in [DEC-20260905-002](#dec-20260905-002) and Chinese title output in [DEC-20260904-002](#dec-20260904-002). Bundle identity and independent title generation remain unchanged.
 

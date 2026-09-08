@@ -27,6 +27,14 @@ enum MeetingLanguage: String, CaseIterable, Codable, Identifiable, Sendable {
         }
     }
 
+    /// Presentation only. Prompts use the stable English language name above.
+    var localizedLabel: String {
+        switch self {
+        case .english: String(localized: "English")
+        case .simplifiedChinese: String(localized: "Simplified Chinese")
+        }
+    }
+
     var localeID: String {
         switch self {
         case .english: "en-US"

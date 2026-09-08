@@ -60,7 +60,7 @@ struct AISettingsView: View {
                                 }
                             }
 
-                            Button(draft.availableModels.isEmpty ? "Fetch Models" : "Refresh List") {
+                            Button(draft.availableModels.isEmpty ? String(localized: "Fetch Models") : String(localized: "Refresh List")) {
                                 draft.fetchModels()
                             }
                             .disabled(!draft.canFetchModels)

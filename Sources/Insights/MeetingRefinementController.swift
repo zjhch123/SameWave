@@ -69,7 +69,7 @@ final class MeetingRefinementController {
                         try history.saveGeneratedTitle(title, to: owner)
                     } catch {
                         guard token == expectedToken, !Task.isCancelled, record.needsAITitle else { return }
-                        titleErrorMessage = "Title generation failed. Transcript refinement is unaffected. " + error.localizedDescription
+                        titleErrorMessage = String(localized: "Title generation failed. Transcript refinement is unaffected. \(error.localizedDescription)")
                     }
                 }
             }

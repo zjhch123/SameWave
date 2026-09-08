@@ -18,9 +18,10 @@ final class AppIdentityTests: XCTestCase {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String, "SameWave")
     }
 
-    func testApplicationDeclaresEnglishLocalization() {
+    func testApplicationDeclaresEnglishAndSimplifiedChineseLocalizations() {
         XCTAssertEqual(Bundle.main.developmentLocalization, "en")
-        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleLocalizations") as? [String], ["en"])
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleLocalizations") as? [String], ["en", "zh-Hans"])
+        XCTAssertTrue(Set(["en", "zh-Hans"]).isSubset(of: Set(Bundle.main.localizations)))
     }
 
     func testTestBundleUsesSameWaveIdentity() {

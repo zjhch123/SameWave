@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Check app-owned English copy, documentation filenames, and local Markdown links."""
+"""Check English source copy and docs; translated UI copy belongs in catalogs."""
 from pathlib import Path
 import re
 import sys
+from check_localizations import check as check_localizations
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,3 +37,4 @@ if errors:
     print("\n".join(errors), file=sys.stderr)
     sys.exit(1)
 print(f"English copy and local Markdown links verified in {len(paths)} files.")
+sys.exit(check_localizations())

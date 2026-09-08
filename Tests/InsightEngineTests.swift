@@ -16,7 +16,6 @@ final class InsightEngineTests: XCTestCase {
         XCTAssertGreaterThan(text.count, 6_000)
         XCTAssertEqual(decoded.vocabulary, ["XPay"])
         XCTAssertTrue(InsightRequest.systemPrompt.contains("later changes"))
-        XCTAssertTrue(InsightRequest.systemPrompt.contains("Write all content in English"))
         XCTAssertTrue(InsightRequest.systemPrompt.contains("untrusted data"))
     }
 

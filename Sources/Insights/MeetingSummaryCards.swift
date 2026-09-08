@@ -8,12 +8,12 @@ struct MeetingSummaryCards: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array((summary ?? .empty).parts.enumerated()), id: \.element.id) { index, part in
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(part.title, systemImage: part.symbol)
+                    Label(LocalizedStringKey(part.title), systemImage: part.symbol)
                         .font(.system(size: 12, weight: .semibold))
                     if summary == nil {
                         Text("No content yet.").foregroundStyle(CaptionsView.muted)
                     } else if part.items.isEmpty {
-                        Text(part.emptyMessage).foregroundStyle(CaptionsView.muted)
+                        Text(LocalizedStringKey(part.emptyMessage)).foregroundStyle(CaptionsView.muted)
                     } else {
                         ForEach(Array(part.items.enumerated()), id: \.offset) { _, item in
                             HStack(alignment: .top, spacing: 7) {
@@ -27,7 +27,7 @@ struct MeetingSummaryCards: View {
                 .font(.system(size: 13)).lineSpacing(3).foregroundStyle(CaptionsView.fg)
                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                 .background(InsightCardPalette.fill(index), in: RoundedRectangle(cornerRadius: 12))
-                .accessibilityElement(children: .contain).accessibilityLabel(part.title)
+                .accessibilityElement(children: .contain).accessibilityLabel(LocalizedStringKey(part.title))
             }
         }
     }

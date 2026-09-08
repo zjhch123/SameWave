@@ -38,7 +38,7 @@ enum InsightScope: String, Codable, CaseIterable, Identifiable, Sendable {
     case cumulative
     case latestExchange
     var id: String { rawValue }
-    var label: String { self == .cumulative ? "Meeting so far" : "Latest exchange" }
+    var label: String { self == .cumulative ? String(localized: "Meeting so far") : String(localized: "Latest exchange") }
 }
 
 @Model
@@ -72,6 +72,9 @@ struct InsightConfiguration: Codable, Equatable, Sendable {
     var title: String
     var prompt: String
     var scope: InsightScope
+
+    /// The built-in summary title is UI copy; editable titles remain meeting content.
+    var displayTitle: String { id == Self.summary.id ? String(localized: "Meeting Insights") : title }
 
     static let summary = InsightConfiguration(
         id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
@@ -109,7 +112,7 @@ extension MeetingHistoryStore {
         record.createdAt = now
         context.insert(record)
         let overview = InsightDefinition(
-            title: "Meeting Overview",
+            title: String(localized: "Meeting Overview"),
             prompt: "Give a broad, structured meeting overview with key topics, suggestions, action items, decisions, and open questions. Return the summary parts, not a flat list of points. Track commitments and any later changes.",
             automaticallyUpdates: false
         )

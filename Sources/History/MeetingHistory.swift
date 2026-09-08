@@ -70,8 +70,7 @@ final class MeetingRecord {
 
     var durationSec: Int { max(0, Int(endedAt.timeIntervalSince(startedAt))) }
 
-    /// "Jul 7, 2026 at 18:27" — the row/header title.
-    var displayDate: String { DateFormat.dayTime.string(from: startedAt) }
+    var displayDate: String { startedAt.formatted(date: .abbreviated, time: .shortened) }
 
     var hasAITitle: Bool { aiTitle?.trimmed.isEmpty == false }
     var hasTitle: Bool { !userTitle.trimmed.isEmpty || hasAITitle }
@@ -89,7 +88,13 @@ final class MeetingRecord {
     }
 
     /// "N sections · duration" — the one-line summary shown in the sidebar row and stage header.
-    var metaText: String { "\(lineCount) \(lineCount == 1 ? "section" : "sections") · \(durationText)" }
+    var metaText: String {
+        let minutes = durationSec / 60, seconds = durationSec % 60
+        let duration = minutes > 0
+            ? String(localized: "\(minutes)m \(seconds)s")
+            : String(localized: "\(seconds)s")
+        return String(localized: "\(lineCount) sections · \(duration)")
+    }
 
     /// Keep the original date visible as secondary metadata after a title replaces it.
     var displayMetaText: String {

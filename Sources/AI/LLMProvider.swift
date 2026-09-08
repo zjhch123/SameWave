@@ -86,22 +86,22 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save."
-        case .unauthorized:  return "Invalid API key or access denied (401). Check your API key in Settings → AI Services."
-        case .rateLimited:   return "Rate limit or quota exceeded (429). Please try again later."
-        case .server(let c): return "The service returned an error (\(c))."
-        case .network(let m): return "Network request failed: \(m)"
-        case .invalidRequest(let m): return "The AI service rejected the request: \(m)"
+        case .notConfigured: return String(localized: "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save.")
+        case .unauthorized:  return String(localized: "Invalid API key or access denied (401). Check your API key in Settings → AI Services.")
+        case .rateLimited:   return String(localized: "Rate limit or quota exceeded (429). Please try again later.")
+        case .server(let c): return String(localized: "The service returned an error (\(c)).")
+        case .network(let m): return String(localized: "Network request failed: \(m)")
+        case .invalidRequest(let m): return String(localized: "The AI service rejected the request: \(m)")
         case .contextWindowExceeded(let estimate, let limit):
-            return "This meeting exceeds the configured model context window (conservative estimate: \(estimate.formatted()) tokens including output; configured: \(limit.formatted())). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate."
-        case .badResponse:   return "Could not parse the service response."
-        case .emptyContent:  return "The service returned no usable content."
+            return String(localized: "This meeting exceeds the configured model context window (conservative estimate: \(estimate.formatted()) tokens including output; configured: \(limit.formatted())). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate.")
+        case .badResponse:   return String(localized: "Could not parse the service response.")
+        case .emptyContent:  return String(localized: "The service returned no usable content.")
         case .schemaViolation:
-            return "The AI response does not match the JSON Schema. Check whether your model or gateway supports Structured Outputs."
-        case .refused(let m): return "AI refused the request: \(m)"
-        case .truncated: return "The AI response was truncated and is incomplete."
+            return String(localized: "The AI response does not match the JSON Schema. Check whether your model or gateway supports Structured Outputs.")
+        case .refused(let m): return String(localized: "AI refused the request: \(m)")
+        case .truncated: return String(localized: "The AI response was truncated and is incomplete.")
         case .modelListingUnavailable:
-            return "The service did not return a usable model list. Enter a model ID manually."
+            return String(localized: "The service did not return a usable model list. Enter a model ID manually.")
         }
     }
 }
@@ -154,13 +154,13 @@ struct LLMProviderConfig: Identifiable, Equatable {
 extension LLMProviderConfig {
     /// The built-in provider table contains only documented strict-schema models.
     static let qwen = LLMProviderConfig(
-        id: "qwen", displayName: "Qwen (Alibaba)",
+        id: "qwen", displayName: String(localized: "Qwen (Alibaba)"),
         apiAddress: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
         defaultModel: "qwen3.8-flash",
-        keyHint: "sk-… (DashScope console)")
+        keyHint: String(localized: "sk-… (DashScope console)"))
 
     static let kimi = LLMProviderConfig(
-        id: "kimi", displayName: "Kimi (Moonshot AI)",
+        id: "kimi", displayName: String(localized: "Kimi (Moonshot AI)"),
         apiAddress: "https://api.moonshot.cn/v1/chat/completions",
         defaultModel: "kimi-k3",
         maxTemperature: 1.0,
@@ -169,10 +169,10 @@ extension LLMProviderConfig {
     /// The escape hatch: any other OpenAI-compatible endpoint. Address + model come
     /// from the user's settings, not from this row.
     static let custom = LLMProviderConfig(
-        id: "custom", displayName: "Custom (OpenAI Compatible)",
+        id: "custom", displayName: String(localized: "Custom (OpenAI Compatible)"),
         apiAddress: "", defaultModel: "",
         isCustom: true,
-        keyHint: "Your API Key")
+        keyHint: String(localized: "Your API Key"))
 
     static let builtIn: [LLMProviderConfig] = [qwen, kimi, custom]
 

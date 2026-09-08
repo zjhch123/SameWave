@@ -92,7 +92,7 @@ struct CaptionsView: View {
             Image(systemName: isListening ? "waveform" : "text.bubble")
                 .font(.system(size: 34))
                 .foregroundStyle(Self.meta.opacity(0.5))
-            Text(isListening ? "Listening…" : "Click Start below to begin live captions")
+            Text(isListening ? String(localized: "Listening…") : String(localized: "Click Start below to begin live captions"))
                 .font(.system(size: 15))
                 .foregroundStyle(Self.muted)
             // Surface setup status / errors (permission, model download, capture
@@ -119,7 +119,7 @@ struct CaptionsView: View {
         VStack(alignment: .leading, spacing: 6) {
             // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
-                Text(mine ? "You" : "Speaker")
+                Text(mine ? String(localized: "You") : String(localized: "Speaker"))
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(mine ? Self.accent : Self.meta)

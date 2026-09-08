@@ -56,7 +56,7 @@ final class TranscriptExporterTests: XCTestCase {
         XCTAssertEqual(line.sourceText, "原始内容")
     }
 
-    func testHistoryMetadataUsesEnglishDateAndDuration() throws {
+    func testExportKeepsEnglishDateAndDuration() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = DateFormat.dayTime.timeZone
         let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 7,
@@ -64,7 +64,7 @@ final class TranscriptExporterTests: XCTestCase {
         let record = MeetingRecord(startedAt: date, endedAt: date.addingTimeInterval(65),
                                    languagePair: .englishToEnglish, lineCount: 2, status: .ended)
 
-        XCTAssertEqual(record.displayDate, "Jul 7, 2026 at 18:27")
+        XCTAssertTrue(TranscriptExporter.markdown(record: record).contains("Jul 7, 2026 at 18:27"))
         XCTAssertEqual(record.metaText, "2 sections · 1m 5s")
         record.lineCount = 1
         XCTAssertEqual(record.metaText, "1 section · 1m 5s")

@@ -37,7 +37,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             throw LLMError.notConfigured
         }
         guard let url = OpenAIEndpointResolver.chatCompletionsURL(from: apiAddress) else {
-            throw LLMError.network("Invalid service URL")
+            throw LLMError.network(String(localized: "Invalid service URL"))
         }
 
         // Clamp temperature to the vendor's ceiling (Kimi caps at 1). Low temp keeps the
@@ -78,7 +78,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             let message = (try? JSONDecoder().decode(ErrorResponse.self, from: data))?
                 .error.message.trimmed
             throw LLMError.invalidRequest(
-                message.flatMap { $0.isEmpty ? nil : $0 } ?? "Unsupported request parameters or JSON Schema"
+                message.flatMap { $0.isEmpty ? nil : $0 } ?? String(localized: "Unsupported request parameters or JSON Schema")
             )
         default:        throw LLMError.server(http.statusCode)
         }
@@ -95,7 +95,7 @@ struct OpenAICompatibleProvider: LLMProvider {
         switch choice.finishReason {
         case "stop": break
         case "length": throw LLMError.truncated
-        case "content_filter": throw LLMError.refused("The content safety policy blocked the response")
+        case "content_filter": throw LLMError.refused(String(localized: "The content safety policy blocked the response"))
         default: throw LLMError.badResponse
         }
         guard let content = choice.message.content else { throw LLMError.emptyContent }
@@ -127,7 +127,7 @@ struct OpenAICompatibleProvider: LLMProvider {
             throw LLMError.notConfigured
         }
         guard let url = OpenAIEndpointResolver.modelsURL(from: apiAddress) else {
-            throw LLMError.network("Invalid service URL")
+            throw LLMError.network(String(localized: "Invalid service URL"))
         }
 
         var req = URLRequest(url: url)

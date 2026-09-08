@@ -106,13 +106,13 @@ struct VocabularyEditorView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Extract from Markdown").font(.system(size: 13, weight: .semibold))
                     Text(editor.scope == .meeting
-                         ? "\(documents.count) \(documents.count == 1 ? "document" : "documents") in Context"
-                         : "\(documents.count) temporary \(documents.count == 1 ? "file" : "files") selected")
+                         ? String(localized: "\(documents.count) documents in Context")
+                         : String(localized: "\(documents.count) temporary files selected"))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 if editor.scope == .meeting {
-                    Button(documents.isEmpty ? "Go to Context" : "Manage Context") { manageContext?() }
+                    Button(documents.isEmpty ? String(localized: "Go to Context") : String(localized: "Manage Context")) { manageContext?() }
                         .controlSize(.small)
                 } else {
                     Button("Choose Markdown…") { choosingFiles = true }
@@ -140,7 +140,7 @@ struct VocabularyEditorView: View {
             HStack(spacing: 8) {
                 if importer.isRunning {
                     ProgressView().controlSize(.small)
-                    Text(importer.state == .preparing ? "Preparing documents…" : "Extracting vocabulary…")
+                    Text(importer.state == .preparing ? String(localized: "Preparing documents…") : String(localized: "Extracting vocabulary…"))
                     Spacer()
                     if !importer.requests.isEmpty {
                         Text("\(importer.completedCount)/\(importer.requests.count) parts")
@@ -157,7 +157,7 @@ struct VocabularyEditorView: View {
                         importer.start(documents: documents)
                     }
                     .disabled(documents.isEmpty || !importer.isConfigured || !importer.candidates.isEmpty || editor.isLoadingFiles)
-                    .help(importer.candidates.isEmpty ? "Extract terms from selected Markdown" : "Save or discard suggestions before extracting again")
+                    .help(importer.candidates.isEmpty ? String(localized: "Extract terms from selected Markdown") : String(localized: "Save or discard suggestions before extracting again"))
                     if !importer.isConfigured {
                         Button("Configure AI Services") { settingsNavigation.openAISettings() }
                             .buttonStyle(.borderless)
@@ -172,8 +172,8 @@ struct VocabularyEditorView: View {
                 Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
             Text(importer.isRunning || importer.canRetry
-                 ? "File changes apply to the next extraction. Retry uses the original files."
-                 : "Extract Vocabulary sends text to your configured AI service.")
+                 ? String(localized: "File changes apply to the next extraction. Retry uses the original files.")
+                 : String(localized: "Extract Vocabulary sends text to your configured AI service."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -201,7 +201,7 @@ private struct VocabularySuggestionsView: View {
             if !importer.candidates.isEmpty || importer.isRunning || importer.canRetry {
                 Divider()
                 if importer.candidates.isEmpty {
-                    Text(importer.isRunning ? "Terms will appear here as they’re found." : "No suggestions received. Retry or discard this extraction.").foregroundStyle(.secondary).padding(12)
+                    Text(importer.isRunning ? String(localized: "Terms will appear here as they’re found.") : String(localized: "No suggestions received. Retry or discard this extraction.")).foregroundStyle(.secondary).padding(12)
                 }
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach($importer.candidates) { $candidate in
@@ -226,11 +226,11 @@ private struct VocabularySuggestionsView: View {
             if !importer.candidates.isEmpty || importer.isRunning || importer.canRetry {
                 HStack(spacing: 10) {
                     Text("\(selectedCount) selected").font(.caption).foregroundStyle(.secondary)
-                    Button(allSelected ? "Deselect All" : "Select All") { importer.selectAll(!allSelected) }
+                    Button(allSelected ? String(localized: "Deselect All") : String(localized: "Select All")) { importer.selectAll(!allSelected) }
                         .buttonStyle(.borderless).font(.caption).disabled(importer.candidates.isEmpty)
                     Button("Discard Suggestions") { importer.discardSuggestions() }
                         .buttonStyle(.borderless).disabled(importer.isRunning)
-                        .help(importer.isRunning ? "Stop extraction before discarding suggestions" : "Discard unsaved suggestions")
+                        .help(importer.isRunning ? String(localized: "Stop extraction before discarding suggestions") : String(localized: "Discard unsaved suggestions"))
                     Spacer(minLength: 0)
                     Button("Add to Vocabulary") { importer.saveSelected() }
                         .buttonStyle(.borderedProminent)

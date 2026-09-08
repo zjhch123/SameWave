@@ -10,7 +10,7 @@ struct InsightResultCard: View {
     var unsaved: [InsightSnapshotValue] = []
     var canGenerate = false
     var automatic = false
-    var emptyMessage = "No saved insight yet. Generate from the conversation so far."
+    var emptyMessage = String(localized: "No saved insight yet. Generate from the conversation so far.")
     var generate: (() -> Void)?
     var stop: (() -> Void)?
     var retrySave: ((UUID) -> Void)?
@@ -30,13 +30,13 @@ struct InsightResultCard: View {
             if usesSections { sections(selection: selection) } else { card(selection: selection) }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(configuration.title)
+        .accessibilityLabel(configuration.displayTitle)
     }
 
     private func sections(selection: Result<InsightSnapshotValue, Error>?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text(configuration.title).font(.system(size: 11, weight: .medium))
+                Text(configuration.displayTitle).font(.system(size: 11, weight: .medium))
                     .foregroundStyle(CaptionsView.muted)
                 Spacer(minLength: 0)
                 generateButton
@@ -65,7 +65,7 @@ struct InsightResultCard: View {
         if let generate {
             Button(action: generate) {
                 if configuration.id == InsightConfiguration.summary.id {
-                    Text(isFailed ? "Retry" : "Generate")
+                    Text(isFailed ? String(localized: "Retry") : String(localized: "Generate"))
                 } else {
                     Image(systemName: "arrow.clockwise")
                         .frame(width: 16, height: 16)
@@ -73,15 +73,16 @@ struct InsightResultCard: View {
             }
                 .controlSize(.small)
                 .disabled(!canGenerate || isGenerating || state == .queued || !unsaved.isEmpty)
-                .help("\(isFailed ? "Retry" : "Regenerate") \(configuration.title)")
-                .accessibilityLabel("Generate \(configuration.title)")
+                .help(isFailed ? String(localized: "Retry \(configuration.displayTitle)")
+                      : String(localized: "Regenerate \(configuration.displayTitle)"))
+                .accessibilityLabel("Generate \(configuration.displayTitle)")
         }
     }
 
     private func card(selection: Result<InsightSnapshotValue, Error>?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                Text(configuration.title)
+                Text(configuration.displayTitle)
                     .font(.system(size: 12, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -100,7 +101,7 @@ struct InsightResultCard: View {
                 Divider().overlay(CaptionsView.borderSoft)
                 historyFooter
             } else if unsaved.isEmpty {
-                Text(isGenerating || state == .queued ? "Your insight will appear here." : emptyMessage)
+                Text(isGenerating || state == .queued ? String(localized: "Your insight will appear here.") : emptyMessage)
                     .foregroundStyle(CaptionsView.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -150,7 +151,7 @@ struct InsightResultCard: View {
             Text("Update stopped").font(.system(size: 10)).foregroundStyle(CaptionsView.muted)
         case .saved, .none:
             if !usesSections || automatic {
-                Text(generate == nil ? "Saved history" : (automatic ? "Automatic updates on" : "Manual"))
+                Text(generate == nil ? String(localized: "Saved history") : (automatic ? String(localized: "Automatic updates on") : String(localized: "Manual")))
                     .font(.system(size: 10)).foregroundStyle(CaptionsView.muted)
             }
         }
@@ -164,7 +165,7 @@ struct InsightResultCard: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             if value.result.conclusion.count > 240 {
-                Button(reading.conclusionExpanded ? "Show less" : "Read full conclusion") {
+                Button(reading.conclusionExpanded ? String(localized: "Show less") : String(localized: "Read full conclusion")) {
                     reading.conclusionExpanded.toggle()
                 }.buttonStyle(.plain).font(.caption).foregroundStyle(CaptionsView.accent)
             }
@@ -182,7 +183,7 @@ struct InsightResultCard: View {
                     Button("Latest") { reading.timeline.snapshotID = nil }
                     Divider()
                     ForEach(Array(orderedSnapshots.enumerated()), id: \.element.id) { index, snapshot in
-                        Button("v\(snapshots.count - index) · \(DateFormat.insightTimestamp.string(from: snapshot.requestedAt))") {
+                        Button("v\(snapshots.count - index) · \(snapshot.requestedAt.formatted(date: .abbreviated, time: .standard))") {
                             reading.timeline.snapshotID = snapshot.id
                         }
                     }
@@ -190,7 +191,7 @@ struct InsightResultCard: View {
                     Text(historyLabel).font(.system(size: 10)).lineLimit(1)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .accessibilityLabel("History for \(configuration.title)")
+                .accessibilityLabel("History for \(configuration.displayTitle)")
                 Spacer(minLength: 0)
             }
             if reading.timeline.snapshotID != nil {
@@ -206,9 +207,9 @@ struct InsightResultCard: View {
     private var historyLabel: String {
         guard let id = reading.timeline.snapshotID,
               let index = orderedSnapshots.firstIndex(where: { $0.id == id }) else {
-            return "Latest · v\(snapshots.count)"
+            return String(localized: "Latest · v\(snapshots.count)")
         }
-        return "Viewing v\(snapshots.count - index)"
+        return String(localized: "Viewing v\(snapshots.count - index)")
     }
 }
 
@@ -233,7 +234,7 @@ private struct InsightKeyPoints: View {
                 }
             }.padding(.top, 6)
         } label: {
-            Text("\(points.count) key \(points.count == 1 ? "point" : "points")")
+            Text("\(points.count) key points")
                 .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
         }
     }
