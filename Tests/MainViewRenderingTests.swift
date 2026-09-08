@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testLocalizedPreparationSheetAlignsTitleAndDone() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let settings = AISettings(defaults: defaults)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let title = chinese ? "会议准备" : "Meeting Preparation"
+        let done = chinese ? "完成" : "Done"
+        let view = MeetingPreparationView(record: record, history: history,
+            editor: coordinator.vocabularyEditor(for: record, settings: settings), onDone: {})
+            .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
+        try await render(view, size: NSSize(width: 620, height: 640),
+            name: "preparation-sheet-aligned-\(chinese ? "zh-Hans" : "en")",
+            expectedLabels: [title, done], alignedLabels: (title, done))
+    }
+
+    func testLocalizedAISettingsShowMasterSwitchAndCompactHelp() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        navigation.selectedTab = .ai
+        for enabled in [true, false] {
+            settings.isEnabled = enabled
+            try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+                name: "compact-ai-settings-\(enabled)-\(chinese ? "zh-Hans" : "en")",
+                expectedLabels: chinese ? ["启用", "服务", "立即生效", "测试连接", "保存"]
+                    : ["Enable", "Services", "Applies immediately", "Test Connection", "Save"],
+                absentLabels: ["Audio is never uploaded", "One configuration for insights"])
+        }
+    }
+
     func testLocalizedGeneratedInsightContent() async throws {
         let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
         let suffix = chinese ? "zh-Hans" : "en"
@@ -750,7 +784,8 @@ final class MainViewRenderingTests: XCTestCase {
     }
 
     private func render<V: View>(_ view: V, size: NSSize, name: String,
-                                 expectedLabels: [String] = [], absentLabels: [String] = []) async throws {
+                                 expectedLabels: [String] = [], absentLabels: [String] = [],
+                                 alignedLabels: (String, String)? = nil) async throws {
         let host = NSHostingView(rootView: view
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor)))
@@ -772,9 +807,21 @@ final class MainViewRenderingTests: XCTestCase {
             for label in expectedLabels { XCTAssertTrue(labels.contains(normalized(label)), "Missing \(label) in \(labels)") }
             for label in absentLabels { XCTAssertFalse(labels.contains(normalized(label)), "Unexpected \(label) in \(labels)") }
         }
+        if let (title, action) = alignedLabels {
+            let observations = try visibleTextObservations(host)
+            let heading = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string.contains(title) == true })
+            let button = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string.contains(action) == true })
+            XCTAssertEqual(heading.boundingBox.minY, button.boundingBox.minY, accuracy: 0.015,
+                           "The preparation title and Done must share a header row")
+            XCTAssertGreaterThan(heading.boundingBox.minY, 0.9, "No empty row above the heading")
+        }
     }
 
     private func visibleText(_ view: NSView) throws -> String {
+        try visibleTextObservations(view).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }
+
+    private func visibleTextObservations(_ view: NSView) throws -> [VNRecognizedTextObservation] {
         // Verify the pixels: hidden test windows do not publish a SwiftUI accessibility tree.
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
@@ -782,7 +829,7 @@ final class MainViewRenderingTests: XCTestCase {
         request.recognitionLevel = .accurate
         request.recognitionLanguages = Bundle.main.preferredLocalizations.first == "zh-Hans" ? ["zh-Hans", "en-US"] : ["en-US"]
         try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage), options: [:]).perform([request])
-        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        return request.results ?? []
     }
 
     private func capture<V: View>(_ host: NSHostingView<V>, name: String) throws {

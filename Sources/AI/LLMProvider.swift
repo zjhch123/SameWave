@@ -70,6 +70,7 @@ enum JSONValue: Encodable, Sendable {
 /// show something actionable instead of a raw NSError — mirroring the app's existing
 /// habit of surfacing capture problems in `statusMessage` rather than swallowing them.
 enum LLMError: Error, LocalizedError, Equatable, Sendable {
+    case disabled
     case notConfigured          // no provider/key set up yet
     case unauthorized           // 401/403 — bad or missing key
     case rateLimited            // 429 — too many requests / quota
@@ -86,7 +87,8 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notConfigured: return String(localized: "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save.")
+        case .disabled: return String(localized: "AI is off. Enable it in Settings → AI Services.")
+        case .notConfigured: return String(localized: "Configure AI in Settings → AI Services.")
         case .unauthorized:  return String(localized: "Invalid API key or access denied (401). Check your API key in Settings → AI Services.")
         case .rateLimited:   return String(localized: "Rate limit or quota exceeded (429). Please try again later.")
         case .server(let c): return String(localized: "The service returned an error (\(c)).")

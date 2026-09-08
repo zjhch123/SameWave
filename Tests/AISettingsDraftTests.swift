@@ -3,6 +3,59 @@ import XCTest
 
 @MainActor
 final class AISettingsDraftTests: XCTestCase {
+    func testDisablingBeforeScheduledChecksStartMakesNoRequests() async throws {
+        let draft = makeDraft()
+        let provider = HeldSettingsProvider()
+        let models = HeldModelList()
+        addTeardownBlock { await provider.releaseAll(); await models.releaseAll() }
+        draft.testConnection(using: provider)
+        draft.fetchModels { await models.load() }
+        draft.isEnabled = false
+        try await Task.sleep(for: .milliseconds(30))
+        let tests = await provider.count
+        let lists = await models.count
+        XCTAssertEqual(tests, 0)
+        XCTAssertEqual(lists, 0)
+        XCTAssertEqual(draft.testState, .idle)
+        XCTAssertEqual(draft.modelDiscoveryState, .idle)
+    }
+
+    func testMasterSwitchCancelsAndBlocksDraftRequestsWithoutLosingEdits() async throws {
+        let draft = makeDraft()
+        let provider = HeldSettingsProvider()
+        let models = HeldModelList()
+        addTeardownBlock { await provider.releaseAll(); await models.releaseAll() }
+        draft.testConnection(using: provider)
+        draft.fetchModels { await models.load() }
+        try await Phase2Fixture.waitUntil {
+            let tests = await provider.count
+            let lists = await models.count
+            return tests == 1 && lists == 1
+        }
+        draft.isEnabled = false
+        XCTAssertEqual(draft.testState, .idle)
+        XCTAssertEqual(draft.modelDiscoveryState, .idle)
+        XCTAssertFalse(draft.canFetchModels)
+        draft.testConnection(using: provider)
+        draft.fetchModels { await models.load() }
+        await provider.complete(0)
+        await models.complete(0)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(draft.testState, .idle)
+        XCTAssertTrue(draft.availableModels.isEmpty)
+        XCTAssertEqual(draft.customModel, "initial-model")
+        let tests = await provider.count
+        let lists = await models.count
+        XCTAssertEqual(tests, 1)
+        XCTAssertEqual(lists, 1)
+        draft.isEnabled = true
+        XCTAssertTrue(draft.canFetchModels)
+        draft.testConnection(using: provider)
+        try await Phase2Fixture.waitUntil { await provider.count == 2 }
+        await provider.complete(1)
+        try await Phase2Fixture.waitUntil { draft.testState == .ok }
+    }
+
     func testChangedConnectionRejectsLateSuccessAndAllowsNewTest() async throws {
         let draft = makeDraft()
         let provider = HeldSettingsProvider()

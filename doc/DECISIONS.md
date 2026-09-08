@@ -16,6 +16,22 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260908-004"></a>
+## DEC-20260908-004: Separate AI enablement from saved connection configuration
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Scope:** App-wide AI availability, cancellation, and Settings behavior
+- **Replaces:** The rejection of a global enable switch in [DEC-20260905-003](#dec-20260905-003). Shared configuration ownership and provider boundaries remain adopted.
+- **Context:** Issue #21 requires temporarily disabling AI while retaining a configured provider. Insights can be queued across meetings, refinement and titles continue in the background, and extraction retries retain their original provider. Blocking only new provider creation would leave these operations running.
+- **Decision:** Persist one app-wide switch, on by default, independently of connection preferences. Apply it immediately, including when the connection draft is invalid or unsaved. Cancel reverts only connection edits. Effective availability combines enablement with valid configuration. Disabling synchronously cancels all active AI owners and clears queued requests through app assembly; request entry points also enforce the switch. Operation cancellation and ownership tokens reject late responses and prevent subsequent batches. Service tests and model discovery obey the same switch. Re-enabling restores ordinary triggers without restarting canceled manual operations; eligible automatic ticks retain their recording schedule.
+- **Rejected alternatives:** Clearing credentials loses a reusable configuration. A switch that only gates provider creation permits retained providers and queued work to continue. A switch committed with Save delays stopping AI and can be blocked by unrelated invalid draft fields. Per-feature switches duplicate the requested app-wide control. View-lifetime observers cannot reliably cancel background work.
+- **Rationale/tradeoffs:** One immediate preference provides a predictable stop action while each existing owner retains its own cancellation and persistence responsibilities. Cancellation cannot recall data already sent to a provider. Stored credentials, saved and unsaved results, extraction candidates, and local capture/translation/history/vocabulary remain available; Retry Save is local and stays enabled. No new provider abstraction, persistence model, migration, or dependency is introduced.
+- **Validation:** Controlled-provider regressions cover persisted enablement, connection-draft independence, all generation entry points, automatic resumption, queued work across meetings, background refinement/title cancellation, extraction retry and local saving, and late responses. Draft tests also cover cancellation before a scheduled request starts. Native render tests cover compact bilingual settings and preparation title/Done alignment. XcodeGen and unsigned Debug passed; full English tests passed 237/237 and Chinese localization/rendering tests passed 16/16 on `SameWave`, `platform=macOS,arch=arm64`. The signed desktop app passed switch persistence, disabled-action, configuration-retention, preparation scrolling/dismissal, signature, and process checks. See the [development guide](06-development-and-validation.md) for details.
+- **Files:** `Sources/AI/AISettings.swift`, `Sources/AI/AISettingsDraft.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Meeting/CaptureCoordinator.swift`, AI consumers, `Tests/AIAvailabilityTests.swift`, `Tests/AISettingsDraftTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
 <a id="dec-20260908-003"></a>
 ## DEC-20260908-003: Generate AI Insights in the active interface language
 
@@ -596,7 +612,8 @@ History selection previously lived only in `MainView` memory, while startup moun
 ## DEC-20260905-003: Share AI configuration across the app, with insights as a consumer
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded
+- **Superseded by:** [DEC-20260908-004](#dec-20260908-004) adopts an independent master switch; shared configuration ownership remains valid.
 - **Scope:** Settings architecture, AI configuration ownership, feature availability
 
 ### Context and decision

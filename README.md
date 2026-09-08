@@ -45,7 +45,7 @@ On first use, grant speech recognition, microphone, and screen recording permiss
 2. Choose source and target languages, enable the microphone if needed, and click **Start**.
 3. Pause and resume as needed. Click **End** to review or export your transcript.
 
-For AI features, configure your provider, API key, and model context window in **Settings → AI Services**. See the [AI guide](doc/04-ai-insights-and-refinement.md) for provider requirements and insight controls.
+For AI features, configure your provider, API key, and model context window in **Settings → AI Services**. Use **Enable AI Services** to stop or enable AI without clearing your configuration. The switch applies immediately; connection edits still require Save. See the [AI guide](doc/04-ai-insights-and-refinement.md) for provider requirements and insight controls.
 
 ## Privacy
 

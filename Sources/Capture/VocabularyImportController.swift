@@ -47,7 +47,8 @@ final class VocabularyImportController {
         self.saveCandidates = saveCandidates
     }
 
-    var isConfigured: Bool { aiSettings.isConfigured }
+    var isAvailable: Bool { aiSettings.isAvailable }
+    var settingsActionTitle: String { aiSettings.settingsActionTitle }
     var isRunning: Bool { state == .preparing || state == .generating }
     var completedCount: Int { requests.filter { $0.status != .pending }.count }
     var incompleteCount: Int { requests.filter { $0.status != .succeeded }.count }
@@ -58,7 +59,7 @@ final class VocabularyImportController {
         }
         return nil
     }
-    var canRetry: Bool { !isRunning && incompleteCount > 0 && provider != nil }
+    var canRetry: Bool { aiSettings.isEnabled && !isRunning && incompleteCount > 0 && provider != nil }
     var hasInvalidSelection: Bool {
         candidates.contains { $0.isSelected && !VocabularyGenerator.isValidPhrase($0.text) }
     }
@@ -68,7 +69,7 @@ final class VocabularyImportController {
 
     func start(documents: [VocabularySourceDocument]) {
         guard let provider = aiSettings.makeProvider() else {
-            state = .failed(LLMError.notConfigured.localizedDescription)
+            state = .failed((aiSettings.isEnabled ? LLMError.notConfigured : .disabled).localizedDescription)
             return
         }
         start(using: provider) { documents }
@@ -76,6 +77,10 @@ final class VocabularyImportController {
 
     private func start(using provider: any LLMProvider,
                        load: @escaping @MainActor () async throws -> [VocabularySourceDocument]) {
+        guard aiSettings.isEnabled else {
+            state = .failed(LLMError.disabled.localizedDescription)
+            return
+        }
         reset()
         self.provider = provider
         state = .preparing

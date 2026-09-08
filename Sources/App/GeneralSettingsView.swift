@@ -14,7 +14,7 @@ struct GeneralSettingsView: View {
                         Text("Chinese").tag(AppLanguage.chinese)
                     }
                 } footer: {
-                    Text("Language changes are saved automatically. Quit and reopen SameWave to apply them.")
+                    Text("Quit and reopen SameWave to apply language changes.")
                 }
             }
             .formStyle(.grouped)

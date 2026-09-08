@@ -51,7 +51,7 @@ struct VocabularyEditorView: View {
                     if isEmbeddedInSettings && settingsNavigation.aiDraft.isDirty {
                         Text("AI Services has unsaved changes")
                     }
-                    Text("Closing keeps unfinished work for this app session.")
+                    Text("Drafts are kept until you quit the app.")
                 }.font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Done") { dismiss() }
@@ -156,10 +156,10 @@ struct VocabularyEditorView: View {
                         editor.showsBottomActions = false
                         importer.start(documents: documents)
                     }
-                    .disabled(documents.isEmpty || !importer.isConfigured || !importer.candidates.isEmpty || editor.isLoadingFiles)
+                    .disabled(documents.isEmpty || !importer.isAvailable || !importer.candidates.isEmpty || editor.isLoadingFiles)
                     .help(importer.candidates.isEmpty ? String(localized: "Extract terms from selected Markdown") : String(localized: "Save or discard suggestions before extracting again"))
-                    if !importer.isConfigured {
-                        Button("Configure AI Services") { settingsNavigation.openAISettings() }
+                    if !importer.isAvailable {
+                        Button(importer.settingsActionTitle) { settingsNavigation.openAISettings() }
                             .buttonStyle(.borderless)
                     }
                     Spacer(minLength: 0)
@@ -171,10 +171,10 @@ struct VocabularyEditorView: View {
             if let message = importer.generationError {
                 Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
-            Text(importer.isRunning || importer.canRetry
-                 ? String(localized: "File changes apply to the next extraction. Retry uses the original files.")
-                 : String(localized: "Extract Vocabulary sends text to your configured AI service."))
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if importer.isRunning || importer.canRetry {
+                Text("Retry uses the original files.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 }

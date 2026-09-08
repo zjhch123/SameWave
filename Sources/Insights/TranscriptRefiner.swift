@@ -52,6 +52,7 @@ final class TranscriptRefiner {
     }
 
     private let providerFactory: () -> (any LLMProvider)?
+    private let settings: AISettings
     private let vocabularySettings: SpeechVocabularySettings
     private let batchLineLimit = 8
     private let batchCharacterLimit = 1_500
@@ -60,6 +61,7 @@ final class TranscriptRefiner {
 
     init(settings: AISettings, vocabularySettings: SpeechVocabularySettings,
          providerFactory: (() -> (any LLMProvider)?)? = nil) {
+        self.settings = settings
         self.providerFactory = providerFactory ?? { settings.makeProvider() }
         self.vocabularySettings = vocabularySettings
     }
@@ -73,6 +75,10 @@ final class TranscriptRefiner {
                 priorGlossaryJSON: String?) async throws -> Outcome {
         let expectedRunID = UUID()
         runID = expectedRunID
+        guard settings.isEnabled else {
+            state = .error(.disabled)
+            throw LLMError.disabled
+        }
         guard let provider = providerFactory() else {
             state = .error(.notConfigured)
             throw LLMError.notConfigured

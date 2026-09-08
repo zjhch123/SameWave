@@ -10,6 +10,16 @@ import Security
 final class AISettings {
     static let defaultContextTokenBudget = 1_000_000
 
+    /// The master switch applies immediately, independently of the connection draft.
+    var isEnabled: Bool {
+        didSet {
+            defaults.set(isEnabled, forKey: Keys.enabled)
+            if oldValue && !isEnabled { onDisable?() }
+        }
+    }
+    /// App assembly cancels every retained AI owner synchronously when disabled.
+    @ObservationIgnored var onDisable: (() -> Void)?
+
     /// Selected provider id (matches `LLMProviderConfig.id`). Persisted in UserDefaults.
     var selectedProviderID: String {
         didSet { defaults.set(selectedProviderID, forKey: Keys.provider) }
@@ -44,8 +54,9 @@ final class AISettings {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, initialAPIKey: String? = nil) {
         self.defaults = defaults
+        isEnabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
         let savedBudget = defaults.integer(forKey: "insight.contextTokenBudget")
         insightContextTokenBudget = savedBudget > 0 ? savedBudget : Self.defaultContextTokenBudget
         let persistedProviderID = defaults.string(forKey: Keys.provider)
@@ -61,9 +72,9 @@ final class AISettings {
         // the default-provider selection; the user must explicitly configure again.
         let mayLoadSavedKey = ProcessInfo.processInfo.environment["XCTestBundlePath"] == nil
             && supportedProvider != nil
-        apiKey = mayLoadSavedKey
+        apiKey = initialAPIKey ?? (mayLoadSavedKey
             ? KeychainStore.get(Keys.apiKey) ?? ""
-            : ""
+            : "")
     }
 
     /// The currently-selected provider descriptor.
@@ -75,6 +86,12 @@ final class AISettings {
             provider: selectedConfig, apiKey: apiKey,
             customAPIAddress: customAPIAddress, customModel: customModel
         )
+    }
+
+    var isAvailable: Bool { isEnabled && isConfigured }
+
+    var settingsActionTitle: String {
+        isEnabled ? String(localized: "Configure AI Services") : String(localized: "Enable AI Services")
     }
 
     /// Shared validation for saved configuration and the Settings connection-test draft.
@@ -90,7 +107,7 @@ final class AISettings {
 
     /// Each AI operation takes a provider snapshot from the shared saved configuration.
     func makeProvider() -> LLMProvider? {
-        guard isConfigured else { return nil }
+        guard isAvailable else { return nil }
         let cfg = selectedConfig
         return OpenAICompatibleProvider(
             config: cfg, apiKey: apiKey.trimmed,
@@ -99,6 +116,7 @@ final class AISettings {
     }
 
     private enum Keys {
+        static let enabled = "ai.isEnabled"
         static let provider = "insight.providerID"
         static let customAPIAddress = "insight.customAPIAddress"
         static let customModel = "insight.customModel"

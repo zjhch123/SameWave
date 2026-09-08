@@ -15,6 +15,13 @@ final class AISettingsDraft {
     }
 
     private let settings: AISettings
+    var isEnabled: Bool {
+        get { settings.isEnabled }
+        set {
+            settings.isEnabled = newValue
+            if !newValue { cancelRequests() }
+        }
+    }
     var providerID: String { didSet { if oldValue != providerID { connectionDetailsChanged() } } }
     var apiKey: String { didSet { if oldValue != apiKey { connectionDetailsChanged() } } }
     var customAPIAddress: String { didSet { if oldValue != customAPIAddress { connectionDetailsChanged() } } }
@@ -34,7 +41,7 @@ final class AISettingsDraft {
                                 customAPIAddress: customAPIAddress, customModel: customModel)
     }
     var canFetchModels: Bool {
-        config.isCustom && !apiKey.trimmed.isEmpty
+        isEnabled && config.isCustom && !apiKey.trimmed.isEmpty
             && OpenAIEndpointResolver.modelsURL(from: customAPIAddress) != nil
             && modelDiscoveryState != .loading
     }
@@ -73,7 +80,7 @@ final class AISettingsDraft {
     }
 
     func testConnection(using provider: (any LLMProvider)? = nil) {
-        guard isConfigured, testState != .testing else { return }
+        guard isEnabled, isConfigured, testState != .testing else { return }
         cancelConnectionTest()
         let token = testToken
         let provider = provider ?? makeProvider()
@@ -81,6 +88,7 @@ final class AISettingsDraft {
         testTask = Task {
             defer { if testToken == token { testTask = nil } }
             do {
+                try Task.checkCancellation()
                 let raw = try await provider.complete(
                     system: "You are a connection test assistant. Return a JSON object with status.ok set to true and values set to [1, 2].",
                     user: "ping", schema: .connectionTest)
@@ -107,6 +115,7 @@ final class AISettingsDraft {
         discoveryTask = Task {
             defer { if discoveryToken == token { discoveryTask = nil } }
             do {
+                try Task.checkCancellation()
                 let models = try await load()
                 try Task.checkCancellation()
                 guard discoveryToken == token else { return }

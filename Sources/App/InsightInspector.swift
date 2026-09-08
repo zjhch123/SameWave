@@ -22,8 +22,8 @@ struct InsightInspector: View {
                 ScrollView {
                     // Measure expanded cards together so scrolling never revises estimated heights.
                     VStack(alignment: .leading, spacing: 12) {
-                        if !aiSettings.isConfigured {
-                            Button("Configure AI Services") { settingsNavigation.openAISettings() }
+                        if !aiSettings.isAvailable {
+                            Button(aiSettings.settingsActionTitle) { settingsNavigation.openAISettings() }
                                 .font(.caption)
                             Text("Saved results are available offline.")
                                 .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
@@ -74,7 +74,7 @@ struct InsightInspector: View {
                 else { coordinator.generateAllInsights() }
             }
             .controlSize(.small)
-            .disabled(!generating && (!aiSettings.isConfigured || coordinator.isTransitioning
+            .disabled(!generating && (!aiSettings.isAvailable || coordinator.isTransitioning
                 || coordinator.insights?.canGenerateAll(record) != true))
             .help(generating ? String(localized: "Stop generating custom insights") : String(localized: "Generate all custom insights"))
             .accessibilityLabel(generating ? String(localized: "Stop all custom insights") : String(localized: "Generate all custom insights"))
@@ -93,7 +93,7 @@ struct InsightInspector: View {
             unsaved: coordinator.insights?.unsaved.values.filter {
                 $0.input.meetingID == record.id && $0.input.configuration.id == configuration.id
             }.sorted { $0.input.requestedAt < $1.input.requestedAt } ?? [],
-            canGenerate: aiSettings.isConfigured && !coordinator.isTransitioning
+            canGenerate: aiSettings.isAvailable && !coordinator.isTransitioning
                 && coordinator.insights?.batchMeetingIDs.contains(record.id) != true
                 && record.meetingStatus != .draft && (!isSummary || record.meetingStatus == .ended),
             automatic: automatic,

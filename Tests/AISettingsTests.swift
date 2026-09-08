@@ -77,7 +77,7 @@ final class AISettingsTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? LLMError, .notConfigured)
         }
-        XCTAssertFalse(importer.isConfigured)
+        XCTAssertFalse(importer.isAvailable)
         importer.start(documents: [.init(fileName: "test.md", content: "SameWave")])
         XCTAssertEqual(importer.state, .failed(LLMError.notConfigured.localizedDescription))
         XCTAssertTrue(importer.requests.isEmpty)

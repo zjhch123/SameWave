@@ -12,6 +12,7 @@ final class MeetingRefinementController {
     private(set) var titleErrorMessage: String?
     private let meetingID: UUID
     private let history: MeetingHistoryStore
+    private let settings: AISettings
     private let providerFactory: () -> (any LLMProvider)?
     @ObservationIgnored private var refinementTask: Task<Void, Never>?
     @ObservationIgnored private var titleTask: Task<Void, Never>?
@@ -21,6 +22,7 @@ final class MeetingRefinementController {
          history: MeetingHistoryStore, providerFactory: (() -> (any LLMProvider)?)? = nil) {
         self.meetingID = meetingID
         self.history = history
+        self.settings = settings
         self.providerFactory = providerFactory ?? { settings.makeProvider() }
         refiner = TranscriptRefiner(settings: settings, vocabularySettings: vocabulary,
                                     providerFactory: providerFactory)
@@ -28,6 +30,10 @@ final class MeetingRefinementController {
 
     func start() {
         guard !isRefining else { return }
+        guard settings.isEnabled else {
+            errorMessage = LLMError.disabled.localizedDescription
+            return
+        }
         do {
             guard let record = try history.record(id: meetingID), record.meetingStatus == .ended else { return }
             let expectedToken = token
@@ -42,6 +48,7 @@ final class MeetingRefinementController {
                     if token == expectedToken { isRefining = false; refinementTask = nil }
                 }
                 do {
+                    try Task.checkCancellation()
                     let outcome = try await refiner.refine(lines: lines, languagePair: languagePair,
                                                           priorGlossaryJSON: glossary)
                     try Task.checkCancellation()
@@ -62,6 +69,7 @@ final class MeetingRefinementController {
                         if token == expectedToken { isGeneratingTitle = false; titleTask = nil }
                     }
                     do {
+                        try Task.checkCancellation()
                         guard let title = try await MeetingTitleGenerator.generateIfNeeded(for: record, provider: provider) else { return }
                         try Task.checkCancellation()
                         guard token == expectedToken, let owner = try history.record(id: meetingID),
