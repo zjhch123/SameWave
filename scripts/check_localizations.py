@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate complete UI/permission translations and interpolation contracts."""
 from collections import Counter
+import argparse
 import json
 from pathlib import Path
 import re
@@ -22,11 +23,13 @@ def units(node):
             yield from units(variant)
 
 
-def check():
+def check(stringsdata_directory=None):
     errors = []
     total = 0
+    catalogs = {}
     for path in sorted((ROOT / "Sources/Resources").glob("*.xcstrings")):
         catalog = json.loads(path.read_text())
+        catalogs[path.stem] = catalog["strings"]
         if catalog.get("sourceLanguage") != "en":
             errors.append(f"{path.name}: source language must be English")
         for key, entry in catalog["strings"].items():
@@ -52,6 +55,18 @@ def check():
             plural = english.get("variations", {}).get("plural")
             if plural and not {"one", "other"}.issubset(plural):
                 errors.append(f"{label}: English plural requires one and other")
+    if stringsdata_directory is not None:
+        extracted_files = sorted(stringsdata_directory.rglob("*.stringsdata"))
+        if not extracted_files:
+            errors.append(f"{stringsdata_directory}: no compiler-extracted strings; build the app first")
+        for path in extracted_files:
+            extracted = json.loads(path.read_text())
+            for table, entries in extracted.get("tables", {}).items():
+                for entry in entries:
+                    if entry["key"] not in catalogs.get(table, {}):
+                        source = extracted["source"]
+                        line = entry["location"]["startingLine"]
+                        errors.append(f"{source}:{line}: {entry['key']!r} is missing from {table}.xcstrings")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
@@ -60,4 +75,7 @@ def check():
 
 
 if __name__ == "__main__":
-    sys.exit(check())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--stringsdata", type=Path,
+                        help="App target's Objects-normal directory from a fresh build; also check source coverage")
+    sys.exit(check(parser.parse_args().stringsdata))

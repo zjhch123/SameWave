@@ -1512,6 +1512,22 @@
         }
       }
     },
+    "Delete meeting?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete meeting?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除会议？"
+          }
+        }
+      }
+    },
     "Deselect All": {
       "localizations": {
         "en": {
@@ -5032,6 +5048,22 @@
         }
       },
       "shouldTranslate": false
+    },
+    "“%@” and its transcript, documents, vocabulary, and insights will be permanently deleted. This cannot be undone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” and its transcript, documents, vocabulary, and insights will be permanently deleted. This cannot be undone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将永久删除“%@”及其转录文本、文档、词汇和 AI 洞察。此操作无法撤销。"
+          }
+        }
+      }
     },
     "“%@” exceeds the %lld MB per-file limit.": {
       "localizations": {

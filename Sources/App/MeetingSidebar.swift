@@ -38,7 +38,6 @@ struct MeetingSidebar: View {
             set: { if !$0 { meetingToDelete = nil } }
         ), presenting: meetingToDelete) { record in
             Button("Cancel", role: .cancel) {}
-                .keyboardShortcut(.defaultAction)
             Button("Delete", role: .destructive) {
                 coordinator.delete(record)
             }
