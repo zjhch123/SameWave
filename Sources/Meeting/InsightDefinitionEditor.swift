@@ -43,7 +43,7 @@ struct InsightDefinitionEditor: View {
                         ForEach(InsightScope.allCases) { Text($0.label).tag($0) }
                     }
                     Toggle("Generate automatically during recording", isOn: $automatic)
-                    Text("Generation sends the original transcript and complete applicable vocabulary to your AI service. Results are presented in English. Earlier results keep their original prompt, including after removing this insight.")
+                    Text("Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(24)
             }

@@ -7,6 +7,27 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testLocalizedGeneratedInsightContent() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let suffix = chinese ? "zh-Hans" : "en"
+        let conclusion = chinese ? "发布前完成审核。" : "Complete review before launch."
+        let point = chinese ? "确认审核负责人。" : "Confirm the review owner."
+        let labels = chinese ? ["发布前完成审核", "确认审核负责人"] : ["Complete review before launch", "Confirm the review owner"]
+        let history = try Phase2Fixture.history()
+        let defaults = Phase2Fixture.defaults(self)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        let configuration = InsightConfiguration(id: UUID(), title: "Launch Risks", prompt: "Identify risks", scope: .cumulative)
+        let value = InsightSnapshotValue(id: UUID(), input: Phase2Fixture.input(record: record, configuration: configuration, kind: .manual),
+            completedAt: .now, result: InsightResult(conclusion: conclusion, points: [point]))
+        try history.appendInsight(value)
+        try await render(InsightResultCard(meetingID: record.id, configuration: configuration, snapshots: record.insightSnapshots)
+            .defaultAppStorage(defaults), size: NSSize(width: 240, height: 340), name: "localized-generated-insight-\(suffix)",
+            expectedLabels: labels)
+        let summary = MeetingSummary(topics: [conclusion], decisions: [], actionItems: [point], openQuestions: [], suggestions: [])
+        try await render(MeetingSummaryCards(summary: summary), size: NSSize(width: 240, height: 820),
+            name: "localized-generated-summary-\(suffix)", expectedLabels: labels)
+    }
+
     func testLocalizedGeneralLanguageChoices() async throws {
         let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
         let suffix = chinese ? "zh-Hans" : "en"

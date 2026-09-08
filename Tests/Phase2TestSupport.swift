@@ -69,6 +69,7 @@ enum Phase2Fixture {
 
 actor ControlledInsightProvider: LLMProvider {
     private(set) var users: [String] = []
+    private(set) var systems: [String] = []
     private(set) var peakActiveCount = 0
     private var pending: [Int: CheckedContinuation<String, Error>] = [:]
     var count: Int { users.count }
@@ -76,6 +77,7 @@ actor ControlledInsightProvider: LLMProvider {
     func complete(system: String, user: String, schema: LLMResponseSchema) async throws -> String {
         let index = users.count
         users.append(user)
+        systems.append(system)
         // Deliberately ignores cancellation to verify rejection of late responses.
         return try await withCheckedThrowingContinuation {
             pending[index] = $0
@@ -83,8 +85,8 @@ actor ControlledInsightProvider: LLMProvider {
         }
     }
 
-    func succeed(_ index: Int, conclusion: String = "Recorded conclusion", summary: MeetingSummary? = nil) throws {
-        let result = InsightResult(conclusion: conclusion, points: [], summary: summary)
+    func succeed(_ index: Int, conclusion: String = "Recorded conclusion", points: [String] = [], summary: MeetingSummary? = nil) throws {
+        let result = InsightResult(conclusion: conclusion, points: points, summary: summary)
         let raw = String(decoding: try JSONEncoder().encode(result), as: UTF8.self)
         pending.removeValue(forKey: index)?.resume(returning: raw)
     }

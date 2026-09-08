@@ -2248,18 +2248,18 @@
         }
       }
     },
-    "Generation sends the original transcript and complete applicable vocabulary to your AI service. Results are presented in English. Earlier results keep their original prompt, including after removing this insight.": {
+    "Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Generation sends the original transcript and complete applicable vocabulary to your AI service. Results are presented in English. Earlier results keep their original prompt, including after removing this insight."
+            "value": "Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "生成时会将原始转录及全部适用词汇发送到你的 AI 服务。结果以英文呈现。已有结果会保留生成时的提示词，移除此洞察也不会改变。"
+            "value": "生成时会将原始转写和全部适用词汇发送到你的 AI 服务。新结果跟随应用语言。已有结果保留原有语言和提示词，移除此洞察后仍然保留。"
           }
         }
       }
