@@ -38,6 +38,8 @@ The main target uses Swift 6 with `SWIFT_STRICT_CONCURRENCY=complete`. Do not re
 
 ## 4. Unit tests and language audit
 
+Issue #18 (2026-09-08): XcodeGen, unsigned Debug build, and all 213 tests passed with `SameWave` on `platform=macOS,arch=arm64`. The signed desktop app was replaced and launched; its signature and process were verified. A native UI smoke check opened the sidebar Delete alert, verified its meeting name and removal scope, and confirmed that Return invokes Cancel while retaining the meeting and selection. Existing cascade-deletion and selection tests cover the coordinator invoked by the destructive action.
+
 `SameWaveTests` is the XCTest target in the `SameWave` scheme. Run on macOS:
 
 ```sh

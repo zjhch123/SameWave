@@ -5,6 +5,7 @@ struct MeetingSidebar: View {
     let coordinator: CaptureCoordinator
     @Binding var selectedRecord: MeetingRecord?
     @Query(sort: \MeetingRecord.createdAt, order: .reverse) private var records: [MeetingRecord]
+    @State private var meetingToDelete: MeetingRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,6 +32,18 @@ struct MeetingSidebar: View {
         .background(CaptionsView.surface)
         .overlay(alignment: .trailing) {
             Rectangle().fill(CaptionsView.borderSoft).frame(width: 1)
+        }
+        .alert("Delete meeting?", isPresented: Binding(
+            get: { meetingToDelete != nil },
+            set: { if !$0 { meetingToDelete = nil } }
+        ), presenting: meetingToDelete) { record in
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+            Button("Delete", role: .destructive) {
+                coordinator.delete(record)
+            }
+        } message: { record in
+            Text("\u{201c}\(record.displayTitle)\u{201d} and its transcript, documents, vocabulary, and insights will be permanently deleted. This cannot be undone.")
         }
     }
 
@@ -118,7 +131,7 @@ struct MeetingSidebar: View {
         .contextMenu {
             if !isCurrent || !coordinator.isRunning {
                 Button("Delete", systemImage: "trash", role: .destructive) {
-                    coordinator.delete(record)
+                    meetingToDelete = record
                 }
             }
         }
