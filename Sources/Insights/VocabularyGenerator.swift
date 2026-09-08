@@ -33,19 +33,19 @@ enum VocabularyImportError: Error, LocalizedError, Equatable, Sendable {
     var errorDescription: String? {
         switch self {
         case .noFiles:
-            "No Markdown files selected."
+            String(localized: "No Markdown files selected.")
         case .unsupportedFile(let name):
-            "“\(name)” is not a Markdown file."
+            String(localized: "“\(name)” is not a Markdown file.")
         case .unreadableFile(let name, let message):
-            "Could not read “\(name)”: \(message)"
+            String(localized: "Could not read “\(name)”: \(message)")
         case .invalidEncoding(let name):
-            "“\(name)” is not a valid UTF-8 Markdown file."
+            String(localized: "“\(name)” is not a valid UTF-8 Markdown file.")
         case .fileTooLarge(let name):
-            "“\(name)” exceeds the \(VocabularyDocumentLoader.maximumFileMegabytes) MB per-file limit."
+            String(localized: "“\(name)” exceeds the \(VocabularyDocumentLoader.maximumFileMegabytes) MB per-file limit.")
         case .selectionTooLarge:
-            "Selected Markdown files must not exceed \(VocabularyDocumentLoader.maximumSelectionMegabytes) MB in total."
+            String(localized: "Selected Markdown files must not exceed \(VocabularyDocumentLoader.maximumSelectionMegabytes) MB in total.")
         case .noReadableContent:
-            "The selected Markdown files contain no readable text."
+            String(localized: "The selected Markdown files contain no readable text.")
         }
     }
 }

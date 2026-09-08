@@ -24,15 +24,15 @@ actor NativeSpeechEngine {
         var errorDescription: String? {
             switch self {
             case .notAuthorized:
-                "Allow SameWave in System Settings › Privacy & Security › Speech Recognition"
+                String(localized: "Allow SameWave in System Settings › Privacy & Security › Speech Recognition")
             case .assetInstallation(let error):
-                "Could not prepare the speech model: \(error.localizedDescription)"
+                String(localized: "Could not prepare the speech model: \(error.localizedDescription)")
             case .customLanguageModel(let error):
-                "Could not prepare the vocabulary model: \(error.localizedDescription)"
+                String(localized: "Could not prepare the vocabulary model: \(error.localizedDescription)")
             case .noCompatibleAudioFormat:
-                "The speech recognizer has no available audio format"
+                String(localized: "The speech recognizer has no available audio format")
             case .analyzerStart(let error):
-                "Could not start speech recognition: \(error.localizedDescription)"
+                String(localized: "Could not start speech recognition: \(error.localizedDescription)")
             }
         }
     }
@@ -78,7 +78,7 @@ actor NativeSpeechEngine {
     }
 
     func load() async throws {
-        await onStatus("Requesting speech recognition permission…")
+        await onStatus(String(localized: "Requesting speech recognition permission…"))
         await MainActor.run { NSApp.activate(ignoringOtherApps: true) }
         guard await Self.requestAuthorization() else { throw EngineError.notAuthorized }
 
@@ -87,7 +87,7 @@ actor NativeSpeechEngine {
         if localeID == "en-US" {
             var preset = DictationTranscriber.Preset.progressiveLongDictation
             if !contextualStrings.isEmpty {
-                await onStatus("Preparing vocabulary model…")
+                await onStatus(String(localized: "Preparing vocabulary model…"))
                 let modelConfiguration: SFSpeechLanguageModel.Configuration
                 do {
                     modelConfiguration = try await CustomSpeechLanguageModel.shared.configuration(
@@ -124,7 +124,7 @@ actor NativeSpeechEngine {
             if let request = try await AssetInventory.assetInstallationRequest(
                 supporting: modules
             ) {
-                await onStatus("Downloading the speech model for first use…")
+                await onStatus(String(localized: "Downloading the speech model for first use…"))
                 try await request.downloadAndInstall()
             }
         } catch {
@@ -157,7 +157,7 @@ actor NativeSpeechEngine {
         do {
             try await analyzer.setContext(analysisContext)
             try await analyzer.start(inputSequence: inputPair.stream)
-            await onStatus("Model ready")
+            await onStatus(String(localized: "Model ready"))
         } catch {
             throw EngineError.analyzerStart(error)
         }
@@ -177,7 +177,7 @@ actor NativeSpeechEngine {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             } catch {
                 resultsTask?.cancel()
-                await onStatus("Could not finalize speech recognition: \(error.localizedDescription)")
+                await onStatus(String(localized: "Could not finalize speech recognition: \(error.localizedDescription)"))
             }
         }
         await resultsTask?.value
@@ -210,7 +210,7 @@ actor NativeSpeechEngine {
             } catch is CancellationError {
                 return
             } catch {
-                await onStatus("Speech recognition error: \(error.localizedDescription)")
+                await onStatus(String(localized: "Speech recognition error: \(error.localizedDescription)"))
             }
         }
     }
@@ -233,7 +233,7 @@ actor NativeSpeechEngine {
             } catch is CancellationError {
                 return
             } catch {
-                await onStatus("Speech recognition error: \(error.localizedDescription)")
+                await onStatus(String(localized: "Speech recognition error: \(error.localizedDescription)"))
             }
         }
     }
@@ -296,8 +296,8 @@ actor NativeSpeechEngine {
             }
         }
         if status == .error {
-            let detail = conversionError?.localizedDescription ?? "Unknown error"
-            await onStatus("Audio format conversion failed: \(detail)")
+            let detail = conversionError?.localizedDescription ?? String(localized: "Unknown error")
+            await onStatus(String(localized: "Audio format conversion failed: \(detail)"))
             return
         }
         guard outputBuffer.frameLength > 0 else { return }

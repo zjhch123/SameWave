@@ -39,7 +39,7 @@ struct HistoryDetailView: View {
         let source = line.displaySource(refined: showRefined)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(mine ? "You" : "Speaker")
+                Text(mine ? String(localized: "You") : String(localized: "Speaker"))
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(0.5)
                     .foregroundStyle(mine ? CaptionsView.accent : CaptionsView.meta)

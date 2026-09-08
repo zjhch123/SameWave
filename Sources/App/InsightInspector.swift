@@ -69,15 +69,15 @@ struct InsightInspector: View {
                 .foregroundStyle(CaptionsView.muted)
             Spacer(minLength: 0)
             if generating { ProgressView().controlSize(.mini) }
-            Button(generating ? "Stop" : "Generate") {
+            Button(generating ? String(localized: "Stop") : String(localized: "Generate")) {
                 if generating { coordinator.insights?.cancelBatch(record.id) }
                 else { coordinator.generateAllInsights() }
             }
             .controlSize(.small)
             .disabled(!generating && (!aiSettings.isConfigured || coordinator.isTransitioning
                 || coordinator.insights?.canGenerateAll(record) != true))
-            .help(generating ? "Stop generating custom insights" : "Generate all custom insights")
-            .accessibilityLabel(generating ? "Stop all custom insights" : "Generate all custom insights")
+            .help(generating ? String(localized: "Stop generating custom insights") : String(localized: "Generate all custom insights"))
+            .accessibilityLabel(generating ? String(localized: "Stop all custom insights") : String(localized: "Generate all custom insights"))
         }
     }
 
@@ -97,9 +97,9 @@ struct InsightInspector: View {
                 && coordinator.insights?.batchMeetingIDs.contains(record.id) != true
                 && record.meetingStatus != .draft && (!isSummary || record.meetingStatus == .ended),
             automatic: automatic,
-            emptyMessage: isSummary ? "Generate a summary of the complete meeting."
-                : (record.meetingStatus == .draft ? "Ready when the conversation starts."
-                   : "No saved insight yet. Generate when you’re ready."),
+            emptyMessage: isSummary ? String(localized: "Generate a summary of the complete meeting.")
+                : (record.meetingStatus == .draft ? String(localized: "Ready when the conversation starts.")
+                   : String(localized: "No saved insight yet. Generate when you’re ready.")),
             generate: allowsGeneration ? { coordinator.generateInsight(configuration, summary: isSummary) } : nil,
             stop: { coordinator.insights?.cancel(key) },
             retrySave: { coordinator.insights?.retrySave($0) }

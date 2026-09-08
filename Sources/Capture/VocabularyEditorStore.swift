@@ -28,8 +28,8 @@ final class VocabularyEditorStore {
     @ObservationIgnored private var loadingTask: Task<Void, Never>?
     @ObservationIgnored private var loadingToken = UUID()
 
-    var title: String { scope == .meeting ? "Meeting Vocabulary" : "Personal Vocabulary" }
-    var scopeLabel: String { scope == .meeting ? "This meeting" : "Across meetings" }
+    var title: String { scope == .meeting ? String(localized: "Meeting Vocabulary") : String(localized: "Personal Vocabulary") }
+    var scopeLabel: String { scope == .meeting ? String(localized: "This meeting") : String(localized: "Across meetings") }
     var phrases: [String] { readPhrases() }
     var manualPhrases: [String] { SpeechVocabularySettings.phrases(from: manualText) }
     var hasInvalidManualInput: Bool { manualPhrases.contains { !VocabularyGenerator.isValidPhrase($0) } }
@@ -62,8 +62,9 @@ final class VocabularyEditorStore {
             if !additions.isEmpty { try replacePhrases(current + additions) }
             manualText = ""
             isAddingTerms = false
-            vocabularyMessage = "Added \(additions.count) \(additions.count == 1 ? "term" : "terms")"
-                + (skipped > 0 ? " · Skipped \(skipped) duplicates" : "")
+            vocabularyMessage = skipped > 0
+                ? String(localized: "Added \(additions.count) terms · Skipped \(skipped) duplicates")
+                : String(localized: "Added \(additions.count) terms")
         }
     }
 
@@ -85,7 +86,7 @@ final class VocabularyEditorStore {
         guard let original = editingPhrase, VocabularyGenerator.isValidPhrase(editedText) else { return }
         let replacement = editedText.trimmed
         guard let index = phrases.firstIndex(of: original) else {
-            vocabularyError = "This term is no longer available. Cancel this edit and try again."
+            vocabularyError = String(localized: "This term is no longer available. Cancel this edit and try again.")
             return
         }
         var updated = phrases
@@ -94,7 +95,7 @@ final class VocabularyEditorStore {
         commit {
             try replacePhrases(normalized)
             cancelEditing()
-            vocabularyMessage = normalized.count < updated.count ? "Duplicate merged" : "Term saved"
+            vocabularyMessage = normalized.count < updated.count ? String(localized: "Duplicate merged") : String(localized: "Term saved")
         }
     }
 
@@ -102,7 +103,7 @@ final class VocabularyEditorStore {
         commit {
             try replacePhrases(phrases.filter { $0 != phrase })
             if editingPhrase == phrase { cancelEditing() }
-            vocabularyMessage = "Term removed"
+            vocabularyMessage = String(localized: "Term removed")
         }
     }
 
@@ -110,7 +111,7 @@ final class VocabularyEditorStore {
         do { try operation(); vocabularyError = nil }
         catch {
             vocabularyMessage = nil
-            vocabularyError = "Could not save terms. Your edits are retained. \(error.localizedDescription)"
+            vocabularyError = String(localized: "Could not save terms. Your edits are retained. \(error.localizedDescription)")
         }
     }
 

@@ -4,7 +4,7 @@ This directory is the repository's technical documentation hub, covering product
 
 ## At a glance
 
-SameWave is a native macOS app for one-on-one meetings. It treats system audio as the other participant and the microphone as you, recognizes both locally, and translates or directly displays speech according to the selected English/Simplified Chinese source and target languages. Turns become ordered Sections, sessions save incrementally to SwiftData, and optional user-configured strict JSON Schema Structured Outputs services generate insights and refined transcripts. App-owned text, insights, titles, and documentation are in English; meeting content retains its selected languages.
+SameWave is a native macOS app for one-on-one meetings. It treats system audio as the other participant and the microphone as you, recognizes both locally, and translates or directly displays speech according to the selected English/Simplified Chinese source and target languages. Turns become ordered Sections, sessions save incrementally to SwiftData, and optional user-configured strict JSON Schema Structured Outputs services generate insights and refined transcripts. The interface supports English and Simplified Chinese through native localization. AI insights, generated titles, prompts, export templates, and documentation remain in English; meeting content retains its selected languages.
 
 ## Read by task
 

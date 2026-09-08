@@ -41,7 +41,7 @@ extension MeetingHistoryStore {
     /// The value survives rollback in the engine. Retrying a save never calls the provider.
     func appendInsight(_ value: InsightSnapshotValue) throws {
         guard let record = try record(id: value.input.meetingID) else {
-            throw LLMError.invalidRequest("This meeting has been deleted.")
+            throw LLMError.invalidRequest(String(localized: "This meeting has been deleted."))
         }
         guard !record.insightSnapshots.contains(where: { $0.id == value.id }) else { return }
         let snapshot = try InsightSnapshot(value)

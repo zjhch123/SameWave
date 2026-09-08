@@ -16,6 +16,22 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260908-001"></a>
+## DEC-20260908-001: Localize the interface with native English and Simplified Chinese catalogs
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Scope:** Interface language, localization resources, content boundaries, and validation
+- **Replaces:** The English-only interface, permission text, and UI metadata formatting in [DEC-20260905-006](#dec-20260905-006). Its app identity, English prompts/generated AI output/export templates, and documentation decisions remain adopted.
+- **Context:** Issue #17 requests English and Chinese app support. UI literals alone do not cover status/errors, dynamic control labels, counts, permission explanations, or summary headings. Some English labels also feed prompts and export, while editable titles and saved content must remain verbatim.
+- **Decision:** Use Apple string catalogs with English source keys and Simplified Chinese translations. Let macOS choose the app language, including its per-app language preference, on launch. Use SwiftUI localized literals for view copy and `String(localized:)` for dynamic app-owned messages. Put singular/plural and multiple-count substitutions in the catalog. Localize displayed dates through native formatting; keep explicit English export dates. Localize fixed summary headings only at the view boundary. Initialize a new editable overview title in the app language, then treat it as persisted user content. Do not localize storage/protocol identifiers, speech language identifiers, prompt language names, documents, vocabulary, editable titles, transcripts, or saved AI results. Keep source copy, prompts, generated AI content, export templates, and documentation in English.
+- **Rejected alternatives:** A custom language manager, parallel settings preference, and in-process switching would duplicate native app language selection and require rebuilding cached state. Translating arbitrary dynamic strings by lookup could alter user content that happens to match a UI key. Translating persisted records or model output would broaden an interface request into data rewriting. English word fragments for counts do not support correct pluralization or Chinese grammar.
+- **Rationale/tradeoffs:** Native catalogs provide compiled resource selection, translator context, interpolation, and plural rules without a dependency or compatibility layer. Language changes require reopening the app. System/provider error details retain their original wording; app-owned wrappers are translated. Editable titles created in an earlier language remain in that language unless edited.
+- **Impact and validation:** XcodeGen and unsigned Debug build pass. `SameWave` on `platform=macOS,arch=arm64` passes all 219 tests with English/US and 6 localization/rendering tests with Simplified Chinese/CN. Tests cover compiled UI/permission bundles, unsupported-language selection, zero/one/multiple counts, two independent plural counts, diagnostic interpolation, native minimum-size views, and preserved content/export. The English source/link audit now also validates complete translations and placeholder contracts. Native rendered Chinese preparation, settings, vocabulary, summary, and editor views were inspected.
+- **Files:** `Sources/Resources/Localizable.xcstrings`, `Sources/Resources/InfoPlist.xcstrings`, `project.yml`, presentation/status/error call sites, `Tests/LocalizationTests.swift`, native rendering/export/identity tests, `scripts/check_localizations.py`, `AGENTS.md`, product/development references.
+
+---
+
 <a id="dec-20260907-004"></a>
 ## DEC-20260907-004: Separate conversational turns from cumulative recognition
 
@@ -465,7 +481,7 @@ A generic multi-meeting project hierarchy, external file bookmarks, document ret
 ## DEC-20260905-006: Use English throughout the product and documentation
 
 - **Date:** 2026-09-05
-- **Status:** Accepted
+- **Status:** Superseded for interface localization and UI metadata formatting by [DEC-20260908-001](#dec-20260908-001). App identity, English prompts/generated AI output/export templates, and documentation remain adopted.
 - **Scope:** Product language, generated AI content, export templates, app naming, documentation
 - **Replaces:** The Chinese display/executable/module names in [DEC-20260905-002](#dec-20260905-002) and Chinese title output in [DEC-20260904-002](#dec-20260904-002). Bundle identity and independent title generation remain unchanged.
 

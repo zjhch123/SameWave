@@ -25,7 +25,7 @@ struct InsightDefinitionEditor: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(definition == nil ? "Add Insight" : "Edit Insight").font(.title2.bold())
+                    Text(definition == nil ? String(localized: "Add Insight") : String(localized: "Edit Insight")).font(.title2.bold())
                     TextField("Title", text: $title).textFieldStyle(.roundedBorder)
                     Text("What should this insight analyze?")
                     TextEditor(text: $prompt)

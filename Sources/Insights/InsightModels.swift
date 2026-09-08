@@ -139,7 +139,7 @@ enum InsightRequest {
     static func prepare(_ input: InsightInput) throws -> String {
         guard !input.sources.isEmpty else { throw LLMError.emptyContent }
         guard !input.configuration.title.trimmed.isEmpty, !input.configuration.prompt.trimmed.isEmpty else {
-            throw LLMError.invalidRequest("An insight needs a title and prompt.")
+            throw LLMError.invalidRequest(String(localized: "An insight needs a title and prompt."))
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

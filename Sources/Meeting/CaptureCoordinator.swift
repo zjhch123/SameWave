@@ -77,7 +77,7 @@ final class CaptureCoordinator {
         translation.onFailed = { [weak self] request in
             guard let self, request.sessionID == self.sessionID else { return }
             self.store.failTranslation(id: request.sectionId, generation: request.generation)
-            self.statusMessage = "Translation is temporarily unavailable. Source text has been kept."
+            self.statusMessage = String(localized: "Translation is temporarily unavailable. Source text has been kept.")
             self.persistTranslationIfPaused()
         }
     }
@@ -90,7 +90,7 @@ final class CaptureCoordinator {
             readPhrases: { record.confirmedVocabulary },
             replacePhrases: { [weak self] phrases in
                 guard let history = self?.history, let owner = try history.record(id: meetingID) else {
-                    throw LLMError.invalidRequest("This meeting is no longer available.")
+                    throw LLMError.invalidRequest(String(localized: "This meeting is no longer available."))
                 }
                 try history.replaceVocabulary(phrases, in: owner)
             })
@@ -110,9 +110,9 @@ final class CaptureCoordinator {
 
     func backgroundActivity(for meetingID: UUID) -> String? {
         var activities: [String] = []
-        if refinements[meetingID]?.isRefining == true { activities.append("Refining transcript") }
-        if refinements[meetingID]?.isGeneratingTitle == true { activities.append("Generating title") }
-        if insights?.isWorking(on: meetingID) == true { activities.append("Generating insights") }
+        if refinements[meetingID]?.isRefining == true { activities.append(String(localized: "Refining transcript")) }
+        if refinements[meetingID]?.isGeneratingTitle == true { activities.append(String(localized: "Generating title")) }
+        if insights?.isWorking(on: meetingID) == true { activities.append(String(localized: "Generating insights")) }
         return activities.isEmpty ? nil : activities.joined(separator: "; ")
     }
 
@@ -121,7 +121,7 @@ final class CaptureCoordinator {
     func startGlobal() async {
         guard sessionState == .idle else { return }
         guard let history else {
-            statusMessage = "Cannot start a meeting because the history database is unavailable"
+            statusMessage = String(localized: "Cannot start a meeting because the history database is unavailable")
             return
         }
 
@@ -130,7 +130,7 @@ final class CaptureCoordinator {
             guard let record = activeRecord else { return }
             try history.beginCapture(record, languagePair: languagePair)
         } catch {
-            statusMessage = "Could not save the meeting: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not save the meeting: \(error.localizedDescription)")
             return
         }
         beginFreshSession()
@@ -148,7 +148,7 @@ final class CaptureCoordinator {
             do {
                 if let preparedRecord { try history.setStatus(preparedRecord, .draft) }
             } catch {
-                message += "; could not save the draft: \(error.localizedDescription)"
+                message += String(localized: "; could not save the draft: \(error.localizedDescription)")
             }
             statusMessage = message
             return
@@ -160,15 +160,15 @@ final class CaptureCoordinator {
             } catch {
                 guard sessionID == expectedSessionID, sessionState == .starting else { return }
                 if !(error is CancellationError) {
-                    statusMessage = "Microphone unavailable; recording system audio only: \(error.localizedDescription)"
+                    statusMessage = String(localized: "Microphone unavailable; recording system audio only: \(error.localizedDescription)")
                 }
             }
         }
 
         guard sessionID == expectedSessionID, sessionState == .starting else { return }
         sessionState = .recording
-        if statusMessage == "Starting…" || statusMessage == "Model ready" {
-            statusMessage = "Listening to system audio…"
+        if statusMessage == String(localized: "Starting…") || statusMessage == String(localized: "Model ready") {
+            statusMessage = String(localized: "Listening to system audio…")
         }
         startAutosave()
     }
@@ -179,7 +179,7 @@ final class CaptureCoordinator {
         freezeElapsedTime()
         if let id = activeRecordID { insights?.stopRecording(id) }
         sessionState = .pausing
-        statusMessage = "Pausing…"
+        statusMessage = String(localized: "Pausing…")
 
         await tearDownPipelines()
         sealOpenTurn()
@@ -188,10 +188,10 @@ final class CaptureCoordinator {
         sessionState = .paused
         do {
             try persistActiveRecord(status: .paused)
-            statusMessage = translationsFinished ? "Paused" : "Paused; some translations are incomplete"
+            statusMessage = translationsFinished ? String(localized: "Paused") : String(localized: "Paused; some translations are incomplete")
             return true
         } catch {
-            statusMessage = "Paused, but saving failed: \(error.localizedDescription)"
+            statusMessage = String(localized: "Paused, but saving failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -203,7 +203,7 @@ final class CaptureCoordinator {
             ? activeRecord.effectiveVocabulary(global: globalVocabulary) : []
         sessionState = .starting
         sessionStartedAt = Date()
-        statusMessage = "Starting…"
+        statusMessage = String(localized: "Starting…")
         let expectedSessionID = sessionID
 
         do {
@@ -217,10 +217,10 @@ final class CaptureCoordinator {
             do {
                 try history?.setStatus(activeRecord, .paused)
             } catch {
-                statusMessage = "Could not resume or save the paused state: \(error.localizedDescription)"
+                statusMessage = String(localized: "Could not resume or save the paused state: \(error.localizedDescription)")
                 return
             }
-            statusMessage = "Could not resume: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not resume: \(error.localizedDescription)")
             return
         }
 
@@ -230,14 +230,14 @@ final class CaptureCoordinator {
             } catch {
                 guard sessionID == expectedSessionID, sessionState == .starting else { return }
                 if !(error is CancellationError) {
-                    statusMessage = "Microphone unavailable; recording system audio only: \(error.localizedDescription)"
+                    statusMessage = String(localized: "Microphone unavailable; recording system audio only: \(error.localizedDescription)")
                 }
             }
         }
         guard sessionID == expectedSessionID, sessionState == .starting else { return }
         sessionState = .recording
-        if statusMessage == "Starting…" || statusMessage == "Model ready" {
-            statusMessage = "Listening to system audio…"
+        if statusMessage == String(localized: "Starting…") || statusMessage == String(localized: "Model ready") {
+            statusMessage = String(localized: "Listening to system audio…")
         }
         startAutosave()
     }
@@ -247,7 +247,7 @@ final class CaptureCoordinator {
         if sessionStartedAt != nil { freezeElapsedTime() }
         if let id = activeRecordID { insights?.stopRecording(id) }
         sessionState = .stopping
-        statusMessage = "Finishing…"
+        statusMessage = String(localized: "Finishing…")
 
         await tearDownPipelines()
         sealOpenTurn()
@@ -262,13 +262,13 @@ final class CaptureCoordinator {
             try history.finish(record, sections: store.sections, endedAt: endedAt)
         } catch {
             sessionState = .paused
-            statusMessage = "Could not save the meeting. Try ending it again: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not save the meeting. Try ending it again: \(error.localizedDescription)")
             return
         }
 
         selectedHistoryRecord = record
         resetSession(keepingTranscript: true)
-        statusMessage = translationsFinished ? "" : "Source text saved; some translations are incomplete"
+        statusMessage = translationsFinished ? "" : String(localized: "Source text saved; some translations are incomplete")
     }
 
     func startNewMeeting() async {
@@ -279,7 +279,7 @@ final class CaptureCoordinator {
             mountDraft(draft)
             selectedHistoryRecord = nil
         } catch {
-            statusMessage = "Could not create the meeting: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not create the meeting: \(error.localizedDescription)")
         }
     }
 
@@ -291,7 +291,7 @@ final class CaptureCoordinator {
             else { try mountPaused(record) }
             selectedHistoryRecord = nil
         } catch {
-            statusMessage = "Could not restore the meeting: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not restore the meeting: \(error.localizedDescription)")
         }
     }
 
@@ -318,7 +318,7 @@ final class CaptureCoordinator {
             }
             try selectStoredRecord(record)
         } catch {
-            statusMessage = "Could not restore the previous meeting: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not restore the previous meeting: \(error.localizedDescription)")
         }
     }
 
@@ -338,14 +338,14 @@ final class CaptureCoordinator {
                 if activeRecord == nil { resetSession(keepingTranscript: false) }
             }
         } catch {
-            statusMessage = "Could not delete: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not delete: \(error.localizedDescription)")
             return
         }
         if wasCurrent && selectedRecordID == nil {
             do {
                 if let next = try history.mostRecentRecord() { try selectStoredRecord(next) }
             } catch {
-                statusMessage = "Meeting deleted, but another meeting could not be opened: \(error.localizedDescription)"
+                statusMessage = String(localized: "Meeting deleted, but another meeting could not be opened: \(error.localizedDescription)")
             }
         }
     }
@@ -368,7 +368,7 @@ final class CaptureCoordinator {
         do {
             try persistActiveRecord(status: sessionState == .recording ? .recording : .paused)
         } catch {
-            statusMessage = "Could not save: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not save: \(error.localizedDescription)")
         }
     }
 
@@ -481,7 +481,7 @@ final class CaptureCoordinator {
                 guard sessionID == expectedSessionID else { return }
                 captionMyMic = false
                 if !(error is CancellationError) {
-                    statusMessage = "Microphone unavailable: \(error.localizedDescription)"
+                    statusMessage = String(localized: "Microphone unavailable: \(error.localizedDescription)")
                 }
             }
         } else {
@@ -529,9 +529,9 @@ final class CaptureCoordinator {
         guard sessionID == expectedSessionID else { return }
         guard sessionState == .recording || sessionState == .starting else { return }
         if speaker == .remote {
-            statusMessage = "System audio error: \(error.localizedDescription)"
+            statusMessage = String(localized: "System audio error: \(error.localizedDescription)")
         } else {
-            statusMessage = "Microphone error; microphone captions stopped: \(error.localizedDescription)"
+            statusMessage = String(localized: "Microphone error; microphone captions stopped: \(error.localizedDescription)")
             captionMyMic = false
             await stopMicrophonePipeline()
         }
@@ -601,7 +601,7 @@ final class CaptureCoordinator {
         meetingStartedAt = now
         pausedElapsed = 0
         sessionState = .starting
-        statusMessage = "Starting…"
+        statusMessage = String(localized: "Starting…")
     }
 
     func generateInsight(_ configuration: InsightConfiguration, summary: Bool = false) {
@@ -659,7 +659,7 @@ final class CaptureCoordinator {
                 do {
                     try self.persistActiveRecord(status: .recording)
                 } catch {
-                    self.statusMessage = "Autosave failed: \(error.localizedDescription)"
+                    self.statusMessage = String(localized: "Autosave failed: \(error.localizedDescription)")
                 }
             }
         }
@@ -685,7 +685,7 @@ final class CaptureCoordinator {
         do {
             try persistActiveRecord(status: .paused)
         } catch {
-            statusMessage = "Could not save translations: \(error.localizedDescription)"
+            statusMessage = String(localized: "Could not save translations: \(error.localizedDescription)")
         }
     }
 
@@ -699,7 +699,7 @@ final class CaptureCoordinator {
             do {
                 try persistActiveRecord(status: .paused)
             } catch {
-                statusMessage = "Could not save the meeting: \(error.localizedDescription)"
+                statusMessage = String(localized: "Could not save the meeting: \(error.localizedDescription)")
                 return false
             }
         case .idle:
@@ -729,7 +729,7 @@ final class CaptureCoordinator {
         sessionStartedAt = nil
         activeRecord = record
         sessionState = .paused
-        statusMessage = "Paused"
+        statusMessage = String(localized: "Paused")
     }
 
     private func persistSelection() {

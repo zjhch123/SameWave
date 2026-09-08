@@ -19,9 +19,9 @@ final class MicrophoneCapture {
         var errorDescription: String? {
             switch self {
             case .notAuthorized:
-                "Allow SameWave in System Settings › Privacy & Security › Microphone"
+                String(localized: "Allow SameWave in System Settings › Privacy & Security › Microphone")
             case .engineStart(let error):
-                "Could not start the microphone: \(error.localizedDescription)"
+                String(localized: "Could not start the microphone: \(error.localizedDescription)")
             }
         }
     }

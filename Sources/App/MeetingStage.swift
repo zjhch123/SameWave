@@ -75,9 +75,9 @@ private struct StageHeader: View {
     var body: some View {
         HStack(spacing: 0) {
             if !sidebarOpen { Color.clear.frame(width: 64) }
-            iconButton("sidebar.left", help: "Toggle Sidebar") { sidebarOpen.toggle() }
+            iconButton("sidebar.left", help: String(localized: "Toggle Sidebar")) { sidebarOpen.toggle() }
             if let record = coordinator.workspaceRecord, record.meetingStatus != .draft {
-                iconButton("slider.horizontal.3", help: "Meeting Preparation") { showingPreparation = true }
+                iconButton("slider.horizontal.3", help: String(localized: "Meeting Preparation")) { showingPreparation = true }
             }
 
             if let record = selectedRecord {
@@ -113,7 +113,7 @@ private struct StageHeader: View {
                         .accessibilityLabel(message)
                 }
                 refineButton(record)
-                iconButton("square.and.arrow.up", help: "Export Meeting") {
+                iconButton("square.and.arrow.up", help: String(localized: "Export Meeting")) {
                     TranscriptExporter.exportRecord(record)
                 }
             } else if coordinator.workspaceRecord != nil {
@@ -122,7 +122,7 @@ private struct StageHeader: View {
                     liveStatus
                 }
                 Spacer()
-                iconButton("square.and.arrow.up", help: "Export Transcript") {
+                iconButton("square.and.arrow.up", help: String(localized: "Export Transcript")) {
                     TranscriptExporter.exportWithPanel(
                         store: coordinator.store,
                         showsSourceEcho: coordinator.languagePair.needsTranslation
@@ -197,13 +197,13 @@ private struct StageHeader: View {
         let busy = refinement?.isRefining == true
         let failed = refinement?.errorMessage != nil
         let label: String = switch state {
-        case .refining(let done, let total): "Refining \(done)/\(total)"
-        case .error: "Refinement Failed — Retry"
+        case .refining(let done, let total): String(localized: "Refining \(done)/\(total)")
+        case .error: String(localized: "Refinement Failed — Retry")
         case .idle:
-            if failed { "Refinement Failed — Retry" }
-            else if !configured { "Configure AI Services" }
-            else if record.hasRefinement { "Refine Again" }
-            else { record.languagePair.needsTranslation ? "Refine Translation" : "Refine Transcript" }
+            if failed { String(localized: "Refinement Failed — Retry") }
+            else if !configured { String(localized: "Configure AI Services") }
+            else if record.hasRefinement { String(localized: "Refine Again") }
+            else { record.languagePair.needsTranslation ? String(localized: "Refine Translation") : String(localized: "Refine Transcript") }
         }
 
         return Button {
@@ -302,11 +302,11 @@ private struct MeetingControlDock: View {
                 .buttonStyle(.plain)
                 .disabled(!coordinator.sessionState.acceptsCaptureControls)
 
-                primaryButton(icon: "stop.fill", label: "End", color: CaptionsView.fg) {
+                primaryButton(icon: "stop.fill", label: String(localized: "End"), color: CaptionsView.fg) {
                     Task { await coordinator.stop() }
                 }
             } else {
-                primaryButton(icon: "play.fill", label: "Start", color: CaptionsView.accent) {
+                primaryButton(icon: "play.fill", label: String(localized: "Start"), color: CaptionsView.accent) {
                     Task { await coordinator.startGlobal() }
                 }
             }
@@ -340,7 +340,7 @@ private struct LanguagePicker: View {
         HStack(spacing: 5) {
             languageMenu(
                 selection: coordinator.sourceLanguage,
-                accessibilityLabel: "Source Language"
+                accessibilityLabel: String(localized: "Source Language")
             ) { coordinator.sourceLanguage = $0 }
 
             Image(systemName: "arrow.right")
@@ -349,7 +349,7 @@ private struct LanguagePicker: View {
 
             languageMenu(
                 selection: coordinator.targetLanguage,
-                accessibilityLabel: "Target Language"
+                accessibilityLabel: String(localized: "Target Language")
             ) { coordinator.targetLanguage = $0 }
         }
         .fixedSize()
@@ -364,7 +364,7 @@ private struct LanguagePicker: View {
             ForEach(MeetingLanguage.allCases) { language in
                 Button { onSelect(language) } label: {
                     HStack {
-                        Text(language.label)
+                        Text(language.localizedLabel)
                         if selection == language {
                             Image(systemName: "checkmark")
                         }
@@ -373,7 +373,7 @@ private struct LanguagePicker: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Text(selection.label)
+                Text(selection.localizedLabel)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(CaptionsView.fg)
                 Image(systemName: "chevron.down")
@@ -388,9 +388,9 @@ private struct LanguagePicker: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("\(accessibilityLabel): \(selection.label)")
+        .help("\(accessibilityLabel): \(selection.localizedLabel)")
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(selection.label)
+        .accessibilityValue(selection.localizedLabel)
     }
 }
 

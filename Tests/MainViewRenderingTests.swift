@@ -7,6 +7,34 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testLocalizedWorkspaceSettingsVocabularyAndSummary() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let suffix = chinese ? "zh-Hans" : "en"
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let settings = AISettings(defaults: defaults)
+        let vocabulary = SpeechVocabularySettings(defaults: defaults)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: vocabulary, defaults: defaults)
+        coordinator.history = history
+        let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        record.userTitle = "Settings"
+        await coordinator.loadSession(record)
+        try await render(MainView(coordinator: coordinator).defaultAppStorage(defaults).environment(settings).environment(navigation)
+            .modelContainer(history.container), size: NSSize(width: 940, height: 480), name: "localized-workspace-\(suffix)",
+            expectedLabels: chinese ? ["会议准备", "新建会议", "Settings"] : ["Meeting Preparation", "New Meeting", "Settings"])
+        try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+            name: "localized-settings-\(suffix)", expectedLabels: chinese ? ["设置", "词汇", "连接"] : ["Settings", "Connection", "Vocabulary"])
+        try await render(VocabularyEditorView(editor: navigation.vocabularyEditor).environment(navigation),
+            size: NSSize(width: 600, height: 540), name: "localized-vocabulary-\(suffix)",
+            expectedLabels: chinese ? ["个人词汇", "已保存的词汇"] : ["Personal Vocabulary", "Saved Vocabulary"])
+        try await render(MeetingSummaryCards(summary: .empty), size: NSSize(width: 240, height: 820),
+            name: "localized-summary-\(suffix)", expectedLabels: chinese ? ["议题", "行动项", "决策", "待解决问题"] : ["Topics", "Action Items", "Decisions", "Open Questions"])
+        try await render(InsightDefinitionEditor(record: record, history: history, definition: nil).environment(navigation),
+            size: NSSize(width: 500, height: 440), name: "localized-insight-editor-\(suffix)",
+            expectedLabels: chinese ? ["添加洞察", "分析重点", "保存"] : ["Add Insight", "Focus", "Save"])
+    }
+
     func testChronologicalCaptionsShowSourceAndTranslationWithoutBusyText() async throws {
         let store = CaptionStore()
         store.updateSource("The release is ready", speaker: .remote, isFinal: false, at: .now.advanced(by: .seconds(-2)))
@@ -685,9 +713,11 @@ final class MainViewRenderingTests: XCTestCase {
         try capture(host, name: name)
         try savePNG(host, name: name)
         if !expectedLabels.isEmpty || !absentLabels.isEmpty {
-            let labels = try visibleText(host)
-            for label in expectedLabels { XCTAssertTrue(labels.contains(label), "Missing \(label) in \(labels)") }
-            for label in absentLabels { XCTAssertFalse(labels.contains(label), "Unexpected \(label) in \(labels)") }
+            // OCR normalizes typographic spaces and reports wrapped labels as separate lines.
+            func normalized(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+            let labels = normalized(try visibleText(host))
+            for label in expectedLabels { XCTAssertTrue(labels.contains(normalized(label)), "Missing \(label) in \(labels)") }
+            for label in absentLabels { XCTAssertFalse(labels.contains(normalized(label)), "Unexpected \(label) in \(labels)") }
         }
     }
 
@@ -697,7 +727,7 @@ final class MainViewRenderingTests: XCTestCase {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["en-US"]
+        request.recognitionLanguages = Bundle.main.preferredLocalizations.first == "zh-Hans" ? ["zh-Hans", "en-US"] : ["en-US"]
         try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage), options: [:]).perform([request])
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }

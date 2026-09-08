@@ -54,7 +54,7 @@ struct MeetingPreparationView: View {
                             Spacer(minLength: 4)
                             Button("Manage Vocabulary…") { managingVocabulary = true }.controlSize(.small)
                         }
-                        Text("\(record.vocabulary.count) saved \(record.vocabulary.count == 1 ? "term" : "terms") · This meeting")
+                        Text("\(record.vocabulary.count) saved terms · This meeting")
                             .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
                         if importer.isRunning {
                             HStack(spacing: 6) {
@@ -101,7 +101,7 @@ struct MeetingPreparationView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(definition.title).font(.system(size: 13, weight: .medium))
                                         .fixedSize(horizontal: false, vertical: true)
-                                    Text(definition.automaticallyUpdates ? "Automatic" : "Manual")
+                                    Text(definition.automaticallyUpdates ? String(localized: "Automatic") : String(localized: "Manual"))
                                         .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
                                 }
                                 Spacer(minLength: 4)
@@ -156,7 +156,7 @@ struct MeetingPreparationView: View {
             try history.save()
             title = record.userTitle
             error = nil
-        } catch { self.error = "Could not save title: \(error.localizedDescription)" }
+        } catch { self.error = String(localized: "Could not save title: \(error.localizedDescription)") }
     }
 }
 

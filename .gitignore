@@ -4,3 +4,4 @@ config.local.json
 probe_*.py
 /tmp/
 DerivedData/
+__pycache__/

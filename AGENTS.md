@@ -32,7 +32,7 @@
 - Make maintainable long-term architectural decisions, not temporary solutions intended for replacement.
 - Follow Swift API Design Guidelines; prefer value types, explicit state, and structured concurrency. Do not hide concurrency problems with `@unchecked Sendable`, `nonisolated(unsafe)`, or disabled checks. Do not spread existing exceptions without evidence.
 - Preserve and present errors at the correct boundary. Do not use empty `catch` blocks, unexplained `try?`, false success states, or swallowed build exit codes.
-- Keep app-owned copy, prompts, export templates, and documentation in English. Meeting content and recognition fixtures may use supported languages. Run `python3 scripts/check_english.py` after copy or documentation changes.
+- Keep source localization keys, prompts, export templates, and documentation in English. App-owned interface copy supports English and Simplified Chinese through native string catalogs; use SwiftUI localized literals and `String(localized:)` for dynamic presentation and errors. Keep identifiers, protocol values, and user content out of localization lookups. Meeting content and recognition fixtures may use supported languages. Run `python3 scripts/check_english.py` after copy or documentation changes; it also validates translation coverage and placeholders.
 
 ## Decision records
 

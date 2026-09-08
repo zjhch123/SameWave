@@ -58,7 +58,13 @@ After copy or documentation changes, run:
 python3 scripts/check_english.py
 ```
 
-This checks app/documentation text and filenames for Chinese copy and verifies local Markdown file links. Chinese transcript fixtures and the refiner's recognition of Chinese speaker labels are intentional language data, not interface copy.
+This checks English source copy, documentation, filenames, and local Markdown links. Chinese UI translations belong in `Sources/Resources/Localizable.xcstrings` and `InfoPlist.xcstrings`; tests and supported transcript labels may contain language fixtures. The audit also invokes `scripts/check_localizations.py` to verify complete English/Simplified Chinese entries, plural structure, and matching interpolation placeholders.
+
+`SWIFT_EMIT_LOC_STRINGS` emits compiler-extracted keys during a build. After changing copy, sync `Localizable.xcstrings` with `xcrun xcstringstool sync` and the app target's `.stringsdata` files in `.build/Build/Intermediates.noindex/SameWave.build/Debug/SameWave.build/Objects-normal/arm64`. Translate new entries and remove stale ones. Summary part titles/empty messages are manual catalog entries because their English values also serve Markdown export. Do not localize user content, storage keys, language identifiers, Schema, or prompts.
+
+Run the full suite with `-testLanguage en -testRegion US`. Also run `LocalizationTests` and `MainViewRenderingTests/testLocalizedWorkspaceSettingsVocabularyAndSummary` using `-testLanguage zh-Hans -testRegion CN`; these verify compiled bundles, plural interpolation, metadata, preserved content/export, and narrow native layouts in the actual app language.
+
+Issue #17 (2026-09-08): XcodeGen, unsigned Debug build, and the source/link/translation audit passed. `SameWave` on `platform=macOS,arch=arm64` passed 219/219 tests with English/US and 6/6 localization/rendering tests with Simplified Chinese/CN. Chinese renders of preparation, settings, vocabulary, summary, and insight editing were inspected. The installed desktop app was replaced with `./build.sh`, verified against its existing certificate, and launched successfully. Native history metadata and opening/cancelling Settings were checked. Permission descriptions were verified in both compiled language bundles; existing TCC grants were not reset. This interface-only change does not claim a new audio/recognition accuracy benchmark.
 
 ## 5. Install and launch
 

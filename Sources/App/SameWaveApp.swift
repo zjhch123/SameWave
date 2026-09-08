@@ -21,7 +21,7 @@ struct SameWaveApp: App {
                     .modifier(SettingsSheet())
                     .environment(delegate.settingsNavigation)
             } else {
-                StorageFailureView(message: delegate.storageError ?? "Unknown error")
+                StorageFailureView(message: delegate.storageError ?? String(localized: "Unknown error"))
                     .frame(minWidth: 640, minHeight: 360)
             }
         }

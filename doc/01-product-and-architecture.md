@@ -15,7 +15,9 @@ The app does not save audio. Its core data is a set of text Sections carrying sp
 
 ## 2. Current stack
 
-The app, executable, Swift module, project, and scheme are named `SameWave`; the test target is `SameWaveTests`, the bundle ID is `com.plus.samewave`, and the entry type is `SameWaveApp`. App-owned UI, export templates, AI insights, and generated titles use English. Transcript content follows the meeting's language pair.
+The app, executable, Swift module, project, and scheme are named `SameWave`; the test target is `SameWaveTests`, the bundle ID is `com.plus.samewave`, and the entry type is `SameWaveApp`. The interface supports English and Simplified Chinese, selected by macOS language preferences, including its per-app language setting. English is the development language. Native string catalogs own UI and permission translations; SwiftUI localizes literal labels, while `String(localized:)` handles dynamic app-owned messages and errors. English plural rules belong in the catalog instead of concatenated words. Dates shown in meeting titles and version menus use native locale-aware formatting. System/framework errors and provider diagnostics retain their supplied details.
+
+App identity, persisted IDs, recognition/translation language values, prompts, export templates, AI insights, and generated titles remain independent of interface language. Editable meeting/insight titles, documents, vocabulary, transcripts, and saved results render verbatim. A new meeting's editable overview title is initialized in the current app language and then remains saved content. The fixed full-summary title and section headings are localized only for presentation. Markdown export keeps English metadata, including its explicit date format. Language changes take effect when the app reopens; there is no custom language manager or second settings store.
 
 | Area | Technology | Purpose |
 |---|---|---|
