@@ -2,12 +2,25 @@
 
 A native macOS app for live meeting captions, English–Chinese translation, and meeting notes. Speech recognition and translation run locally; no API key is needed for captions.
 
+![SameWave with a bilingual conversation and AI insights from a saved meeting](doc/images/samewave-overview.png)
+
 - **Follow the conversation.** Caption system audio and your microphone in speaking order, including overlapping speech.
 - **Translate as you go.** Choose English or Simplified Chinese as source and target, or use the same language for transcription only.
 - **Keep your notes.** Prepare meetings, add vocabulary, pause and resume, and revisit automatically saved transcripts. Export to Markdown when you're done.
 - **Add AI when useful.** Generate custom insights, meeting summaries, and refined transcripts with an optional AI service.
 
 Designed for one-on-one meetings: system audio is the other side, and the microphone is you. Capture includes all system output except SameWave; multiple remote speakers are not separated.
+
+<details>
+<summary>See meeting preparation and review</summary>
+
+Screenshots from the Frontend Engineer Interview demo.
+
+![Meeting preparation with vocabulary and a custom insight prompt](doc/images/meeting-preparation.png)
+
+![Meeting review showing action items, decisions, and open questions](doc/images/meeting-review.png)
+
+</details>
 
 ## Build and run
 
