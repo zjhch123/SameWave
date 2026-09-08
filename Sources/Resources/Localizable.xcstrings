@@ -806,6 +806,22 @@
         }
       }
     },
+    "App Language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Language"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用语言"
+          }
+        }
+      }
+    },
     "Attach Markdown…": {
       "localizations": {
         "en": {
@@ -914,6 +930,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "历史数据库不可用，无法开始会议"
+          }
+        }
+      }
+    },
+    "Chinese": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chinese"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中文"
           }
         }
       }
@@ -1683,7 +1715,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "英语"
+            "value": "英文"
           }
         }
       }
@@ -2056,6 +2088,38 @@
         }
       }
     },
+    "Follow System": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow System"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随系统"
+          }
+        }
+      }
+    },
+    "General": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "General"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通用"
+          }
+        }
+      }
+    },
     "Generate": {
       "localizations": {
         "en": {
@@ -2324,6 +2388,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kimi（月之暗面）"
+          }
+        }
+      }
+    },
+    "Language changes are saved automatically. Quit and reopen SameWave to apply them.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language changes are saved automatically. Quit and reopen SameWave to apply them."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言更改会自动保存。退出并重新打开 SameWave 后生效。"
           }
         }
       }

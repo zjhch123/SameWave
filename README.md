@@ -2,7 +2,7 @@
 
 A native macOS app for live meeting captions, English–Chinese translation, and meeting notes. Speech recognition and translation run locally; no API key is needed for captions.
 
-The interface supports English and Simplified Chinese and follows your system language. To choose a language for SameWave, use **System Settings → General → Language & Region → Applications**, then reopen the app. This does not change meeting languages, saved content, or the English AI output and Markdown export templates.
+The interface supports English and Simplified Chinese. Open **SameWave → Settings… → General → App Language** to choose **Follow System** (the default), **English**, or **Chinese**. Your choice is saved automatically; quit and reopen SameWave to apply it. This does not change meeting languages, saved content, or the English AI output and Markdown export templates.
 
 ![SameWave with a bilingual conversation and AI insights from a saved meeting](doc/images/samewave-overview.png)
 

@@ -90,6 +90,12 @@ final class SettingsPresentationTests: XCTestCase {
         editor.manualText = "Pending manual edit"
         editor.isAddingTerms = true
         editor.focusedField = .manual
+        navigation.selectedTab = .general
+        await Task.yield()
+        XCTAssertTrue(window.attachedSheet === settingsSheet)
+        XCTAssertEqual(settingsSheet.frame.size, initialSize)
+        XCTAssertEqual(editor.manualText, "Pending manual edit")
+        XCTAssertEqual(navigation.aiDraft.customModel, "Pending model")
         navigation.openAISettings()
         await Task.yield()
         XCTAssertTrue(window.attachedSheet === settingsSheet)

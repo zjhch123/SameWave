@@ -16,11 +16,27 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260908-002"></a>
+## DEC-20260908-002: Expose the native app language preference in General settings
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Scope:** Settings entry point, preference ownership, and language activation
+- **Replaces:** The system-settings-only language entry point in [DEC-20260908-001](#dec-20260908-001). Its native catalogs, launch-time activation, and content boundaries remain adopted.
+- **Context:** The user requested an in-app selector with Follow System, English, and Chinese, defaulting to Follow System. SwiftUI labels, Foundation messages, AppKit menus, and permission resources must continue selecting the same language.
+- **Decision:** Add General as the initial Settings tab. Save explicit selections immediately to the app-domain `AppleLanguages` preference and remove that key for Follow System. Read the persistent app domain to distinguish an override from inherited global languages, and use native bundle matching for an existing macOS per-app preference. Keep this preference independent of AI drafts and vocabulary edits. Explain beside the picker that the user must quit and reopen SameWave to apply a change. Let native bundles resolve the language on the next launch.
+- **Rejected alternatives:** A separate application language key would compete with the native macOS setting. Storing the current system language for Follow System would stop following future system changes. Updating only SwiftUI's locale would leave dynamic messages and native UI inconsistent. Automatic relaunch on selection would interrupt meetings and pending work.
+- **Rationale/tradeoffs:** One native preference controls every localization boundary without replacing bundle lookup or maintaining parallel translation state. Selection saves immediately, while the current app session keeps its launch language. The user decides when to quit, and existing session persistence handles that normal exit.
+- **Impact and validation:** XcodeGen and unsigned Debug build pass. `SameWave` on `platform=macOS,arch=arm64` passes 224/224 full English/US tests and 11/11 Chinese/CN preference, localization, and rendering tests. Tests cover default selection, persistence, native language matching, override removal, unrelated/global preferences, all three visible selections, and retained AI/vocabulary drafts. The source/link/translation audit passes. After signed desktop installation, native UI checks verified Chinese and English across quit/reopen, then restored Follow System and confirmed the override is absent. Done closes General with Return.
+- **Files:** `Sources/App/AppLanguageSettings.swift`, `Sources/App/GeneralSettingsView.swift`, `Sources/App/SettingsView.swift`, `Sources/Resources/Localizable.xcstrings`, `Tests/AppLanguageSettingsTests.swift`, settings/rendering fixtures, README, product/development references.
+
+---
+
 <a id="dec-20260908-001"></a>
 ## DEC-20260908-001: Localize the interface with native English and Simplified Chinese catalogs
 
 - **Date:** 2026-09-08
-- **Status:** Accepted
+- **Status:** Superseded for the language settings entry point by [DEC-20260908-002](#dec-20260908-002). Native catalogs, launch-time activation, and content boundaries remain adopted.
 - **Scope:** Interface language, localization resources, content boundaries, and validation
 - **Replaces:** The English-only interface, permission text, and UI metadata formatting in [DEC-20260905-006](#dec-20260905-006). Its app identity, English prompts/generated AI output/export templates, and documentation decisions remain adopted.
 - **Context:** Issue #17 requests English and Chinese app support. UI literals alone do not cover status/errors, dynamic control labels, counts, permission explanations, or summary headings. Some English labels also feed prompts and export, while editable titles and saved content must remain verbatim.

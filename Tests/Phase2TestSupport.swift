@@ -17,7 +17,8 @@ enum Phase2Fixture {
 
     static func settingsNavigation(_ settings: AISettings, defaults: UserDefaults) -> SettingsNavigation {
         SettingsNavigation(aiSettings: settings, vocabularyEditor:
-            VocabularyEditorStore(aiSettings: settings, settings: SpeechVocabularySettings(defaults: defaults)))
+            VocabularyEditorStore(aiSettings: settings, settings: SpeechVocabularySettings(defaults: defaults)),
+            languageSettings: AppLanguageSettings(suiteName: "SettingsTests.\(UUID().uuidString)"))
     }
 
     static func source(_ text: String = "Launch Friday, subject to security review.",

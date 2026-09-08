@@ -5,8 +5,8 @@ import SwiftUI
 @MainActor
 @Observable
 final class SettingsNavigation {
-    enum Tab: Hashable { case ai, vocabulary }
-    var selectedTab: Tab = .ai
+    enum Tab: Hashable { case general, ai, vocabulary }
+    var selectedTab: Tab = .general
     var presentedHost: UUID? {
         didSet {
             if oldValue != nil && presentedHost == nil { aiDraft.cancelRequests() }
@@ -15,6 +15,7 @@ final class SettingsNavigation {
     let aiSettings: AISettings
     let aiDraft: AISettingsDraft
     let vocabularyEditor: VocabularyEditorStore
+    let languageSettings: AppLanguageSettings
     private struct Host {
         let id: UUID
         weak var window: NSWindow?
@@ -22,10 +23,12 @@ final class SettingsNavigation {
     private var hosts: [Host] = []
     private var pendingPresentation = false
 
-    init(aiSettings: AISettings, vocabularyEditor: VocabularyEditorStore) {
+    init(aiSettings: AISettings, vocabularyEditor: VocabularyEditorStore,
+         languageSettings: AppLanguageSettings = AppLanguageSettings()) {
         self.aiSettings = aiSettings
         aiDraft = AISettingsDraft(settings: aiSettings)
         self.vocabularyEditor = vocabularyEditor
+        self.languageSettings = languageSettings
     }
 
     // SwiftUI can retain a dismissed sheet without firing onDisappear. Route by
@@ -118,6 +121,7 @@ struct SettingsView: View {
                 Spacer()
             }.padding(16)
             Picker("Settings", selection: $navigation.selectedTab) {
+                Text("General").tag(SettingsNavigation.Tab.general)
                 Text("AI Services").tag(SettingsNavigation.Tab.ai)
                 Text("Vocabulary").tag(SettingsNavigation.Tab.vocabulary)
             }
@@ -126,6 +130,9 @@ struct SettingsView: View {
             Divider()
             // Keep both drafts mounted when switching tabs, including pending edits.
             ZStack {
+                if navigation.selectedTab == .general {
+                    GeneralSettingsView(settings: navigation.languageSettings)
+                }
                 AISettingsView(draft: navigation.aiDraft)
                     .opacity(navigation.selectedTab == .ai ? 1 : 0)
                     .disabled(navigation.selectedTab != .ai)
