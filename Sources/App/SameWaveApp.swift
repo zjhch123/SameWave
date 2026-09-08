@@ -81,6 +81,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let history {
             coordinator.insights = InsightEngine(settings: aiSettings, history: history)
         }
+        aiSettings.onDisable = { [weak self] in
+            self?.coordinator.cancelAIWork()
+            self?.vocabularyEditor.importer.stop()
+            self?.settingsNavigation.aiDraft.cancelRequests()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

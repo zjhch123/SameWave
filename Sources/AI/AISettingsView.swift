@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// AI preferences commit only through Save; their draft survives presentation changes.
+/// The master switch is immediate; connection preferences commit through Save.
 struct AISettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var draft: AISettingsDraft
@@ -9,13 +9,10 @@ struct AISettingsView: View {
         VStack(spacing: 0) {
             Form {
                 SwiftUI.Section {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("AI Services for SameWave")
-                            .font(.headline)
-                        Text("One configuration for insights, transcript refinement, meeting titles, and Markdown vocabulary generation. Configure and save to enable all AI features.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
+                    Toggle("Enable AI Services", isOn: $draft.isEnabled)
+                        .toggleStyle(.switch)
+                } footer: {
+                    Text("Applies immediately. Turning off stops AI tasks and keeps your configuration.")
                 }
 
                 SwiftUI.Section {
@@ -28,23 +25,9 @@ struct AISettingsView: View {
                     SecureField("API Key", text: $draft.apiKey,
                                 prompt: Text(draft.config.keyHint))
 
-                    // Custom services accept whatever address the provider documents. The
-                    // resolved request URL makes the normalization visible and predictable.
                     if draft.config.isCustom {
                         TextField("API URL", text: $draft.customAPIAddress,
                                   prompt: Text("https://api.example.com"))
-
-                        if let resolved = OpenAIEndpointResolver.chatCompletionsURL(
-                            from: draft.customAPIAddress
-                        ) {
-                            LabeledContent("Request URL") {
-                                Text(resolved.absoluteString)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(CaptionsView.meta)
-                                    .textSelection(.enabled)
-                                    .lineLimit(2)
-                            }
-                        }
 
                         HStack(spacing: 10) {
                             TextField("Model ID", text: $draft.customModel,
@@ -72,7 +55,7 @@ struct AISettingsView: View {
                     Text("Connection")
                 } footer: {
                     if draft.config.isCustom {
-                        Text("Enter a domain, an address ending in /v1, or a full /chat/completions URL. Use a model that supports Structured Outputs. You can test the connection before saving.")
+                        Text("Supports a base URL or full endpoint. The model must support Structured Outputs.")
                             .font(.system(size: 11))
                             .foregroundStyle(CaptionsView.meta)
                     }
@@ -83,20 +66,16 @@ struct AISettingsView: View {
                     if draft.contextBudget < 16_384 || draft.contextBudget > 2_000_000 {
                         Text("Enter a context window from 16,384 to 2,000,000 tokens.").font(.caption).foregroundStyle(.red)
                     }
-                    Text("Enter the selected model's supported context window, for example 1,000,000 for a 1M model. Save applies it to new insight requests. The check conservatively estimates the complete meeting, vocabulary, instructions, and output allowance; it does not measure exact tokens. No meeting text is truncated. The service enforces its actual limit.")
+                    Text("Use your model’s token limit; for example, 1,000,000 for a 1M model.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
                 SwiftUI.Section {
                     HStack(spacing: 10) {
                         Button("Test Connection") { draft.testConnection() }
-                            .disabled(!draft.isConfigured || draft.testState == .testing)
+                            .disabled(!draft.isEnabled || !draft.isConfigured || draft.testState == .testing)
                         testStatus
                     }
-                } footer: {
-                    Text("AI features send meeting text or selected Markdown content to this provider. Refinement includes personal vocabulary; insights include the complete meeting and personal vocabulary plus the full original transcript; titles include no vocabulary. Attaching a document alone does not send it. Audio is never uploaded. Live captions, translation, and manual vocabulary editing run locally without AI configuration.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(CaptionsView.meta)
                 }
             }
             .formStyle(.grouped)

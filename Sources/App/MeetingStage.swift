@@ -138,12 +138,11 @@ private struct StageHeader: View {
         .padding(.horizontal, 16)
         .sheet(isPresented: $showingPreparation) {
             if let record = coordinator.workspaceRecord, let history = coordinator.history {
-                VStack(spacing: 0) {
-                    HStack { Spacer(); Button("Done") { showingPreparation = false } }.padding(12)
-                    MeetingPreparationView(record: record, history: history,
-                                editor: coordinator.vocabularyEditor(for: record, settings: aiSettings))
-                        .id(record.id)
-                }.frame(width: 620, height: 640)
+                MeetingPreparationView(record: record, history: history,
+                    editor: coordinator.vocabularyEditor(for: record, settings: aiSettings),
+                    onDone: { showingPreparation = false })
+                    .id(record.id)
+                    .frame(width: 620, height: 640)
                     .modifier(SettingsSheet())
             }
         }
@@ -191,7 +190,7 @@ private struct StageHeader: View {
     }
 
     private func refineButton(_ record: MeetingRecord) -> some View {
-        let configured = aiSettings.isConfigured
+        let configured = aiSettings.isAvailable
         let refinement = coordinator.refinements[record.id]
         let state = refinement?.refiner.state ?? .idle
         let busy = refinement?.isRefining == true
@@ -201,7 +200,7 @@ private struct StageHeader: View {
         case .error: String(localized: "Refinement Failed — Retry")
         case .idle:
             if failed { String(localized: "Refinement Failed — Retry") }
-            else if !configured { String(localized: "Configure AI Services") }
+            else if !configured { aiSettings.settingsActionTitle }
             else if record.hasRefinement { String(localized: "Refine Again") }
             else { record.languagePair.needsTranslation ? String(localized: "Refine Translation") : String(localized: "Refine Transcript") }
         }

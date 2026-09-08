@@ -27,7 +27,7 @@ struct MeetingContextView: View {
             }
             if loadingTask != nil { ProgressView(String(localized: "Reading local files…")).controlSize(.small) }
             if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-            Text("Local copies · UTF-8 Markdown · 3 MB per file · 30 MB per meeting")
+            Text("UTF-8 Markdown · 3 MB per file · 30 MB per meeting")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: VocabularyEditorView.markdownContentTypes,

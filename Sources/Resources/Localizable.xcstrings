@@ -366,22 +366,6 @@
         }
       }
     },
-    "AI Services for SameWave": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI Services for SameWave"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "SameWave 的 AI 服务"
-          }
-        }
-      }
-    },
     "AI Services has unsaved changes": {
       "localizations": {
         "en": {
@@ -398,34 +382,18 @@
         }
       }
     },
-    "AI features send meeting text or selected Markdown content to this provider. Refinement includes personal vocabulary; insights include the complete meeting and personal vocabulary plus the full original transcript; titles include no vocabulary. Attaching a document alone does not send it. Audio is never uploaded. Live captions, translation, and manual vocabulary editing run locally without AI configuration.": {
+    "AI is off. Enable it in Settings → AI Services.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI features send meeting text or selected Markdown content to this provider. Refinement includes personal vocabulary; insights include the complete meeting and personal vocabulary plus the full original transcript; titles include no vocabulary. Attaching a document alone does not send it. Audio is never uploaded. Live captions, translation, and manual vocabulary editing run locally without AI configuration."
+            "value": "AI is off. Enable it in Settings → AI Services."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "AI 功能会将会议文本或所选 Markdown 内容发送给此服务提供商。润色会附带个人词汇；洞察会附带完整的会议词汇、个人词汇及原始转录全文；标题生成不附带词汇。仅添加附件不会发送文档。音频始终不会上传。实时字幕、翻译和手动词汇编辑均在本地运行，无需配置 AI。"
-          }
-        }
-      }
-    },
-    "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI is not configured. Open Settings → AI Services (⌘,), complete the configuration, and save."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "尚未配置 AI。请打开设置 → AI 服务（⌘,），完成配置并保存。"
+            "value": "AI 已关闭，请在“设置 → AI 服务”中启用。"
           }
         }
       }
@@ -822,6 +790,22 @@
         }
       }
     },
+    "Applies immediately. Turning off stops AI tasks and keeps your configuration.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies immediately. Turning off stops AI tasks and keeps your configuration."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即生效。关闭后停止 AI 任务，保留配置。"
+          }
+        }
+      }
+    },
     "Attach Markdown…": {
       "localizations": {
         "en": {
@@ -982,22 +966,6 @@
         }
       }
     },
-    "Closing keeps unfinished work for this app session.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Closing keeps unfinished work for this app session."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "关闭后，未完成的工作会保留至退出应用。"
-          }
-        }
-      }
-    },
     "Configure AI Services": {
       "localizations": {
         "en": {
@@ -1010,6 +978,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置 AI 服务"
+          }
+        }
+      }
+    },
+    "Configure AI in Settings → AI Services.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure AI in Settings → AI Services."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“设置 → AI 服务”中配置 AI。"
           }
         }
       }
@@ -1608,6 +1592,22 @@
         }
       }
     },
+    "Drafts are kept until you quit the app.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drafts are kept until you quit the app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "草稿保留到退出应用。"
+          }
+        }
+      }
+    },
     "Duplicate merged": {
       "localizations": {
         "en": {
@@ -1684,6 +1684,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑洞察"
+          }
+        }
+      }
+    },
+    "Enable AI Services": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable AI Services"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用 AI 服务"
           }
         }
       }
@@ -1768,22 +1784,6 @@
         }
       }
     },
-    "Enter a domain, an address ending in /v1, or a full /chat/completions URL. Use a model that supports Structured Outputs. You can test the connection before saving.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter a domain, an address ending in /v1, or a full /chat/completions URL. Use a model that supports Structured Outputs. You can test the connection before saving."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "输入域名、以 /v1 结尾的地址，或完整的 /chat/completions 地址。请选择支持 Structured Outputs 的模型。保存前可以测试连接。"
-          }
-        }
-      }
-    },
     "Enter a single-line term of 1–100 characters.": {
       "localizations": {
         "en": {
@@ -1796,22 +1796,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入单行术语，长度为 1–100 个字符。"
-          }
-        }
-      }
-    },
-    "Enter the selected model's supported context window, for example 1,000,000 for a 1M model. Save applies it to new insight requests. The check conservatively estimates the complete meeting, vocabulary, instructions, and output allowance; it does not measure exact tokens. No meeting text is truncated. The service enforces its actual limit.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the selected model's supported context window, for example 1,000,000 for a 1M model. Save applies it to new insight requests. The check conservatively estimates the complete meeting, vocabulary, instructions, and output allowance; it does not measure exact tokens. No meeting text is truncated. The service enforces its actual limit."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "输入所选模型支持的上下文窗口大小，例如 1M 模型填写 1,000,000。保存后对新的洞察请求生效。检查会保守估算完整会议、词汇、指令及预留输出的大小，而非精确计算 token。会议文本不会被截断。实际限制由服务端执行。"
           }
         }
       }
@@ -1892,22 +1876,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "提取词汇"
-          }
-        }
-      }
-    },
-    "Extract Vocabulary sends text to your configured AI service.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Extract Vocabulary sends text to your configured AI service."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "提取词汇会将文本发送到你配置的 AI 服务。"
           }
         }
       }
@@ -2052,22 +2020,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在获取模型…"
-          }
-        }
-      }
-    },
-    "File changes apply to the next extraction. Retry uses the original files.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "File changes apply to the next extraction. Retry uses the original files."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "文件更改将在下次提取时生效。重试仍使用原来的文件。"
           }
         }
       }
@@ -2264,22 +2216,6 @@
         }
       }
     },
-    "Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generation sends the original transcript and complete applicable vocabulary to your AI service. New results follow the app language. Earlier results keep their original language and prompt, including after removing this insight."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "生成时会将原始转写和全部适用词汇发送到你的 AI 服务。新结果跟随应用语言。已有结果保留原有语言和提示词，移除此洞察后仍然保留。"
-          }
-        }
-      }
-    },
     "Go to Context": {
       "localizations": {
         "en": {
@@ -2408,22 +2344,6 @@
         }
       }
     },
-    "Language changes are saved automatically. Quit and reopen SameWave to apply them.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Language changes are saved automatically. Quit and reopen SameWave to apply them."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "语言更改会自动保存。退出并重新打开 SameWave 后生效。"
-          }
-        }
-      }
-    },
     "Latest": {
       "localizations": {
         "en": {
@@ -2500,22 +2420,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在聆听…"
-          }
-        }
-      }
-    },
-    "Local copies · UTF-8 Markdown · 3 MB per file · 30 MB per meeting": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Local copies · UTF-8 Markdown · 3 MB per file · 30 MB per meeting"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本地副本 · UTF-8 Markdown · 每个文件 3 MB · 每场会议 30 MB"
           }
         }
       }
@@ -2856,6 +2760,22 @@
         }
       }
     },
+    "New results use the app language.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New results use the app language."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新结果使用应用语言。"
+          }
+        }
+      }
+    },
     "New terms saved: %lld": {
       "localizations": {
         "en": {
@@ -3186,22 +3106,6 @@
         }
       }
     },
-    "One configuration for insights, transcript refinement, meeting titles, and Markdown vocabulary generation. Configure and save to enable all AI features.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "One configuration for insights, transcript refinement, meeting titles, and Markdown vocabulary generation. Configure and save to enable all AI features."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "洞察、转录润色、会议标题和 Markdown 词汇提取共用一套配置。完成配置并保存后即可启用所有 AI 功能。"
-          }
-        }
-      }
-    },
     "One phrase per line. Paste several terms at once.": {
       "localizations": {
         "en": {
@@ -3424,6 +3328,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出"
+          }
+        }
+      }
+    },
+    "Quit and reopen SameWave to apply language changes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit and reopen SameWave to apply language changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出并重新打开 SameWave 后应用语言更改。"
           }
         }
       }
@@ -3700,22 +3620,6 @@
         }
       }
     },
-    "Request URL": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Request URL"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请求地址"
-          }
-        }
-      }
-    },
     "Requesting speech recognition permission…": {
       "localizations": {
         "en": {
@@ -3792,6 +3696,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "重试保存"
+          }
+        }
+      }
+    },
+    "Retry uses the original files.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry uses the original files."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试使用原始文件。"
           }
         }
       }
@@ -4313,6 +4233,22 @@
         }
       }
     },
+    "Supports a base URL or full endpoint. The model must support Structured Outputs.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supports a base URL or full endpoint. The model must support Structured Outputs."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可填写基础 URL 或完整接口地址，模型需支持结构化输出。"
+          }
+        }
+      }
+    },
     "System audio error: %@": {
       "localizations": {
         "en": {
@@ -4811,6 +4747,22 @@
         }
       }
     },
+    "UTF-8 Markdown · 3 MB per file · 30 MB per meeting": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UTF-8 Markdown · 3 MB per file · 30 MB per meeting"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UTF-8 Markdown · 每个文件 3 MB · 每场会议 30 MB"
+          }
+        }
+      }
+    },
     "Unknown error": {
       "localizations": {
         "en": {
@@ -4903,6 +4855,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在更新…"
+          }
+        }
+      }
+    },
+    "Use your model’s token limit; for example, 1,000,000 for a 1M model.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use your model’s token limit; for example, 1,000,000 for a 1M model."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "填写模型的 token 上限，例如 1M 模型填 1,000,000。"
           }
         }
       }

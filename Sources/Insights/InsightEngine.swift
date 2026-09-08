@@ -76,7 +76,7 @@ final class InsightEngine {
 
     func automaticTick(record: MeetingRecord, sections: [Section], vocabulary: [String],
                        elapsedSeconds: TimeInterval, now: Date = .now) {
-        guard record.id == recordingID, record.meetingStatus == .recording,
+        guard settings.isEnabled, record.id == recordingID, record.meetingStatus == .recording,
               inputs.count < Self.maximumConcurrentRequests,
               let schedule, !inputs.values.contains(where: { $0.kind == .automatic }) else { return }
         let sources = InsightSource.capture(sections, includingProvisional: false)
@@ -135,7 +135,7 @@ final class InsightEngine {
 
     func canGenerateAll(_ record: MeetingRecord) -> Bool {
         let ids = Set(record.definitions.map(\.id))
-        return !batchMeetingIDs.contains(record.id) && record.meetingStatus != .draft && !ids.isEmpty
+        return settings.isEnabled && !batchMeetingIDs.contains(record.id) && record.meetingStatus != .draft && !ids.isEmpty
             && !unsaved.values.contains { $0.input.meetingID == record.id && ids.contains($0.input.configuration.id) }
     }
 
@@ -198,6 +198,7 @@ final class InsightEngine {
                                    finalizedCharacters: input.sources.reduce(0) { $0 + $1.text.count })
         }
         do {
+            guard settings.isEnabled else { throw LLMError.disabled }
             guard let owner = try history.record(id: input.meetingID),
                   input.kind == .summary || owner.definitions.contains(where: { $0.id == input.configuration.id }) else {
                 throw LLMError.invalidRequest(String(localized: "This meeting or insight item has been deleted."))
@@ -213,6 +214,7 @@ final class InsightEngine {
             states[key] = .generating
             tasks[key] = Task { @MainActor [weak self] in
                 do {
+                    try Task.checkCancellation()
                     let raw = try await provider.complete(system: InsightRequest.systemPrompt,
                                                           user: user, schema: InsightResult.responseSchema)
                     try Task.checkCancellation()
@@ -241,6 +243,13 @@ final class InsightEngine {
         guard let value = unsaved[id] else { return }
         persist(value, key: InsightKey(meetingID: value.input.meetingID,
                                       definitionID: value.input.configuration.id))
+    }
+
+    /// Keep results and the recording schedule; enabling AI can resume future ticks.
+    func cancelAll() {
+        for pending in queue { removeRequest(pending.key) }
+        for key in Array(tasks.keys) { removeRequest(key) }
+        batchMeetingIDs.removeAll()
     }
 
     /// Pausing capture stops automatic scheduling, but explicit requests keep their frozen input.

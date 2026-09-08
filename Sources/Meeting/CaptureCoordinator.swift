@@ -108,6 +108,12 @@ final class CaptureCoordinator {
         return controller
     }
 
+    func cancelAIWork() {
+        insights?.cancelAll()
+        for refinement in refinements.values { refinement.invalidate() }
+        for editor in vocabularyEditors.values { editor.importer.stop() }
+    }
+
     func backgroundActivity(for meetingID: UUID) -> String? {
         var activities: [String] = []
         if refinements[meetingID]?.isRefining == true { activities.append(String(localized: "Refining transcript")) }

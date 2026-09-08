@@ -4,6 +4,7 @@ struct MeetingPreparationView: View {
     let record: MeetingRecord
     let history: MeetingHistoryStore
     let editor: VocabularyEditorStore
+    let onDone: (() -> Void)?
     @State private var title: String
     @State private var error: String?
     @State private var managingVocabulary = false
@@ -12,10 +13,11 @@ struct MeetingPreparationView: View {
     @State private var showingArchive = false
 
     init(record: MeetingRecord, history: MeetingHistoryStore,
-         editor: VocabularyEditorStore) {
+         editor: VocabularyEditorStore, onDone: (() -> Void)? = nil) {
         self.record = record
         self.history = history
         self.editor = editor
+        self.onDone = onDone
         _title = State(initialValue: record.userTitle)
     }
 
@@ -24,124 +26,135 @@ struct MeetingPreparationView: View {
     @State private var returningToContext = false
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Meeting Preparation").font(.system(size: 20, weight: .semibold))
-                        Text("Optional. Start whenever you’re ready.")
-                            .font(.system(size: 13)).foregroundStyle(CaptionsView.muted)
-                    }.padding(.bottom, 10)
-                    if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-                    preparationCard {
-                        HStack {
-                            Text("Meeting title").font(.system(size: 13, weight: .semibold))
-                            Spacer()
-                            if title == record.userTitle { Text("Saved").font(.caption).foregroundStyle(CaptionsView.muted) }
-                        }
-                        HStack(spacing: 8) {
-                            TextField("Meeting title", text: $title).textFieldStyle(.roundedBorder)
-                                .onSubmit(saveTitle)
-                            Button("Save", action: saveTitle).disabled(title == record.userTitle)
-                        }
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Meeting Preparation").font(.system(size: 20, weight: .semibold))
+                    Spacer()
+                    if let onDone {
+                        Button("Done", action: onDone).keyboardShortcut(.defaultAction)
                     }
-                    preparationCard {
-                        MeetingContextView(record: record, history: history, focusRequest: contextFocusRequest)
-                    }.id("context")
-                    preparationCard {
-                        HStack {
-                            Text("Vocabulary").font(.system(size: 13, weight: .semibold))
-                            Spacer(minLength: 4)
-                            Button("Manage Vocabulary…") { managingVocabulary = true }.controlSize(.small)
-                        }
-                        Text("\(record.vocabulary.count) saved terms · This meeting")
-                            .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
-                        if importer.isRunning {
-                            HStack(spacing: 6) {
-                                ProgressView().controlSize(.mini)
-                                Text("Extracting vocabulary · \(importer.completedCount)/\(importer.requests.count)")
-                            }.font(.caption).foregroundStyle(CaptionsView.muted)
-                        } else if !importer.candidates.isEmpty {
-                            Text("\(importer.candidates.count) suggested terms · Open Manage to choose")
-                                .font(.caption).foregroundStyle(CaptionsView.accent)
-                        } else if importer.canRetry {
-                            Text("Extraction incomplete · Open Manage to retry")
-                                .font(.caption).foregroundStyle(CaptionsView.muted)
-                        } else if case .failed = importer.state {
-                            Text("Extraction failed · Open Manage to try again")
-                                .font(.caption).foregroundStyle(.red)
-                        }
-                        if record.vocabulary.isEmpty {
-                            Text("Add terms yourself or extract them from Context.")
-                                .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
-                        } else {
-                            VocabularyPreviewLayout {
-                                ForEach(Array(record.confirmedVocabulary.prefix(12)), id: \.self) { phrase in
-                                    Text(phrase).lineLimit(1).font(.system(size: 11))
-                                        .help(phrase)
-                                        .padding(.horizontal, 7).padding(.vertical, 3)
-                                        .background(.white, in: RoundedRectangle(cornerRadius: 5))
-                                }
-                                if record.vocabulary.count > 12 {
-                                    Text("+\(record.vocabulary.count - 12)").font(.caption).foregroundStyle(CaptionsView.muted)
-                                }
+                }
+                Text("Optional. Start whenever you’re ready.")
+                    .font(.system(size: 13)).foregroundStyle(CaptionsView.muted)
+            }
+            .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 20)
+            .frame(maxWidth: 640)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                        preparationCard {
+                            HStack {
+                                Text("Meeting title").font(.system(size: 13, weight: .semibold))
+                                Spacer()
+                                if title == record.userTitle { Text("Saved").font(.caption).foregroundStyle(CaptionsView.muted) }
+                            }
+                            HStack(spacing: 8) {
+                                TextField("Meeting title", text: $title).textFieldStyle(.roundedBorder)
+                                    .onSubmit(saveTitle)
+                                Button("Save", action: saveTitle).disabled(title == record.userTitle)
                             }
                         }
-                    }
-                    preparationCard {
-                        HStack {
-                            Text("AI Insights").font(.system(size: 13, weight: .semibold))
-                            Spacer()
-                            Button { addingDefinition = true } label: { Label("Add…", systemImage: "plus") }
-                                .controlSize(.small)
-                        }
-                        ForEach(record.orderedDefinitions) { definition in
-                            Divider()
-                            HStack(spacing: 10) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(definition.title).font(.system(size: 13, weight: .medium))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Text(definition.automaticallyUpdates ? String(localized: "Automatic") : String(localized: "Manual"))
-                                        .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
-                                }
+                        preparationCard {
+                            MeetingContextView(record: record, history: history, focusRequest: contextFocusRequest)
+                        }.id("context")
+                        preparationCard {
+                            HStack {
+                                Text("Vocabulary").font(.system(size: 13, weight: .semibold))
                                 Spacer(minLength: 4)
-                                Button("Edit") { editingDefinition = definition }.controlSize(.small)
+                                Button("Manage Vocabulary…") { managingVocabulary = true }.controlSize(.small)
+                            }
+                            Text("\(record.vocabulary.count) saved terms · This meeting")
+                                .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
+                            if importer.isRunning {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("Extracting vocabulary · \(importer.completedCount)/\(importer.requests.count)")
+                                }.font(.caption).foregroundStyle(CaptionsView.muted)
+                            } else if !importer.candidates.isEmpty {
+                                Text("\(importer.candidates.count) suggested terms · Open Manage to choose")
+                                    .font(.caption).foregroundStyle(CaptionsView.accent)
+                            } else if importer.canRetry {
+                                Text("Extraction incomplete · Open Manage to retry")
+                                    .font(.caption).foregroundStyle(CaptionsView.muted)
+                            } else if case .failed = importer.state {
+                                Text("Extraction failed · Open Manage to try again")
+                                    .font(.caption).foregroundStyle(.red)
+                            }
+                            if record.vocabulary.isEmpty {
+                                Text("Add terms yourself or extract them from Context.")
+                                    .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
+                            } else {
+                                VocabularyPreviewLayout {
+                                    ForEach(Array(record.confirmedVocabulary.prefix(12)), id: \.self) { phrase in
+                                        Text(phrase).lineLimit(1).font(.system(size: 11))
+                                            .help(phrase)
+                                            .padding(.horizontal, 7).padding(.vertical, 3)
+                                            .background(.white, in: RoundedRectangle(cornerRadius: 5))
+                                    }
+                                    if record.vocabulary.count > 12 {
+                                        Text("+\(record.vocabulary.count - 12)").font(.caption).foregroundStyle(CaptionsView.muted)
+                                    }
+                                }
                             }
                         }
-                        if record.definitions.isEmpty {
-                            Text("Add an insight when you need one.").font(.callout).foregroundStyle(CaptionsView.muted)
+                        preparationCard {
+                            HStack {
+                                Text("AI Insights").font(.system(size: 13, weight: .semibold))
+                                Spacer()
+                                Button { addingDefinition = true } label: { Label("Add…", systemImage: "plus") }
+                                    .controlSize(.small)
+                            }
+                            ForEach(record.orderedDefinitions) { definition in
+                                Divider()
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(definition.title).font(.system(size: 13, weight: .medium))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        Text(definition.automaticallyUpdates ? String(localized: "Automatic") : String(localized: "Manual"))
+                                            .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
+                                    }
+                                    Spacer(minLength: 4)
+                                    Button("Edit") { editingDefinition = definition }.controlSize(.small)
+                                }
+                            }
+                            if record.definitions.isEmpty {
+                                Text("Add an insight when you need one.").font(.callout).foregroundStyle(CaptionsView.muted)
+                            }
+                            if !record.archivedInsightConfigurations.isEmpty {
+                                Button("Saved results from removed insights…") { showingArchive = true }
+                                    .buttonStyle(.plain).font(.caption).foregroundStyle(CaptionsView.accent)
+                            }
                         }
-                        if !record.archivedInsightConfigurations.isEmpty {
-                            Button("Saved results from removed insights…") { showingArchive = true }
-                                .buttonStyle(.plain).font(.caption).foregroundStyle(CaptionsView.accent)
-                        }
-                    }
-                }.padding(24).frame(maxWidth: 640)
-                    .frame(maxWidth: .infinity, alignment: .top)
-            }
-            .foregroundStyle(CaptionsView.fg)
-            .onChange(of: contextFocusRequest) { _, _ in proxy.scrollTo("context", anchor: .top) }
-            .sheet(isPresented: $managingVocabulary, onDismiss: {
-                if returningToContext { contextFocusRequest += 1; returningToContext = false }
-            }) {
-                MeetingVocabularyView(record: record, editor: editor, manageContext: {
-                    returningToContext = true
-                    managingVocabulary = false
-                })
-                    .modifier(SettingsSheet())
-            }
-            .sheet(item: $editingDefinition) { definition in
-                InsightDefinitionEditor(record: record, history: history, definition: definition)
-                    .modifier(SettingsSheet())
-            }
-            .sheet(isPresented: $addingDefinition) {
-                InsightDefinitionEditor(record: record, history: history, definition: nil)
-                    .modifier(SettingsSheet())
-            }
-            .sheet(isPresented: $showingArchive) {
-                ArchivedInsightResults(record: record).modifier(SettingsSheet())
+                    }.padding(.horizontal, 24).padding(.bottom, 24).frame(maxWidth: 640)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+                .foregroundStyle(CaptionsView.fg)
+                .onChange(of: contextFocusRequest) { _, _ in proxy.scrollTo("context", anchor: .top) }
+                .sheet(isPresented: $managingVocabulary, onDismiss: {
+                    if returningToContext { contextFocusRequest += 1; returningToContext = false }
+                }) {
+                    MeetingVocabularyView(record: record, editor: editor, manageContext: {
+                        returningToContext = true
+                        managingVocabulary = false
+                    })
+                        .modifier(SettingsSheet())
+                }
+                .sheet(item: $editingDefinition) { definition in
+                    InsightDefinitionEditor(record: record, history: history, definition: definition)
+                        .modifier(SettingsSheet())
+                }
+                .sheet(isPresented: $addingDefinition) {
+                    InsightDefinitionEditor(record: record, history: history, definition: nil)
+                        .modifier(SettingsSheet())
+                }
+                .sheet(isPresented: $showingArchive) {
+                    ArchivedInsightResults(record: record).modifier(SettingsSheet())
+                }
             }
         }
+        .foregroundStyle(CaptionsView.fg)
     }
 
     private func preparationCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {

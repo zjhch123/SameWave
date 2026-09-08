@@ -91,6 +91,8 @@ flowchart LR
     HS --> INS[AI Insights Inspector / saved timeline]
 ```
 
+Turning off AI synchronously asks app assembly to cancel the coordinator’s insight, refinement/title, and meeting vocabulary owners, plus personal vocabulary extraction and draft service checks. Cancellation preserves local work and retained results. `AISettings.isAvailable` combines the master switch with connection validity; `isConfigured` describes credentials alone.
+
 `CaptureCoordinator` orchestrates runtime work; `CaptionStore` is the only write boundary for the live conversation model. SwiftUI views primarily read observable state and invoke coordinator actions.
 
 ## 5. Layers and responsibilities
@@ -138,7 +140,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`MeetingTitleGenerator.swift`](../Sources/Insights/MeetingTitleGenerator.swift): one-shot title requests parallel to refinement, input budgets, output validation.
 - [`LLMProvider.swift`](../Sources/AI/LLMProvider.swift): minimal provider protocol, errors, provider configuration.
 - [`OpenAICompatibleProvider.swift`](../Sources/AI/OpenAICompatibleProvider.swift): the sole HTTP implementation.
-- [`AISettings.swift`](../Sources/AI/AISettings.swift): app-wide UserDefaults + Keychain configuration and availability validation.
+- [`AISettings.swift`](../Sources/AI/AISettings.swift): app-wide UserDefaults + Keychain configuration, immediate master switch, and availability validation.
 - [`AISettingsDraft.swift`](../Sources/AI/AISettingsDraft.swift): editable preferences and their cancellable connection-test/model-discovery state. Settings dismissal invalidates these checks while preserving the draft.
 - [`JSONResponseParser.swift`](../Sources/AI/JSONResponseParser.swift): shared strict JSON decoding boundary.
 - [`VocabularyImportController.swift`](../Sources/Capture/VocabularyImportController.swift): app-owned import state, per-request results, current progress, stop/retry, selective saving.
@@ -156,7 +158,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`MeetingPreparationView.swift`](../Sources/Meeting/MeetingPreparationView.swift): four preparation cards and retained-result archive. `MeetingContextView.swift` owns attachment controls; `MeetingVocabularyView.swift` hosts the shared vocabulary editor; `InsightDefinitionEditor.swift` owns definition edits.
 - [`SettingsView.swift`](../Sources/App/SettingsView.swift): General, AI Services, and Vocabulary tabs with native sheet routing over the current main/preparation surface; AI configuration actions select AI Services directly.
 - [`GeneralSettingsView.swift`](../Sources/App/GeneralSettingsView.swift): language picker, automatic-save/reopen guidance, and Done. [`AppLanguageSettings.swift`](../Sources/App/AppLanguageSettings.swift) owns the native per-app language preference.
-- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): renders the AI draft and invokes its discovery, testing, Save, and Cancel actions.
+- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): renders the immediate AI master switch and the connection draft with discovery, testing, Save, and Cancel actions.
 - [`TrafficLightConfigurator.swift`](../Sources/App/TrafficLightConfigurator.swift): macOS window button positioning after hiding the title bar.
 
 ### 5.7 Resources
@@ -196,7 +198,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - History and live captions share a window; there is no separate floating caption `NSPanel`.
 - The control dock occupies a separate layout row below the scrollable preparation/captions, preventing content from scrolling behind controls. It places language selectors above capture controls when the English labels need more width. History uses a two-line title/metadata header with compact action icons; tooltips and accessibility labels retain full action names.
 - Inspector width is draggable and persists through `@AppStorage`.
-- Settings is a native sheet with General, AI Services, and Vocabulary tabs. General is initially selected and saves its language choice immediately, with a Done footer and guidance to quit and reopen the app. AISettingsDraft belongs to SettingsNavigation, preserving pending preferences across tab switches and dismissal; Save/Cancel affects AI preferences only. The Vocabulary tab directly embeds the shared editor, with a compact scope heading inside its scroll content and a fixed Done footer. There is no Manage landing page, independent window, or nested vocabulary sheet. Configure AI Services switches tabs in the same 600×540 Settings sheet. Choosing files stays local; Extract explicitly sends text. Both hosts preserve drafts, suggestions, reading state, and background work on dismissal. Suggested Terms owns review actions and feedback; vocabulary commits never submit another draft. Vocabulary cards have independent observation boundaries, and only uniform term rows are lazy. Their fixed geometry preserves reading position while keeping large-list tab changes bounded by visible content.
+- Settings is a native sheet with General, AI Services, and Vocabulary tabs. General is initially selected and saves its language choice immediately, with a Done footer and guidance to quit and reopen the app. AISettingsDraft belongs to SettingsNavigation, preserving pending preferences across tab switches and dismissal; Save/Cancel affects connection and context-window preferences only; the master switch applies immediately. The Vocabulary tab directly embeds the shared editor, with a compact scope heading inside its scroll content and a fixed Done footer. There is no Manage landing page, independent window, or nested vocabulary sheet. Configure AI Services switches tabs in the same 600×540 Settings sheet. Choosing files stays local; Extract explicitly sends text. Both hosts preserve drafts, suggestions, reading state, and background work on dismissal. Suggested Terms owns review actions and feedback; vocabulary commits never submit another draft. Vocabulary cards have independent observation boundaries, and only uniform term rows are lazy. Their fixed geometry preserves reading position while keeping large-list tab changes bounded by visible content.
 
 ## 7. Platform and permissions
 
@@ -206,13 +208,13 @@ The deployment target is macOS 26.0. Required capabilities:
 - Microphone: input access when microphone captions are enabled.
 - Speech recognition: SpeechAnalyzer.
 - Translation language resources: prepared by the system on first use of a language pair.
-- Network: local captions/translation need no persistent connection; AI requires the configured provider.
+- Network: local captions/translation need no persistent connection; AI requires an enabled master switch and a configured provider.
 
 App Sandbox is disabled to reduce restrictions on capture and model resources. Hardened Runtime is enabled with the audio-input entitlement.
 
 ## 8. Privacy boundaries
 
-“Local” applies to the live captioning pipeline: audio, ASR, Apple Translation, and SwiftData run on-device. AI insights, refinement, and titles send transcript text to the user's selected third-party endpoint. Refinement sends the complete personal vocabulary frozen at operation start; insights send the full current applicable meeting/personal vocabulary and retain an exact input snapshot; title requests send no vocabulary. Settings discloses these boundaries, and product copy must remain consistent with them.
+“Local” applies to the live captioning pipeline: audio, ASR, Apple Translation, and SwiftData run on-device. AI insights, refinement, and titles send transcript text to the user's selected third-party endpoint. Refinement sends the complete personal vocabulary frozen at operation start; insights send the full current applicable meeting/personal vocabulary and retain an exact input snapshot; title requests send no vocabulary. README and the AI guide describe these boundaries; settings helper text focuses on the controls and their immediate effects.
 
 ## Phase 2 boundaries
 
