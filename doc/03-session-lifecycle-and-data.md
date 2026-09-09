@@ -4,6 +4,8 @@
 
 ## 1. Persistent meetings and transient capture
 
+History uses an explicit SwiftData store at `~/Library/Application Support/SameWave/MeetingHistory.store`. The application creates its own directory and reports directory/container failures through the storage error screen. Every history container requires a configuration; hosted tests use memory or explicit temporary paths. The unscoped `~/Library/Application Support/default.store` is not application-owned and must never be opened by SameWave. The app does not automatically import or inspect it; incident recovery is an offline operation on preserved copies.
+
 A meeting owns preparation before capture begins. Its persisted status is `draft`, `recording`, `paused`, or `ended`. The coordinator independently uses `idle`, `starting`, `recording`, `pausing`, `paused`, and `stopping` for resource transitions. An idle coordinator may have a draft mounted; attaching documents does not start recording.
 
 New Meeting saves a draft immediately, selects it, and displays preparation. Quick Start creates the same draft before starting capture, without requiring documents, custom prompts, or AI. Drafts include an editable Meeting Overview insight with automatic updates initially off.

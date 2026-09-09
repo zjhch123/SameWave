@@ -228,6 +228,8 @@ Permissions depend on signing identity. Frequently changing ad-hoc signatures or
 
 Hosted XCTest launches detect `XCTestBundlePath`: app assembly uses an in-memory history container, skips restoring personal meeting selection, and does not request speech/microphone permission. AI settings also avoid loading the real key. Tests create their own in-memory or temporary on-disk stores and controlled providers. Passing domain tests does not prove real capture, permission reuse, translation, or recognition accuracy; those remain signed-app smoke checks.
 
+Persistent history uses `~/Library/Application Support/SameWave/MeetingHistory.store`. Regression coverage verifies reopening with a neighboring unrelated `default.store`, preservation of that unrelated file, and visible failure when the application directory cannot be created. Never run recovery experiments against the live history: preserve the database and sidecars, work on copies, validate all model relationships and insight decoding with the application, and install only a verified recovered copy. Do not restore old backups over newer data without reconciling their contents.
+
 ## Initial live caption regression validation (2026-09-07)
 
 For issues #12 and #13, XcodeGen and the unsigned Debug build passed, followed by 203/203 XCTest cases on scheme SameWave, destination `platform=macOS,arch=arm64`. Native test renders show both open speakers, progressive translation, completed translations without a busy label, and explicit source-preserving failures.

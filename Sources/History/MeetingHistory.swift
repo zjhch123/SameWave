@@ -195,10 +195,18 @@ final class TranscriptLine {
 final class MeetingHistoryStore {
     let container: ModelContainer
 
-    init(configuration: ModelConfiguration? = nil) throws {
+    static func persistentConfiguration(
+        applicationSupportDirectory: URL = .applicationSupportDirectory
+    ) throws -> ModelConfiguration {
+        let directory = applicationSupportDirectory.appending(path: "SameWave", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return ModelConfiguration(url: directory.appending(path: "MeetingHistory.store"))
+    }
+
+    init(configuration: ModelConfiguration) throws {
         let schema = Schema([MeetingRecord.self, TranscriptLine.self, MeetingDocument.self,
                              MeetingVocabularyTerm.self, InsightDefinition.self, InsightSnapshot.self])
-        container = try ModelContainer(for: schema, configurations: configuration.map { [$0] } ?? [])
+        container = try ModelContainer(for: schema, configurations: [configuration])
     }
 
     var context: ModelContext { container.mainContext }

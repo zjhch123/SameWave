@@ -16,6 +16,22 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260909-002"></a>
+## DEC-20260909-002: Give history an exclusive application storage path
+
+- **Date:** 2026-09-09
+- **Status:** Accepted
+- **Scope:** Persistent history location and test isolation
+- **Context:** The unsandboxed app used SwiftData's unscoped `~/Library/Application Support/default.store`. At 10:27:54 on September 9, the system `icloudmailagent` migrated that same store and removed all six SameWave entities. Both the unified log and the database's persistent history identify the process and removed entities. The running app retained cached meetings; restarting exposed the empty store.
+- **Decision:** Store history only at `~/Library/Application Support/SameWave/MeetingHistory.store`. Require an explicit configuration for every `MeetingHistoryStore`; app assembly creates the directory and persistent configuration, while hosted tests retain memory/temporary stores. Propagate directory and container failures to the existing storage failure screen. Never open the unscoped store from the application. Recovery works offline from preserved evidence and validated copies, without a runtime legacy-path fallback or migration branch.
+- **Rejected alternatives:** Continuing with the default filename permits another schema collision. Detecting an empty store and silently importing old data can resurrect intentional deletions and overwrite newer work. Repeatedly retrying container creation does not fix ownership of the file.
+- **Rationale/tradeoffs:** An application-owned path prevents this collision at the I/O boundary, without changing the model or introducing an alternate storage implementation. Offline recovery can restore surviving content but cannot reconstruct overwritten metadata exactly.
+- **Impact:** New installations and subsequent launches use the explicit path. Existing data recovery is a separate, audited operation. The store schema and per-meeting save behavior remain unchanged.
+- **Validation:** A regression creates, saves, and reopens a meeting under temporary Application Support while an unrelated `default.store` is independently replaced, verifying the transcript and both stores remain independent. A blocked directory propagates an error. XcodeGen, unsigned Debug build, and all 240 XCTest cases passed on `SameWave`, `platform=macOS,arch=arm64`. The app's actual model types separately read and export a reconstructed database copy, decode its insight payloads, and successfully save/delete a temporary record on that copy. The signed desktop app reads the explicit store, displays recovered content, and retains selection and all six models' content across a normal quit/relaunch. Strict signature and installed-process checks passed.
+- **Files:** `Sources/History/MeetingHistory.swift`, `Sources/App/SameWaveApp.swift`, `Tests/MeetingHistoryStoreTests.swift`, `doc/03-session-lifecycle-and-data.md`, `AGENTS.md`.
+
+---
+
 <a id="dec-20260908-004"></a>
 ## DEC-20260908-004: Separate AI enablement from saved connection configuration
 

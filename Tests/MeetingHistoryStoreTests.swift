@@ -4,6 +4,49 @@ import XCTest
 
 @MainActor
 final class MeetingHistoryStoreTests: XCTestCase {
+    func testPersistentHistoryReopensWithoutTouchingSharedDefaultStore() throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        addTeardownBlock { try FileManager.default.removeItem(at: support) }
+        let sharedStore = support.appending(path: "default.store")
+        let unrelatedData = Data("Unrelated application's store".utf8)
+        try unrelatedData.write(to: sharedStore)
+
+        let configuration = try MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support)
+        XCTAssertEqual(configuration.url, support.appending(path: "SameWave/MeetingHistory.store"))
+        let id: UUID
+        do {
+            let history = try MeetingHistoryStore(configuration: configuration)
+            let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+            id = record.id
+            record.userTitle = "Persistent meeting"
+            var section = Section(id: 7, speaker: .remote)
+            section.committedSource = ["Keep this transcript"]
+            try history.finish(record, sections: [section], endedAt: .now)
+        }
+
+        XCTAssertEqual(try Data(contentsOf: sharedStore), unrelatedData)
+        // A different application can replace its own store without changing our history.
+        let replacement = Data("Other application's updated schema".utf8)
+        try replacement.write(to: sharedStore)
+        let reopened = try MeetingHistoryStore(configuration:
+            MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support))
+        let record = try XCTUnwrap(reopened.context.fetch(FetchDescriptor<MeetingRecord>()).first)
+        XCTAssertEqual(record.id, id)
+        XCTAssertEqual(record.userTitle, "Persistent meeting")
+        XCTAssertEqual(record.lines.map(\.sourceText), ["Keep this transcript"])
+        XCTAssertEqual(record.meetingStatus, .ended)
+        XCTAssertEqual(try Data(contentsOf: sharedStore), replacement)
+    }
+
+    func testPersistentStorageDirectoryFailureIsReported() throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        addTeardownBlock { try FileManager.default.removeItem(at: support) }
+        try Data("Blocking file".utf8).write(to: support.appending(path: "SameWave"))
+        XCTAssertThrowsError(try MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support))
+    }
+
     func testInterruptedCumulativeHypothesesPersistInTurnOrderWithoutDuplicates() throws {
         let history = try Phase2Fixture.history()
         let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
