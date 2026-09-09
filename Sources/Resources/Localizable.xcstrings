@@ -4441,6 +4441,22 @@
         }
       }
     },
+    "The meeting data file does not match SameWave's data model. The file has been left unchanged.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The meeting data file does not match SameWave's data model. The file has been left unchanged."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会议数据文件与 SameWave 的数据模型不匹配，文件已保持原样。"
+          }
+        }
+      }
+    },
     "The selected Markdown files contain no readable text.": {
       "localizations": {
         "en": {

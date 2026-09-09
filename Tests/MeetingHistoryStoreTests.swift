@@ -1,3 +1,4 @@
+import CoreData
 import SwiftData
 import XCTest
 @testable import SameWave
@@ -9,8 +10,13 @@ final class MeetingHistoryStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         addTeardownBlock { try FileManager.default.removeItem(at: support) }
         let sharedStore = support.appending(path: "default.store")
-        let unrelatedData = Data("Unrelated application's store".utf8)
-        try unrelatedData.write(to: sharedStore)
+        let sharedConfiguration = ModelConfiguration(url: sharedStore)
+        do {
+            let history = try MeetingHistoryStore(configuration: sharedConfiguration)
+            let record = try history.createDraft(languagePair: .englishToEnglish)
+            record.userTitle = "Shared-path fixture"
+            try history.save()
+        }
 
         let configuration = try MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support)
         XCTAssertEqual(configuration.url, support.appending(path: "SameWave/MeetingHistory.store"))
@@ -25,10 +31,13 @@ final class MeetingHistoryStoreTests: XCTestCase {
             try history.finish(record, sections: [section], endedAt: .now)
         }
 
-        XCTAssertEqual(try Data(contentsOf: sharedStore), unrelatedData)
-        // A different application can replace its own store without changing our history.
-        let replacement = Data("Other application's updated schema".utf8)
-        try replacement.write(to: sharedStore)
+        // Reproduce the incident's real automatic schema replacement, on a temp file.
+        let foreign = try ModelContainer(for: ForeignStorageRecord.self, configurations: sharedConfiguration)
+        foreign.mainContext.insert(ForeignStorageRecord(text: "Other application's data"))
+        try foreign.mainContext.save()
+        XCTAssertThrowsError(try MeetingHistoryStore(configuration: sharedConfiguration)) { error in
+            XCTAssertEqual(error as? MeetingHistoryStore.StorageError, .unexpectedDataModel)
+        }
         let reopened = try MeetingHistoryStore(configuration:
             MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support))
         let record = try XCTUnwrap(reopened.context.fetch(FetchDescriptor<MeetingRecord>()).first)
@@ -36,7 +45,54 @@ final class MeetingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.userTitle, "Persistent meeting")
         XCTAssertEqual(record.lines.map(\.sourceText), ["Keep this transcript"])
         XCTAssertEqual(record.meetingStatus, .ended)
-        XCTAssertEqual(try Data(contentsOf: sharedStore), replacement)
+        XCTAssertEqual(try foreign.mainContext.fetch(FetchDescriptor<ForeignStorageRecord>()).map(\.text),
+                       ["Other application's data"])
+    }
+
+    func testUnexpectedStoreModelIsRejectedBeforeAutomaticMigration() throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: support) }
+        let configuration = try MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support)
+        let foreign = try ModelContainer(for: ForeignStorageRecord.self, configurations: configuration)
+        foreign.mainContext.insert(ForeignStorageRecord(text: "Preserve this row"))
+        try foreign.mainContext.save()
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: configuration.url, options: [NSReadOnlyPersistentStoreOption: true])
+        let before = try storeFiles(at: configuration.url)
+
+        XCTAssertThrowsError(try MeetingHistoryStore(configuration: configuration)) { error in
+            XCTAssertEqual(error as? MeetingHistoryStore.StorageError, .unexpectedDataModel)
+        }
+
+        XCTAssertEqual(try storeFiles(at: configuration.url), before)
+        let after = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: configuration.url, options: [NSReadOnlyPersistentStoreOption: true])
+        XCTAssertEqual(after[NSStoreModelVersionHashesKey] as? [String: Data],
+                       metadata[NSStoreModelVersionHashesKey] as? [String: Data])
+        XCTAssertEqual(try foreign.mainContext.fetch(FetchDescriptor<ForeignStorageRecord>()).map(\.text),
+                       ["Preserve this row"])
+    }
+
+    func testUnreadableStoreIsReportedWithoutReplacement() throws {
+        let support = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: support) }
+        let configuration = try MeetingHistoryStore.persistentConfiguration(applicationSupportDirectory: support)
+        let bytes = Data("Invalid database contents".utf8)
+        try bytes.write(to: configuration.url)
+
+        XCTAssertThrowsError(try MeetingHistoryStore(configuration: configuration))
+        XCTAssertEqual(try Data(contentsOf: configuration.url), bytes)
+    }
+
+    private func storeFiles(at url: URL) throws -> [String: Data] {
+        var files: [String: Data] = [:]
+        for suffix in ["", "-wal"] {
+            let path = URL(fileURLWithPath: url.path + suffix)
+            if FileManager.default.fileExists(atPath: path.path) {
+                files[suffix] = try Data(contentsOf: path)
+            }
+        }
+        return files
     }
 
     func testPersistentStorageDirectoryFailureIsReported() throws {
@@ -160,4 +216,10 @@ final class MeetingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.displayTitle, record.displayDate)
         XCTAssertFalse(record.hasAITitle)
     }
+}
+
+@Model
+private final class ForeignStorageRecord {
+    var text: String
+    init(text: String) { self.text = text }
 }

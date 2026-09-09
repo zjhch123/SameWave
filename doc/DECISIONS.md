@@ -16,6 +16,23 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260909-003"></a>
+## DEC-20260909-003: Reject an unexpected history model before automatic migration
+
+- **Date:** 2026-09-09
+- **Status:** Accepted
+- **Scope:** Persistent store ownership, startup failure behavior, and data preservation
+- **Extends:** The explicit application-owned path in [DEC-20260909-002](#dec-20260909-002).
+- **Context:** Two separately launched native application bundles reproduced the incident: their different bundle identifiers resolved to the same default store, a foreign SwiftData model removed all six SameWave entities, and reopening with the old construction call returned zero meetings without an error. The explicit path retained the meeting under the same sequence. The original startup path could also conceal an unexpected model by automatically replacing its entities.
+- **Decision:** Before opening an existing persistent store, read its Core Data metadata with the read-only option and require its entity-name set to match the current SameWave schema. Reject unexpected or missing model metadata before constructing `ModelContainer`; propagate unreadable-store errors through the existing storage failure screen. Leave the file and WAL unchanged on rejection. New files and in-memory test configurations retain their existing creation paths.
+- **Rejected alternatives:** Catching only container-creation errors misses a successful destructive migration. Opening first and checking for an empty library is too late and confuses intentional emptiness with damage. Resetting, falling back to memory, or importing backups would conceal the failure and risk further data loss. Comparing every property hash would turn ownership validation into an unrelated schema-version policy.
+- **Rationale/tradeoffs:** Public Core Data metadata inspection adds a small guard at the persistence boundary without another database implementation, dependency, fallback, or migration branch. Entity names detect this foreign-model collision; they do not establish property-level compatibility or prevent arbitrary external filesystem writes. A future entity-set change must explicitly revisit the storage contract.
+- **Impact:** The application reports a localized error instead of silently replacing an unexpected model. Incident analysis and regression fixtures document the destructive mechanism independently of recovered personal data.
+- **Validation:** XcodeGen, unsigned Debug build, and all 243 XCTest cases passed on `SameWave`, `platform=macOS,arch=arm64`. Tests trigger a real foreign-model migration on a temporary store, preserve independently owned history across reopening, reject a foreign model without changing database/WAL bytes, preserve corrupt contents, and propagate directory failures. The standalone two-process reproduction loses the old-path meeting and retains the explicit-path meeting. See the [development guide](06-development-and-validation.md) for localized tests and signed installation checks, and the [incident analysis](history-storage-incident-2026-09-09.md) for evidence and limitations.
+- **Files:** `Sources/History/MeetingHistory.swift`, `Sources/Resources/Localizable.xcstrings`, `Tests/MeetingHistoryStoreTests.swift`, `Tests/LocalizationTests.swift`, `doc/03-session-lifecycle-and-data.md`, `AGENTS.md`.
+
+---
+
 <a id="dec-20260909-002"></a>
 ## DEC-20260909-002: Give history an exclusive application storage path
 
