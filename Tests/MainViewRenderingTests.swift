@@ -379,7 +379,7 @@ final class MainViewRenderingTests: XCTestCase {
             switch tab {
             case .general: labels = ["General", "App Language", "Follow System", "Done"]
             case .ai: labels = ["Settings", "Services", "Vocabulary", "Cancel", "Save"]
-            case .vocabulary: labels = ["Personal Vocabulary", "Choose Markdown", "Add Terms", "Done"]
+            case .vocabulary: labels = ["Extract from Markdown", "Choose Markdown", "Add Terms", "Done"]
             }
             try await render(SettingsView().environment(navigation),
                 size: NSSize(width: 600, height: 540), name: "phase2-settings-\(tab)",
@@ -633,9 +633,9 @@ final class MainViewRenderingTests: XCTestCase {
         navigation.selectedTab = .vocabulary
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
             name: "embedded-vocabulary-settings",
-            expectedLabels: ["Settings", "Services", "Vocabulary", "Personal Vocabulary", "Across meetings", "Extract from Markdown",
+            expectedLabels: ["Settings", "Services", "Vocabulary", "Across meetings", "Extract from Markdown",
                              "Choose Markdown", "Saved Vocabulary", "Add Terms", "Done"],
-            absentLabels: ["Manage Vocabulary", "separate window", "Review", "Request Details"])
+            absentLabels: ["Personal Vocabulary", "Manage Vocabulary", "separate window", "Review", "Request Details"])
         editor.beginEditing("XPay")
         editor.editedText = ""
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
@@ -647,6 +647,38 @@ final class MainViewRenderingTests: XCTestCase {
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
             name: "embedded-vocabulary-suggestions",
             expectedLabels: ["Suggested Terms", "Add to Vocabulary", "Discard Suggestions", "Services has unsaved changes", "Done"])
+    }
+
+    func testLocalizedVocabularySettingsKeepActionsVisibleInBothAppearances() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let personal = SpeechVocabularySettings(defaults: defaults)
+        personal.save([])
+        let editor = VocabularyEditorStore(aiSettings: settings, settings: personal)
+        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        navigation.selectedTab = .vocabulary
+        for scheme in [ColorScheme.light, .dark] {
+            let view = SettingsView().environment(navigation).environment(\.colorScheme, scheme)
+            let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+            let suffix = "\(chinese ? "zh-Hans" : "en")-\(scheme)"
+            try await render(view, size: NSSize(width: 600, height: 540), name: "grouped-vocabulary-empty-\(suffix)",
+                expectedLabels: chinese ? ["设置", "通用", "从 Markdown 提取", "已保存的词汇", "尚无已保存的术语", "完成"]
+                    : ["Settings", "General", "Extract from Markdown", "Saved Vocabulary", "No saved terms yet.", "Done"],
+                absentLabels: chinese ? ["个人词汇"] : ["Personal Vocabulary"], appearance: appearance)
+            editor.importer.candidates = [.init(originalPhrase: "SwiftData", text: "SwiftData")]
+            try await render(view, size: NSSize(width: 600, height: 540), name: "grouped-vocabulary-review-\(suffix)",
+                expectedLabels: chinese ? ["建议术语", "取消全选", "丢弃建议", "添加到词汇表", "SwiftData", "完成"]
+                    : ["Suggested Terms", "Deselect All", "Discard Suggestions", "Add to Vocabulary", "SwiftData", "Done"],
+                appearance: appearance)
+            editor.importer.reset()
+            editor.isAddingTerms = true
+            editor.manualText = "SwiftData\nScreenCaptureKit"
+            try await render(view, size: NSSize(width: 600, height: 540), name: "grouped-vocabulary-manual-\(suffix)",
+                expectedLabels: chinese ? ["每行一个术语", "收起", "添加术语", "完成"]
+                    : ["One phrase per line", "Hide", "Add Terms", "Done"], appearance: appearance)
+            editor.isAddingTerms = false
+        }
     }
 
     func testMultipartOverviewAndFullSummaryRenderWithoutDisclosure() async throws {
@@ -785,7 +817,7 @@ final class MainViewRenderingTests: XCTestCase {
 
     private func render<V: View>(_ view: V, size: NSSize, name: String,
                                  expectedLabels: [String] = [], absentLabels: [String] = [],
-                                 alignedLabels: (String, String)? = nil) async throws {
+                                 alignedLabels: (String, String)? = nil, appearance: NSAppearance? = nil) async throws {
         let host = NSHostingView(rootView: view
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor)))
@@ -793,6 +825,7 @@ final class MainViewRenderingTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.appearance = appearance
         window.contentView = host
         defer { window.close() }
         await Task.yield()
