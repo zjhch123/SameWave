@@ -49,6 +49,22 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260909-001"></a>
+## DEC-20260909-001: Share native grouped-form styling across vocabulary hosts
+
+- **Date:** 2026-09-09
+- **Status:** Accepted
+- **Scope:** Vocabulary presentation, native Settings consistency, and retained scrolling
+- **Replaces:** The custom card surfaces and compact Settings scope heading in [DEC-20260906-006](#dec-20260906-006) and [DEC-20260906-007](#dec-20260906-007). Their shared editor, state ownership, explicit commits, and lazy-row performance constraints remain adopted.
+- **Context:** Issue #34 identifies Vocabulary's custom bordered cards, tinted suggestions, and smaller controls as inconsistent with General and AI Services. Both other tabs already use native grouped forms. The shared vocabulary editor must still support meeting Context files, long lists, retained drafts, and in-place review.
+- **Decision:** Use the same native grouped Form for both vocabulary hosts. Present Extract from Markdown, conditional Suggested Terms, and Saved Vocabulary as neutral sections with native headers, footers, typography, and controls. Remove custom card decoration and the redundant personal page heading in Settings; identify the saved destination in its section and retain the meeting sheet heading. Keep review actions and feedback with suggestions, repeating actions below long lists. Keep manual Add/Hide above the multiline input and Done in the fixed dismissal footer. Preserve separate observation boundaries and uniform 36-point lazy term rows inside one form scroll container.
+- **Rejected alternatives:** Restyling custom cards to imitate Form would retain a second implementation of platform appearance and spacing. A separate Settings-only editor would duplicate interaction rules. Making each entire section lazy would reintroduce estimated section heights and scroll jumps. Eager term controls would undo the existing large-list performance improvement.
+- **Rationale/tradeoffs:** Native Form matches the established settings UI and adapts to appearance without color tokens or dependencies. Larger controls and native section spacing show fewer rows per viewport. Uniform term rows and existing scroll-position state preserve predictable navigation; no provider, persistence, or draft-lifetime changes are needed.
+- **Validation:** Native English and Chinese rendering covers empty, review, and manual-entry states in light and dark appearance at 600×540. Existing tests exercise 300 mixed-length saved terms, invalid row edits, tab switching, candidate arrival, reopening, independent saves, and repeated review actions. See [Development and validation](06-development-and-validation.md) for final build, test, and installation results.
+- **Files:** `Sources/Capture/VocabularyEditorView.swift`, `Tests/MainViewRenderingTests.swift`, `Tests/VocabularyPerformanceTests.swift`, `doc/01-product-and-architecture.md`, `doc/04-ai-insights-and-refinement.md`.
+
+---
+
 <a id="dec-20260908-004"></a>
 ## DEC-20260908-004: Separate AI enablement from saved connection configuration
 
@@ -225,7 +241,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260906-007: Virtualize uniform vocabulary rows within stable cards
 
 - **Date:** 2026-09-06
-- **Status:** Accepted
+- **Status:** Superseded for custom card surfaces and 32-point saved rows by [DEC-20260909-001](#dec-20260909-001); other state, commit, and performance decisions remain adopted.
 - **Scope:** Shared vocabulary rendering, Settings tab performance, and scroll geometry
 - **Context:** Settings tab changes visibly stalled with more than 200 saved terms. A native 300-term fixture measured a median update/layout pulse of 109 ms. Removing the vocabulary subtree's enabled-state toggle improved only part of the cost; separating the list's observation boundary removed repeated data reads but still left roughly 75 ms of layout work.
 - **Decision:** Keep the Settings presentation from [DEC-20260906-006](#dec-20260906-006) and the shared editor. Use separate view bodies for saved terms and suggestions, and LazyVStack only for their term rows. Keep cards and the single outer ScrollView eager. Saved rows have a stable 32-point height with two-line display text; candidate rows are 36 points. Each saved term has one row view. Show invalid-input feedback within the saved row, with the full reason available through its tooltip and accessibility label, so validation never changes row height. Gate hidden-tab hit testing, accessibility, focus, and keyboard actions without disabling the entire vocabulary subtree.
@@ -240,7 +256,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260906-006: Embed personal vocabulary directly in Settings
 
 - **Date:** 2026-09-06
-- **Status:** Accepted
+- **Status:** Superseded for custom card surfaces and the compact Settings scope heading by [DEC-20260909-001](#dec-20260909-001); other state, commit, and performance decisions remain adopted.
 - **Scope:** Personal vocabulary presentation and navigation within Settings
 - **Replaces:** The independent personal window and Settings handoff in [DEC-20260906-005](#dec-20260906-005). Its shared editing, scope ownership, commit, and lifecycle decisions remain adopted.
 - **Context:** The user first requested a native panel instead of an independent window, then refined the requirement to embed vocabulary management within Settings itself. A second presentation layer adds an unnecessary step between choosing Vocabulary and editing terms.
