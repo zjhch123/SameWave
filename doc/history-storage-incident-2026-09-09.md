@@ -8,6 +8,16 @@ Another process, `icloudmailagent`, opened that same database with a different m
 
 The root defect was application storage ownership: an unsandboxed app relied on an unscoped framework default. Automatic schema replacement amplified the collision into data loss, and the lack of a model check allowed the next launch to conceal the foreign schema behind an apparently valid empty store.
 
+## What the default store means
+
+There is no system-wide database service intended to combine application data here. `default.store` is an ordinary local SQLite file chosen by the framework when no explicit persistent configuration is provided. In this unsandboxed environment, two applications choosing that default can address the same physical file. A SwiftData `ModelContainer` owns an application's model and contexts; constructing one does not itself establish a per-application filesystem directory or an App Sandbox boundary.
+
+SameWave's old initializer accepted a missing configuration and passed an empty configuration array to `ModelContainer`. `project.yml` explicitly disables App Sandbox. The code therefore defined SameWave's tables but failed to choose a file location dedicated to SameWave. Having a distinct bundle identifier did not fix that omission, as the native two-process reproduction confirms.
+
+The corrected database is stored outside the replaceable `SameWave.app` bundle at `~/Library/Application Support/SameWave/MeetingHistory.store`. This is the application's dedicated data file. A normal application installation replaces the executable bundle, not this data directory. Runtime open-file inspection confirms that the installed process uses this path and has no open handle to the old `default.store`.
+
+Dedicated filenames prevent the reproduced accidental collision. SameWave remains unsandboxed; the path is not an OS-enforced boundary against other processes running as the same user. The incident evidence establishes schema replacement, not upload of meeting content to iCloud.
+
 ## Evidence and timeline
 
 All times below are Asia/Shanghai on September 9, 2026.
@@ -21,6 +31,8 @@ All times below are Asia/Shanghai on September 9, 2026.
 | After restart | All six application tables were empty; the store UUID was unchanged and many pages remained on the freelist. | This was destructive reuse of the existing file, not selection of a different fresh database. |
 
 The preserved transaction timestamps use the Core Data epoch, January 1, 2001 UTC. The process identities come from the transaction's references into `ATRANSACTIONSTRING`. The unified log independently corroborates the database evidence.
+
+`icloudmailagent` is an Apple iCloud Mail background executable, separate from SameWave. The incident's structured unified log identifies its executable as `/usr/libexec/icloudmailagent`; this is not merely an inference from a database label. Its private internal trigger for opening the default path remains outside the evidence available to this investigation.
 
 The default-store call was already present when history was introduced in commit `f22498e`; `9c356b1` made configuration injectable but retained the default production path. The Vocabulary UI change did not modify the persistence model. Hosted tests used memory or explicit temporary stores, and the destructive transaction predates those test runs. Normal meeting deletion also does not explain the schema-migrator author or removal of all entity tables.
 
