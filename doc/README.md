@@ -17,6 +17,7 @@ SameWave is a native macOS app for one-on-one meetings. It treats system audio a
 | Principles, evolution, boundaries, future decision order | [Design, evolution, and boundaries](05-design-evolution-and-boundaries.md) |
 | Environment, build, permissions, change entry points, validation | [Development and validation](06-development-and-validation.md) |
 | Accepted long-term decisions and rationale | [DECISIONS.md](DECISIONS.md) |
+| September 9 history loss: evidence, reproduction, and prevention | [History storage incident](history-storage-incident-2026-09-09.md) |
 | Conversation segmentation and rendering baseline | [Conversation rendering requirements](conversation-rendering-requirements.md) |
 | Phase 2 validation and remaining smoke checks | [Phase 2 validation](phase-2-validation.md) |
 | Phase 2 core requirements, adopted choices, and candidate extensions | [Phase 2 spec](phase-2-spec.md) (P2-R01–P2-R09 implemented; candidate extensions deferred) |

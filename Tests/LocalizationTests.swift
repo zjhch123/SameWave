@@ -5,6 +5,12 @@ import XCTest
 final class LocalizationTests: XCTestCase {
     private var isChinese: Bool { Bundle.main.preferredLocalizations.first == "zh-Hans" }
 
+    func testUnexpectedHistoryModelErrorExplainsDataPreservation() {
+        XCTAssertEqual(MeetingHistoryStore.StorageError.unexpectedDataModel.localizedDescription, isChinese
+            ? "会议数据文件与 SameWave 的数据模型不匹配，文件已保持原样。"
+            : "The meeting data file does not match SameWave's data model. The file has been left unchanged.")
+    }
+
     func testInsightPromptUsesActiveAppLanguageForAllGeneratedContent() {
         let language = isChinese ? "Simplified Chinese" : "English"
         XCTAssertTrue(InsightRequest.systemPrompt.contains("Write conclusion, points, and every summary item in \(language)"))

@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             history = try MeetingHistoryStore(configuration:
                 ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
-                    ? .init(isStoredInMemoryOnly: true) : nil
+                    ? .init(isStoredInMemoryOnly: true) : MeetingHistoryStore.persistentConfiguration()
             )
             storageError = nil
         } catch {

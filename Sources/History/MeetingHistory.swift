@@ -1,4 +1,5 @@
 import Foundation
+import CoreData
 import SwiftData
 
 /// A persisted meeting session. Stored via SwiftData (native, on-device, backed by
@@ -193,12 +194,40 @@ final class TranscriptLine {
 /// the sidebar (`@Query` reads).
 @MainActor
 final class MeetingHistoryStore {
+    enum StorageError: LocalizedError {
+        case unexpectedDataModel
+
+        var errorDescription: String? {
+            String(localized: "The meeting data file does not match SameWave's data model. The file has been left unchanged.")
+        }
+    }
+
     let container: ModelContainer
 
-    init(configuration: ModelConfiguration? = nil) throws {
+    static func persistentConfiguration(
+        applicationSupportDirectory: URL = .applicationSupportDirectory
+    ) throws -> ModelConfiguration {
+        let directory = applicationSupportDirectory.appending(path: "SameWave", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return ModelConfiguration(url: directory.appending(path: "MeetingHistory.store"))
+    }
+
+    init(configuration: ModelConfiguration) throws {
         let schema = Schema([MeetingRecord.self, TranscriptLine.self, MeetingDocument.self,
                              MeetingVocabularyTerm.self, InsightDefinition.self, InsightSnapshot.self])
-        container = try ModelContainer(for: schema, configurations: configuration.map { [$0] } ?? [])
+        if !configuration.isStoredInMemoryOnly,
+           FileManager.default.fileExists(atPath: configuration.url.path) {
+            // Inspect before ModelContainer can automatically migrate another model
+            // into this file, removing the existing entities in the process.
+            let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                ofType: NSSQLiteStoreType, at: configuration.url,
+                options: [NSReadOnlyPersistentStoreOption: true])
+            guard let hashes = metadata[NSStoreModelVersionHashesKey] as? [String: Data],
+                  Set(hashes.keys) == Set(schema.entities.map(\.name)) else {
+                throw StorageError.unexpectedDataModel
+            }
+        }
+        container = try ModelContainer(for: schema, configurations: [configuration])
     }
 
     var context: ModelContext { container.mainContext }
