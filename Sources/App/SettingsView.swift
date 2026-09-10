@@ -55,7 +55,7 @@ final class SettingsNavigation {
     }
 
     func openAISettings() {
-        selectedTab = .ai
+        selectedTab = aiSettings.isEnabled ? .ai : .general
         openSettings()
     }
 }
@@ -132,7 +132,7 @@ struct SettingsView: View {
             // Keep service checks, vocabulary edits, and scroll positions mounted across tabs.
             ZStack {
                 if navigation.selectedTab == .general {
-                    GeneralSettingsView(settings: navigation.languageSettings)
+                    GeneralSettingsView(settings: navigation.languageSettings, aiController: navigation.aiController)
                 }
                 AISettingsView(controller: navigation.aiController)
                     .opacity(navigation.selectedTab == .ai ? 1 : 0)

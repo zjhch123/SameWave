@@ -42,9 +42,17 @@ struct InsightDefinitionEditor: View {
                     Picker("Focus", selection: $scope) {
                         ForEach(InsightScope.allCases) { Text($0.label).tag($0) }
                     }
-                    Toggle("Generate automatically during recording", isOn: $automatic)
-                    Text("New results use the app language.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    LabeledContent {
+                        HStack {
+                            Spacer(minLength: 8)
+                            Toggle("Generate automatically during recording", isOn: $automatic)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        }
+                    } label: {
+                        Text("Generate automatically during recording")
+                        Text("New results use the app language.")
+                    }
                 }.padding(24)
             }
             Divider()

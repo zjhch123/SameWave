@@ -22,10 +22,10 @@ final class MainViewRenderingTests: XCTestCase {
             .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
         try await render(view, size: NSSize(width: 620, height: 640),
             name: "preparation-sheet-aligned-\(chinese ? "zh-Hans" : "en")",
-            expectedLabels: [title, done], alignedLabels: (title, done))
+            expectedLabels: [title, done, chinese ? "仅用于提取词汇" : "vocabulary extraction only"], alignedLabels: (title, done))
     }
 
-    func testLocalizedAISettingsShowMasterSwitchAndCompactHelp() async throws {
+    func testLocalizedAISettingsShowConnectionAndDisabledGuidance() async throws {
         let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults)
@@ -35,10 +35,18 @@ final class MainViewRenderingTests: XCTestCase {
             settings.isEnabled = enabled
             try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
                 name: "compact-ai-settings-\(enabled)-\(chinese ? "zh-Hans" : "en")",
-                expectedLabels: chinese ? ["启用", "服务", "测试连接", "完成"]
-                    : ["Enable", "Services", "Test Connection", "Done"],
+                expectedLabels: (chinese ? ["服务", "测试连接", "完成"] : ["Services", "Test Connection", "Done"])
+                    + (enabled ? [] : (chinese ? ["通用", "编辑这些设置"] : ["in General", "edit these settings"])),
                 absentLabels: ["Cancel", "取消", "Save Changes", "保存更改", "Revert", "还原", "Audio is never uploaded", "One configuration for insights"])
         }
+        settings.isEnabled = true
+        navigation.aiController.providerID = "custom"
+        navigation.aiController.customAPIAddress = "https://example.com/v1"
+        navigation.aiController.customModel = "example-model"
+        try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+            name: "native-ai-control-subtitles-\(chinese ? "zh-Hans" : "en")",
+            expectedLabels: chinese ? ["完整端点", "Structured Outputs", "1,000,000", "完成"]
+                : ["base URL or full endpoint", "Structured Outputs", "1,000,000", "Done"])
     }
 
     func testLocalizedSettingsHaveOnlyDoneAndInlineValidation() async throws {
@@ -106,8 +114,8 @@ final class MainViewRenderingTests: XCTestCase {
             languageSettings.language = language
             try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
                 name: "localized-general-\(language.rawValue)-\(suffix)",
-                expectedLabels: chinese ? ["通用", "应用语言", translated, "退出并重新打开 SameWave", "完成"]
-                    : ["General", "App Language", english, "Quit and reopen SameWave", "Done"])
+                expectedLabels: chinese ? ["通用", "应用语言", translated, "退出并重新打开 SameWave", "启用", "关闭后会停止", "完成"]
+                    : ["General", "App Language", english, "Quit and reopen SameWave", "Enable", "Turning off stops", "keeps your configuration", "Done"])
         }
     }
 
@@ -137,7 +145,8 @@ final class MainViewRenderingTests: XCTestCase {
             name: "localized-summary-\(suffix)", expectedLabels: chinese ? ["议题", "行动项", "决策", "待解决问题"] : ["Topics", "Action Items", "Decisions", "Open Questions"])
         try await render(InsightDefinitionEditor(record: record, history: history, definition: nil).environment(navigation),
             size: NSSize(width: 500, height: 440), name: "localized-insight-editor-\(suffix)",
-            expectedLabels: chinese ? ["添加洞察", "分析重点", "保存"] : ["Add Insight", "Focus", "Save"])
+            expectedLabels: chinese ? ["添加洞察", "分析重点", "新结果使用应用语言", "保存"]
+                : ["Add Insight", "Focus", "New results use the app language", "Save"])
     }
 
     func testChronologicalCaptionsShowSourceAndTranslationWithoutBusyText() async throws {
@@ -254,7 +263,8 @@ final class MainViewRenderingTests: XCTestCase {
         for width in [600.0, 400.0] {
             try await render(view, size: NSSize(width: width, height: 920),
                 name: "preparation-vocabulary-preview-\(Int(width))",
-                expectedLabels: ["30 saved terms", "CrawlStateEvent", "MailboxSync", "+18"],
+                // OCR can read the l in Crawl as |; check stable text across the preview.
+                expectedLabels: ["30 saved terms", "ApcPrivateToPublic", "StateEvent", "MailboxSync", "+18", "Attach Markdown"],
                 absentLabels: ["Remaining term", "+27"])
         }
     }
@@ -699,8 +709,8 @@ final class MainViewRenderingTests: XCTestCase {
             editor.isAddingTerms = true
             editor.manualText = "SwiftData\nScreenCaptureKit"
             try await render(view, size: NSSize(width: 600, height: 540), name: "grouped-vocabulary-manual-\(suffix)",
-                expectedLabels: chinese ? ["每行一个术语", "收起", "添加术语", "完成"]
-                    : ["One phrase per line", "Hide", "Add Terms", "Done"], appearance: appearance)
+                expectedLabels: chinese ? ["新增词汇术语", "每行一个术语", "收起", "添加术语", "完成"]
+                    : ["New vocabulary terms", "One phrase per line", "Hide", "Add Terms", "Done"], appearance: appearance)
             editor.isAddingTerms = false
         }
     }

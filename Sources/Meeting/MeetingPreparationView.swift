@@ -60,13 +60,18 @@ struct MeetingPreparationView: View {
                             MeetingContextView(record: record, history: history, focusRequest: contextFocusRequest)
                         }.id("context")
                         preparationCard {
-                            HStack {
-                                Text("Vocabulary").font(.system(size: 13, weight: .semibold))
-                                Spacer(minLength: 4)
-                                Button("Manage Vocabulary…") { managingVocabulary = true }.controlSize(.small)
+                            LabeledContent {
+                                HStack {
+                                    Spacer(minLength: 8)
+                                    Button("Manage Vocabulary…") { managingVocabulary = true }.controlSize(.small)
+                                        .fixedSize()
+                                }
+                            } label: {
+                                Text("Vocabulary")
+                                Text("\(record.vocabulary.count) saved terms · This meeting")
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
-                            Text("\(record.vocabulary.count) saved terms · This meeting")
-                                .font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
                             if importer.isRunning {
                                 HStack(spacing: 6) {
                                     ProgressView().controlSize(.mini)
@@ -108,15 +113,16 @@ struct MeetingPreparationView: View {
                             }
                             ForEach(record.orderedDefinitions) { definition in
                                 Divider()
-                                HStack(spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(definition.title).font(.system(size: 13, weight: .medium))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                        Text(definition.automaticallyUpdates ? String(localized: "Automatic") : String(localized: "Manual"))
-                                            .font(.system(size: 11)).foregroundStyle(CaptionsView.muted)
+                                LabeledContent {
+                                    HStack {
+                                        Spacer(minLength: 8)
+                                        Button("Edit") { editingDefinition = definition }.controlSize(.small)
+                                            .fixedSize()
                                     }
-                                    Spacer(minLength: 4)
-                                    Button("Edit") { editingDefinition = definition }.controlSize(.small)
+                                } label: {
+                                    Text(definition.title).fixedSize(horizontal: false, vertical: true)
+                                    Text(definition.automaticallyUpdates ? String(localized: "Automatic") : String(localized: "Manual"))
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                             if record.definitions.isEmpty {

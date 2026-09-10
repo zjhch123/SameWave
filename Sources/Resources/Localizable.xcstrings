@@ -1688,6 +1688,22 @@
         }
       }
     },
+    "Enable AI Services in General to edit these settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable AI Services in General to edit these settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在“通用”中启用 AI 服务以编辑这些设置。"
+          }
+        }
+      }
+    },
     "End": {
       "localizations": {
         "en": {
@@ -4265,18 +4281,18 @@
         }
       }
     },
-    "Supports a base URL or full endpoint. The model must support Structured Outputs.": {
+    "Supports a base URL or full endpoint.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Supports a base URL or full endpoint. The model must support Structured Outputs."
+            "value": "Supports a base URL or full endpoint."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "可填写基础 URL 或完整接口地址，模型需支持结构化输出。"
+            "value": "支持基础 URL 或完整端点。"
           }
         }
       }
@@ -4485,6 +4501,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "会议数据文件与 SameWave 的数据模型不匹配，文件已保持原样。"
+          }
+        }
+      }
+    },
+    "The model must support Structured Outputs.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The model must support Structured Outputs."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型必须支持 Structured Outputs。"
           }
         }
       }

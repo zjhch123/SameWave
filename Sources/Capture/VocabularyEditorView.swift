@@ -263,14 +263,19 @@ private struct VocabularySavedTermsView: View {
             }
             if editor.isAddingTerms {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("One phrase per line. Paste several terms at once.").font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $editor.manualText)
-                        .font(.body).scrollContentBackground(.hidden)
-                        .padding(6).frame(height: 86)
-                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-                        .focused($focus, equals: .manual)
-                        .accessibilityLabel("New vocabulary terms")
+                    LabeledContent {
+                        TextEditor(text: $editor.manualText)
+                            .font(.body).scrollContentBackground(.hidden)
+                            .multilineTextAlignment(.leading)
+                            .padding(6).frame(height: 86)
+                            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+                            .focused($focus, equals: .manual)
+                            .accessibilityLabel("New vocabulary terms")
+                    } label: {
+                        Text("New vocabulary terms")
+                        Text("One phrase per line. Paste several terms at once.")
+                    }
                     if editor.hasInvalidManualInput {
                         Text("Each term must be a single line of 1–100 characters.").font(.caption).foregroundStyle(.red)
                     }

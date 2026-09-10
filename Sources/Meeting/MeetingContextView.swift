@@ -11,14 +11,21 @@ struct MeetingContextView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Context").font(.system(size: 13, weight: .semibold))
-                Text("\(record.documents.count)").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Attach Markdown…") { choosingFiles = true }
-                    .controlSize(.small).disabled(loadingTask != nil).focused($attachFocused)
+            LabeledContent {
+                HStack {
+                    Spacer(minLength: 8)
+                    Text("\(record.documents.count)").font(.caption).foregroundStyle(.secondary)
+                    Button("Attach Markdown…") { choosingFiles = true }
+                        .controlSize(.small).fixedSize()
+                        .disabled(loadingTask != nil).focused($attachFocused)
+                }
+                .accessibilityElement(children: .contain)
+            } label: {
+                Text("Context")
+                Text("Markdown for vocabulary extraction only.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Markdown for vocabulary extraction only.").font(.caption).foregroundStyle(.secondary)
             ForEach(record.orderedDocuments) { document in
                 VocabularyDocumentRow(document: document.source) {
                     do { try history.removeAttachment(document); error = nil }
