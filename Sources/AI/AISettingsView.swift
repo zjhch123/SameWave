@@ -9,13 +9,6 @@ struct AISettingsView: View {
     var body: some View {
         Form {
             SwiftUI.Section {
-                Toggle("Enable AI Services", isOn: $controller.isEnabled)
-                    .toggleStyle(.switch)
-            } footer: {
-                Text("Turning off stops AI tasks and keeps your configuration.")
-            }
-
-            SwiftUI.Section {
                 Picker("AI Provider", selection: $controller.providerID) {
                     ForEach(LLMProviderConfig.builtIn) { cfg in
                         Text(cfg.displayName).tag(cfg.id)
@@ -33,18 +26,22 @@ struct AISettingsView: View {
                 }
 
                 if controller.config.isCustom {
-                    TextField("API URL", text: $controller.customAPIAddress,
-                              prompt: Text("https://api.example.com"))
-                        .focused($focusedField, equals: .address)
+                    TextField(text: $controller.customAPIAddress, prompt: Text("https://api.example.com")) {
+                        Text("API URL")
+                        Text("Supports a base URL or full endpoint.")
+                    }
+                    .focused($focusedField, equals: .address)
                     if !controller.customAPIAddress.isEmpty && !controller.isCustomAddressValid {
                         Text("Enter a valid HTTP or HTTPS URL.")
                             .font(.caption).foregroundStyle(.red)
                     }
 
-                    HStack(spacing: 10) {
-                        TextField("Model ID", text: $controller.customModel,
-                                  prompt: Text("Fetch models or enter an ID"))
-                            .focused($focusedField, equals: .model)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        TextField(text: $controller.customModel, prompt: Text("Fetch models or enter an ID")) {
+                            Text("Model ID")
+                            Text("The model must support Structured Outputs.")
+                        }
+                        .focused($focusedField, equals: .model)
                         if !controller.availableModels.isEmpty {
                             Menu("Select Model") {
                                 ForEach(controller.availableModels) { model in
@@ -58,30 +55,34 @@ struct AISettingsView: View {
                         .disabled(!controller.canFetchModels)
                     }
                     modelDiscoveryStatus
-                    Text("Supports a base URL or full endpoint. The model must support Structured Outputs.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
 
-                TextField("Model context window (tokens)", text: $controller.contextBudgetText)
-                    .focused($focusedField, equals: .context)
+                TextField(text: $controller.contextBudgetText) {
+                    Text("Model context window (tokens)")
+                    Text("Use your model’s token limit; for example, 1,000,000 for a 1M model.")
+                }
+                .focused($focusedField, equals: .context)
                 if !controller.isContextBudgetValid {
                     Text("Enter a context window from 16,384 to 2,000,000 tokens.")
                         .font(.caption).foregroundStyle(.red)
                 }
-                Text("Use your model’s token limit; for example, 1,000,000 for a 1M model.")
-                    .font(.caption).foregroundStyle(.secondary)
 
                 HStack(spacing: 10) {
                     Button("Test Connection") { controller.testConnection() }
-                        .disabled(!controller.isEnabled || !controller.isConfigured || controller.testState == .testing)
+                        .disabled(!controller.isConfigured || controller.testState == .testing)
                     testStatus
                 }
 
             } header: {
                 Text("Connection")
+            } footer: {
+                if !controller.isEnabled {
+                    Text("Enable AI Services in General to edit these settings.")
+                }
             }
         }
         .formStyle(.grouped)
+        .disabled(!controller.isEnabled)
         .onSubmit { focusedField = nil }
         .onDisappear { controller.cancelRequests() }
     }

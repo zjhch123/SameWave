@@ -73,6 +73,9 @@ final class SettingsPresentationTests: XCTestCase {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults, initialAPIKey: "test-key")
         let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        navigation.aiController.providerID = "custom"
+        navigation.aiController.customAPIAddress = "https://example.com/v1"
+        navigation.aiController.customModel = "retained-model"
         let window = testWindow()
         window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
             .modifier(SettingsSheet()).environment(navigation))
@@ -91,6 +94,19 @@ final class SettingsPresentationTests: XCTestCase {
             XCTAssertEqual(AISettings(defaults: defaults).contextBudgetText, input)
         }
         XCTAssertEqual(settings.insightContextTokenBudget, 128_000)
+
+        let fields = try ["test-key", "https://example.com/v1", "retained-model", "128000"].map { value in
+            try XCTUnwrap(textField(in: sheet.contentView, value: value))
+        }
+        navigation.aiController.isEnabled = false
+        try await Phase2Fixture.waitUntil { fields.allSatisfy { !$0.isEnabled } }
+        XCTAssertFalse(AISettings(defaults: defaults).isEnabled)
+        XCTAssertEqual(settings.customModel, "retained-model")
+        XCTAssertEqual(settings.contextBudgetText, "128000")
+        navigation.aiController.isEnabled = true
+        try await Phase2Fixture.waitUntil { fields.allSatisfy(\.isEnabled) }
+        field.selectText(nil)
+        XCTAssertNotNil(field.currentEditor())
     }
 
     private func textField(in view: NSView?, value: String) -> NSTextField? {
@@ -187,6 +203,14 @@ final class SettingsPresentationTests: XCTestCase {
         preparationWindow.orderOut(nil)
         navigation.presentedHost = nil
         navigation.openSettings()
+        XCTAssertEqual(navigation.presentedHost, main)
+        navigation.aiController.isEnabled = false
+        navigation.openAISettings()
+        XCTAssertEqual(navigation.selectedTab, .general)
+        XCTAssertEqual(navigation.presentedHost, main)
+        navigation.aiController.isEnabled = true
+        navigation.openAISettings()
+        XCTAssertEqual(navigation.selectedTab, .ai)
         XCTAssertEqual(navigation.presentedHost, main)
     }
 
