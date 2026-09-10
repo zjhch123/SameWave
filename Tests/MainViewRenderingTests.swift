@@ -7,6 +7,37 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testLocalizedDefaultInsightsSettingsAndEditor() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let aiSettings = AISettings(defaults: defaults)
+        aiSettings.isEnabled = false
+        let navigation = Phase2Fixture.settingsNavigation(aiSettings, defaults: defaults)
+        navigation.selectedTab = .insights
+        let settings = navigation.defaultInsights
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let suffix = chinese ? "zh-Hans" : "en"
+        let item = InsightTemplate(title: "Delivery risks and unresolved dependencies before the next release",
+            prompt: "Identify delivery risks and unresolved dependencies raised in the discussion.",
+            automaticallyUpdates: true, scope: .latestExchange)
+        try settings.save(item)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+                name: "default-insights-list-\(suffix)-\(name)", expectedLabels: chinese
+                    ? ["默认洞察", "添加洞察", "完成"] : ["Default Insights", "Add Insight", "Done", "Latest exchange"],
+                absentLabels: ["Remove Insight", "移除洞察"],
+                appearance: NSAppearance(named: appearance))
+            try await render(InsightDefinitionEditor(template: item, isDefault: true, onSave: { _ in }, onRemove: {}),
+                size: NSSize(width: 500, height: 490), name: "default-insights-editor-\(suffix)-\(name)",
+                expectedLabels: chinese ? ["编辑默认洞察", "取消", "保存", "自动生成", "移除洞察"]
+                    : ["Edit Default Insight", "Cancel", "Save", "Generate automatically during recording", "Remove Insight"],
+                appearance: NSAppearance(named: appearance))
+        }
+        for template in settings.templates { try settings.remove(id: template.id) }
+        try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+            name: "default-insights-empty-\(suffix)", expectedLabels: chinese
+                ? ["暂无默认洞察", "添加洞察", "完成"] : ["No default insights", "Add Insight", "Done"])
+    }
+
     func testLocalizedPreparationSheetAlignsTitleAndDone() async throws {
         let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
         let defaults = Phase2Fixture.defaults(self)
@@ -55,7 +86,7 @@ final class MainViewRenderingTests: XCTestCase {
         let navigation = Phase2Fixture.settingsNavigation(AISettings(defaults: defaults), defaults: defaults)
         navigation.aiController.customModel = "saved-model"
         for appearance in [NSAppearance(named: .aqua)!, NSAppearance(named: .darkAqua)!] {
-            for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
+            for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary, .insights] {
                 navigation.selectedTab = tab
                 try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
                     name: "settings-autosave-\(tab)-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
@@ -102,7 +133,7 @@ final class MainViewRenderingTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: domain) }
         let aiSettings = AISettings(defaults: defaults)
         let languageSettings = AppLanguageSettings(suiteName: domain)
-        let navigation = SettingsNavigation(aiSettings: aiSettings, vocabularyEditor:
+        let navigation = SettingsNavigation(aiSettings: aiSettings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor:
             VocabularyEditorStore(aiSettings: aiSettings, settings: SpeechVocabularySettings(defaults: defaults)),
             languageSettings: languageSettings)
         XCTAssertEqual(navigation.selectedTab, .general)
@@ -407,13 +438,14 @@ final class MainViewRenderingTests: XCTestCase {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults)
         let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
-        for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
+        for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary, .insights] {
             navigation.selectedTab = tab
             let labels: [String]
             switch tab {
             case .general: labels = ["General", "App Language", "Follow System", "Done"]
             case .ai: labels = ["Settings", "Services", "Vocabulary", "Test Connection", "Done"]
             case .vocabulary: labels = ["Extract from Markdown", "Choose Markdown", "Add Terms", "Done"]
+            case .insights: labels = ["Default Insights", "Add Insight", "Done"]
             }
             try await render(SettingsView().environment(navigation),
                 size: NSSize(width: 600, height: 540), name: "phase2-settings-\(tab)",
@@ -589,7 +621,7 @@ final class MainViewRenderingTests: XCTestCase {
         personal.save([])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: personal)
         editor.importer.candidates = (1...100).map { .init(originalPhrase: "Term \($0)", text: "Term \($0)") }
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         func makeController() -> NSHostingController<some View> {
             NSHostingController(rootView: SettingsView().environment(navigation)
@@ -663,7 +695,7 @@ final class MainViewRenderingTests: XCTestCase {
         let personal = SpeechVocabularySettings(defaults: defaults)
         personal.save(["XPay"])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: personal)
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
             name: "embedded-vocabulary-settings",
@@ -690,7 +722,7 @@ final class MainViewRenderingTests: XCTestCase {
         let personal = SpeechVocabularySettings(defaults: defaults)
         personal.save([])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: personal)
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         for scheme in [ColorScheme.light, .dark] {
             let view = SettingsView().environment(navigation).environment(\.colorScheme, scheme)

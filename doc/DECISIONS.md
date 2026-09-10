@@ -16,6 +16,23 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260910-003"></a>
+## DEC-20260910-003: Copy personal insight defaults when a meeting is created
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Scope:** Default insight ownership, draft creation, item editing, and local persistence
+- **Replaces:** The unconditional single-overview initialization in [DEC-20260905-008](#dec-20260905-008). Meeting-owned definitions, immutable snapshots, and generation policy remain in effect.
+- **Context:** Issue #22 asks to reuse several insights in new meetings. Previously the history store inserted a hardcoded Meeting Overview into every draft, so users had to recreate their prompts for each meeting.
+- **Decision:** Keep personal defaults as validated `InsightTemplate` values in UserDefaults, owned by one shared `DefaultInsightSettings`. Expose them in Settings > Insights, with the shared item editor and explicit Save, Cancel, and Remove actions. Both New Meeting and Quick Start supply the current templates to draft creation. Persistence creates new meeting-owned definitions with fresh UUIDs and copies title, prompt, scope, and automatic-update choice. Existing drafts, recordings, history, and snapshots never resync with defaults. The absent preference initializes one editable Meeting Overview with automatic generation off; a saved empty list stays empty. Editing is local and remains available with AI disabled.
+- **Rejected alternatives:** Sharing SwiftData definition objects across meetings would couple edits and deletion. Applying defaults again at Start or Resume could overwrite preparation. Saving the current meeting as global defaults implicitly would mix scopes. Always prepending a built-in overview would prevent an intentionally empty list. Storing incomplete per-keystroke content as usable templates would let new meetings inherit invalid prompts; defaults use the same explicit content-editing boundary as meeting insights and vocabulary.
+- **Rationale/tradeoffs:** Value copies retain the existing scheduling, request, snapshot, and export paths without a new persistence schema, migration, or dependency. Saved titles and prompts are user content and retain their text across interface-language changes. Invalid or unreadable preferences are preserved and reported; new draft creation waits for an explicit Settings reset, while existing meetings remain usable. General and connection preferences continue saving immediately; item Save belongs only to the content editor.
+- **Impact:** The history store no longer chooses defaults. Settings and the coordinator share one observable settings owner. The Open Design review informs the fourth tab, native grouped list, direct removal, and shared editor; native layout allows extra editor height for the scope explanation and existing control subtitles.
+- **Validation:** Tests cover initial versus saved-empty preferences, all edited fields, invalid input and preserved unreadable storage, both creation entry points, fresh identities and isolation, on-disk definitions/snapshots, item cancellation and save retry, four-tab dismissal, and bilingual native rendering. Build, XCTest, localization, and desktop smoke results are recorded in the [development guide](06-development-and-validation.md#default-insights-validation-issue-22).
+- **Files:** `Sources/Insights/InsightTemplate.swift`, `Sources/Insights/DefaultInsightSettings.swift`, `Sources/Insights/DefaultInsightsSettingsView.swift`, `Sources/History/MeetingWorkspace.swift`, `Sources/Meeting/CaptureCoordinator.swift`, `Sources/Meeting/InsightDefinitionEditor.swift`, `Sources/App/SettingsView.swift`, `Sources/App/SameWaveApp.swift`, and default-insight/settings/rendering tests.
+
+---
+
 <a id="dec-20260910-002"></a>
 ## DEC-20260910-002: Save preferences as edited, with field-level validation
 
@@ -548,7 +565,7 @@ Removed the old insight cutoff, match filter, and refined-input path. Titles ret
 ## DEC-20260905-008: Save each custom insight with its immutable request and result
 
 - **Date:** 2026-09-05
-- **Status:** Superseded for AI task lifetime and cross-meeting replacement by [DEC-20260906-009](#dec-20260906-009). Superseded by [DEC-20260905-017](#dec-20260905-017) for the manual concurrency limit; definitions, snapshots, automatic gates, standalone manual priority, and persistence behavior retained.
+- **Status:** Superseded for AI task lifetime and cross-meeting replacement by [DEC-20260906-009](#dec-20260906-009). Superseded by [DEC-20260905-017](#dec-20260905-017) for the manual concurrency limit, and [DEC-20260910-003](#dec-20260910-003) for unconditional overview initialization; definitions, snapshots, automatic gates, standalone manual priority, and persistence behavior retained.
 - **Scope:** Insight definitions, scheduling, cancellation, history, summary versions, persistence failure
 
 ### Context and decision

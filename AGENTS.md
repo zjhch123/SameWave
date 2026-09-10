@@ -51,6 +51,7 @@
 4. Add or update XCTest coverage in the existing `SameWaveTests` target when changing pure logic, especially `CaptionStore`, lifecycle, parsing, insight merging, or persistence mapping. Do not skip validation.
 5. Regenerate with XcodeGen after project configuration changes and review generated plist/entitlement diffs. Do not commit `.build`, DerivedData, generated xcodeproj files, or local configuration.
 6. When a defect reveals a recurring blind spot, capture the lesson in a test, script, executable check, or short rule here. More comments alone are insufficient.
+7. For native rows with multiple actions, verify each named action in the signed app's accessibility tree as well as rendered pixels. Hosted `NSHostingView` rendering alone does not prove that SwiftUI publishes accessible controls.
 
 ## Validation gate
 

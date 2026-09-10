@@ -95,7 +95,7 @@ final class AISettingsTests: XCTestCase {
         vocabulary.save(["Saved"])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: vocabulary)
         editor.manualText = "Saved\nUnsaved"
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         let host = NSHostingView(rootView: SettingsView().environment(navigation)
             .background(Color(nsColor: .windowBackgroundColor)))

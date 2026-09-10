@@ -106,18 +106,18 @@ extension MeetingRecord {
 }
 
 extension MeetingHistoryStore {
-    func createDraft(languagePair: MeetingLanguagePair, now: Date = .now) throws -> MeetingRecord {
+    func createDraft(languagePair: MeetingLanguagePair, insightTemplates: [InsightTemplate],
+                     now: Date = .now) throws -> MeetingRecord {
         let record = MeetingRecord(startedAt: now, endedAt: now, languagePair: languagePair,
                                    lineCount: 0, status: .draft)
         record.createdAt = now
         context.insert(record)
-        let overview = InsightDefinition(
-            title: String(localized: "Meeting Overview"),
-            prompt: "Give a broad, structured meeting overview with key topics, suggestions, action items, decisions, and open questions. Return the summary parts, not a flat list of points. Track commitments and any later changes.",
-            automaticallyUpdates: false
-        )
-        overview.record = record
-        context.insert(overview)
+        for template in insightTemplates {
+            let definition = InsightDefinition(title: template.title, prompt: template.prompt,
+                automaticallyUpdates: template.automaticallyUpdates, scope: template.scope)
+            definition.record = record
+            context.insert(definition)
+        }
         try save()
         return record
     }

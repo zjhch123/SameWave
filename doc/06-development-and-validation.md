@@ -237,6 +237,18 @@ Enter valid and invalid context-window text while the field still has focus. Ver
 
 Edit connection details during Test Connection: late replies cannot report success for the new configuration. Model discovery saves its selected model immediately and preserves manual edits made during the request. Dismissal cancels service checks and clears loading; vocabulary extraction continues. Simulated Keychain write/delete failures must show an inline error with Retry, preserve the input and prior stored key, and block new generation until persistence succeeds. Never alter the real API key for a smoke test.
 
+## Default insights validation (issue #22)
+
+On 2026-09-10, final XcodeGen and unsigned Debug build passed. Scheme `SameWave`, destination `platform=macOS,arch=arm64`, passed all 262 XCTest cases with English/US and 19 focused default/settings/rendering cases with Simplified Chinese/CN. The English-source/link audit and all 326 UI/permission translations passed, including compiler-extracted key coverage. Native light/dark list, empty-state, and editor renders were inspected.
+
+The final `./build.sh` installation replaced and launched `~/Desktop/SameWave.app` with the existing Apple Development identity. Strict signature and installed-process checks passed. With AI off, the signed-app smoke check added and saved a default, verified its fields after relaunch, canceled an edit, saved a changed title/mode, and removed the test default. A new draft received independent title/prompt/focus/automatic values, retained them after default edits/removal and relaunch, and left a pre-existing draft unchanged. The global list was restored to Meeting Overview and the original meeting selection restored. One synthetic draft, `Default Insights validation`, remains for inspection; no audio was captured or AI request made.
+
+The signed accessibility check caught a multi-action `LabeledContent` row omitting its buttons, especially after returning to one item. An explicit stack with contained children now exposes named Edit and Remove controls for one or multiple items and after deletion. An attempted in-process accessibility test could not observe any SwiftUI children, including Done, so it was not used as evidence; hosted rendering tests and the signed app's real accessibility tree verify complementary boundaries. The workflow rule now requires this check for native rows with multiple actions.
+
+Use Settings > Insights to add a default with a title, prompt, latest-exchange focus, and automatic generation enabled. Cancel an edit and confirm the saved content remains; save a new edit and reopen Settings to verify it. Create a new meeting and inspect the copied definition. Change or remove the default, then verify the existing meeting keeps its own configuration and the next meeting uses the updated list. Quit and reopen to confirm both scopes persist. Default management must remain available with AI disabled and make no AI requests.
+
+Deterministic coverage includes absent versus saved-empty preferences, all fields and trimming, invalid edits, preserved malformed/duplicate data with explicit reset, both creation entry points, distinct identities, bidirectional edit isolation, and on-disk history/snapshot retention. Native tests cover item Cancel, failed Save and retry, Return/Escape ownership across all four tabs, and English/Simplified Chinese list, empty-state, and editor rendering in both appearances. Tests use isolated UserDefaults suites and in-memory or temporary history stores.
+
 ## 9. Automated coverage
 
 `Tests/` protects:

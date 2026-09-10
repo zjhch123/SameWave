@@ -6,6 +6,58 @@ import XCTest
 
 @MainActor
 final class SettingsPresentationTests: XCTestCase {
+    func testDefaultInsightEditorCancelSaveAndFailedSaveStayScopedToTheItem() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = DefaultInsightSettings(defaults: defaults)
+        let item = InsightTemplate(title: "  Follow-ups  ", prompt: "\nIdentify next steps.\n",
+                                   automaticallyUpdates: true, scope: .latestExchange)
+        let presentation = PreparationPresentation()
+        var failSave = false
+        var saveAttempts = 0
+        let window = testWindow()
+        window.contentViewController = NSHostingController(rootView: Text("Settings").frame(width: 600, height: 540)
+            .sheet(isPresented: Binding(get: { presentation.isPresented }, set: { presentation.isPresented = $0 })) {
+                InsightDefinitionEditor(template: item, isDefault: true, onSave: { value in
+                    saveAttempts += 1
+                    if failSave { throw CocoaError(.fileWriteNoPermission) }
+                    try settings.save(value)
+                })
+            })
+        defer { window.close() }
+
+        func press(_ key: String, in sheet: NSWindow) throws {
+            sheet.makeKeyAndOrderFront(nil)
+            sheet.makeFirstResponder(nil)
+            sheet.sendEvent(try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: sheet.windowNumber, context: nil,
+                characters: key, charactersIgnoringModifiers: key, isARepeat: false,
+                keyCode: key == "\r" ? 36 : 53)))
+        }
+
+        presentation.isPresented = true
+        try await Phase2Fixture.waitUntil { window.attachedSheet != nil }
+        try press("\u{1b}", in: XCTUnwrap(window.attachedSheet))
+        try await Phase2Fixture.waitUntil { window.attachedSheet == nil }
+        XCTAssertEqual(saveAttempts, 0)
+        XCTAssertEqual(settings.templates.count, 1)
+
+        failSave = true
+        presentation.isPresented = true
+        try await Phase2Fixture.waitUntil { window.attachedSheet != nil }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        try press("\r", in: sheet)
+        try await Phase2Fixture.waitUntil { saveAttempts == 1 }
+        XCTAssertTrue(window.attachedSheet === sheet)
+        XCTAssertEqual(settings.templates.count, 1)
+
+        failSave = false
+        try press("\r", in: sheet)
+        try await Phase2Fixture.waitUntil { window.attachedSheet == nil }
+        XCTAssertEqual(saveAttempts, 2)
+        XCTAssertEqual(settings.templates.last, item.normalized)
+        XCTAssertEqual(DefaultInsightSettings(defaults: defaults).templates.last, item.normalized)
+    }
+
     func testReturnAndEscapeCloseEveryTabWithPreferencesAlreadyPersisted() async throws {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults, initialAPIKey: "test-key")
@@ -15,7 +67,7 @@ final class SettingsPresentationTests: XCTestCase {
         window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
             .modifier(SettingsSheet()).environment(navigation))
         defer { window.close() }
-        for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
+        for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary, .insights] {
             navigation.selectedTab = tab
             for key in ["\r", "\u{1b}"] {
                 controller.customModel = "pending-model"
@@ -121,7 +173,7 @@ final class SettingsPresentationTests: XCTestCase {
         let saved = SpeechVocabularySettings(defaults: defaults)
         saved.save(["SameWave"])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: saved)
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         navigation.aiController.customModel = "pending-model"
         editor.beginEditing("SameWave")
@@ -220,7 +272,7 @@ final class SettingsPresentationTests: XCTestCase {
         let saved = SpeechVocabularySettings(defaults: defaults)
         saved.save([])
         let editor = VocabularyEditorStore(aiSettings: settings, settings: saved)
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         let window = testWindow()
         window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
             .modifier(SettingsSheet()).environment(navigation))
