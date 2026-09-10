@@ -45,7 +45,9 @@ On first use, grant speech recognition, microphone, and screen recording permiss
 2. Choose source and target languages, enable the microphone if needed, and click **Start**.
 3. Pause and resume as needed. Click **End** to review or export your transcript.
 
-For AI features, turn on **Settings → General → Enable AI Services**, then configure your provider, API key, and model context window in **Settings → AI Services**. Preferences save automatically as you edit. Turning AI off stops AI tasks and makes all AI Services controls unavailable while keeping your configuration. Invalid input is shown inline and blocks new generation until corrected. **Done** closes Settings; there is no separate save or draft state. **Test Connection** checks the current configuration. See the [AI guide](doc/04-ai-insights-and-refinement.md) for provider requirements and insight controls.
+For AI features, turn on **Settings → General → Enable AI Services**, then configure your provider, API key, and model context window in **Settings → AI Services**. Preferences save automatically as you edit. Turning AI off stops AI tasks and makes all AI Services controls unavailable while keeping your configuration. Invalid input is shown inline and blocks new generation until corrected. **Done** closes Settings; connection preferences have no separate save or draft state. **Test Connection** checks the current configuration. See the [AI guide](doc/04-ai-insights-and-refinement.md) for provider requirements and insight controls.
+
+To reuse insights across meetings, open **Settings → Insights**, click **Add Insight**, enter a title and instructions, choose the focus and automatic-generation preference, then **Save**. Edit or remove defaults there as needed. Each new meeting gets independent copies; existing meetings keep their own definitions. Removing every default leaves new meetings without custom insights. The initial default is an editable Meeting Overview with automatic generation off.
 
 ## Privacy
 

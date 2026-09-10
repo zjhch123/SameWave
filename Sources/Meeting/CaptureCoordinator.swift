@@ -36,6 +36,7 @@ final class CaptureCoordinator {
     let translation = TranslationBridge()
 
     private let speechVocabularySettings: SpeechVocabularySettings
+    let defaultInsights: DefaultInsightSettings
     private let defaults: UserDefaults
     private static let selectedMeetingKey = "selectedMeetingID"
     private var activeVocabulary: [String] = []
@@ -65,6 +66,7 @@ final class CaptureCoordinator {
     init(speechVocabularySettings: SpeechVocabularySettings, defaults: UserDefaults = .standard) {
         self.speechVocabularySettings = speechVocabularySettings
         self.defaults = defaults
+        defaultInsights = DefaultInsightSettings(defaults: defaults)
         translation.onTranslated = { [weak self] request, translated in
             guard let self, request.sessionID == self.sessionID else { return }
             self.store.applyTranslation(
@@ -132,7 +134,10 @@ final class CaptureCoordinator {
         }
 
         do {
-            if activeRecord == nil { activeRecord = try history.createDraft(languagePair: languagePair) }
+            if activeRecord == nil {
+                activeRecord = try history.createDraft(languagePair: languagePair,
+                    insightTemplates: defaultInsights.templatesForNewMeeting())
+            }
             guard let record = activeRecord else { return }
             try history.beginCapture(record, languagePair: languagePair)
         } catch {
@@ -281,7 +286,8 @@ final class CaptureCoordinator {
         guard await suspendCurrent() else { return }
         guard let history else { return }
         do {
-            let draft = try history.createDraft(languagePair: languagePair)
+            let draft = try history.createDraft(languagePair: languagePair,
+                insightTemplates: defaultInsights.templatesForNewMeeting())
             mountDraft(draft)
             selectedHistoryRecord = nil
         } catch {

@@ -13,7 +13,7 @@ final class VocabularyPerformanceTests: XCTestCase {
         var phraseReads = 0
         let editor = VocabularyEditorStore(scope: .personal, aiSettings: settings,
             readPhrases: { phraseReads += 1; return vocabulary.phrases }, replacePhrases: { vocabulary.save($0) })
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         let controller = NSHostingController(rootView: SettingsView().environment(navigation))
         let window = NSWindow(contentViewController: controller)
         window.isReleasedWhenClosed = false
@@ -51,7 +51,7 @@ final class VocabularyPerformanceTests: XCTestCase {
             index.isMultiple(of: 3) ? "Product \(index) " + String(repeating: "extended name ", count: 6) : "Product \(index)"
         })
         let editor = VocabularyEditorStore(aiSettings: settings, settings: vocabulary)
-        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         navigation.selectedTab = .vocabulary
         let controller = NSHostingController(rootView: SettingsView().environment(navigation))
         let window = NSWindow(contentViewController: controller)

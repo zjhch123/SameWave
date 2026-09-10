@@ -4,6 +4,22 @@
     "": {
       "shouldTranslate": false
     },
+    "%@ · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@"
+          }
+        }
+      }
+    },
     "%@: %@": {
       "localizations": {
         "en": {
@@ -464,6 +480,22 @@
         }
       }
     },
+    "Add Default Insight": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Default Insight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加默认洞察"
+          }
+        }
+      }
+    },
     "Add Insight": {
       "localizations": {
         "en": {
@@ -658,6 +690,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已添加 %lld 个术语 · 跳过 %lld 个重复项"
+          }
+        }
+      }
+    },
+    "Added to new meetings. Existing meetings stay unchanged.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to new meetings. Existing meetings stay unchanged."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加到新会议，现有会议不受影响。"
           }
         }
       }
@@ -1126,6 +1174,22 @@
         }
       }
     },
+    "Could not read default insights: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read default insights: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法读取默认洞察：%@"
+          }
+        }
+      }
+    },
     "Could not read “%@”: %@": {
       "localizations": {
         "en": {
@@ -1464,6 +1528,38 @@
         }
       }
     },
+    "Default Insights": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default Insights"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认洞察"
+          }
+        }
+      }
+    },
+    "Default insights contain invalid or duplicate entries.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default insights contain invalid or duplicate entries."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认洞察包含无效或重复的条目。"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "en": {
@@ -1652,6 +1748,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑 %@"
+          }
+        }
+      }
+    },
+    "Edit Default Insight": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit Default Insight"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑默认洞察"
           }
         }
       }
@@ -2308,6 +2420,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "洞察指令"
+          }
+        }
+      }
+    },
+    "Insights": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Insights"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "洞察"
           }
         }
       }
@@ -2970,6 +3098,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未记录决策。"
+          }
+        }
+      }
+    },
+    "No default insights": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No default insights"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无默认洞察"
           }
         }
       }
@@ -3664,6 +3808,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在请求语音识别权限…"
+          }
+        }
+      }
+    },
+    "Reset Default Insights": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Default Insights"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置默认洞察"
+          }
+        }
+      }
+    },
+    "Reset default insights to start with Meeting Overview.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset default insights to start with Meeting Overview."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置默认洞察以恢复会议概览。"
           }
         }
       }
@@ -5031,6 +5207,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你"
+          }
+        }
+      }
+    },
+    "You can still add insights in any meeting.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can still add insights in any meeting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你仍可在任意会议中添加洞察。"
           }
         }
       }

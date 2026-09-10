@@ -3,6 +3,14 @@ import XCTest
 @testable import SameWave
 
 @MainActor
+extension MeetingHistoryStore {
+    /// Most domain fixtures use the initial preset without reading personal preferences.
+    func createDraft(languagePair: MeetingLanguagePair, now: Date = .now) throws -> MeetingRecord {
+        try createDraft(languagePair: languagePair, insightTemplates: InsightTemplate.initialDefaults, now: now)
+    }
+}
+
+@MainActor
 enum Phase2Fixture {
     static func history() throws -> MeetingHistoryStore {
         try MeetingHistoryStore(configuration: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -16,7 +24,7 @@ enum Phase2Fixture {
     }
 
     static func settingsNavigation(_ settings: AISettings, defaults: UserDefaults) -> SettingsNavigation {
-        SettingsNavigation(aiSettings: settings, vocabularyEditor:
+        SettingsNavigation(aiSettings: settings, defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor:
             VocabularyEditorStore(aiSettings: settings, settings: SpeechVocabularySettings(defaults: defaults)),
             languageSettings: AppLanguageSettings(suiteName: "SettingsTests.\(UUID().uuidString)"))
     }

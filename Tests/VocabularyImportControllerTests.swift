@@ -125,7 +125,7 @@ final class VocabularyImportControllerTests: XCTestCase {
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let defaults = Phase2Fixture.defaults(self)
-        let navigation = SettingsNavigation(aiSettings: AISettings(defaults: defaults), vocabularyEditor: editor)
+        let navigation = SettingsNavigation(aiSettings: AISettings(defaults: defaults), defaultInsights: DefaultInsightSettings(defaults: defaults), vocabularyEditor: editor)
         window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
             .modifier(SettingsSheet()).environment(navigation))
         defer { window.close(); controller.reset() }

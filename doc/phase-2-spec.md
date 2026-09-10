@@ -67,7 +67,7 @@ Both English recognizers freeze meeting-plus-personal vocabulary at Start/Resume
 
 ## 4. Insight definitions, requests, and history
 
-Every draft begins with an editable Meeting Overview preset and automatic updates off. User-created definitions appear above it, newest first. Definitions support cumulative or latest-exchange focus; both receive the same full original transcript, with focus expressed in the instruction.
+Every draft copies the current default insights from Settings > Insights into independent meeting definitions. The unset preference begins with one editable Meeting Overview and automatic updates off; users can add, edit, or remove defaults, including keeping an empty list. Default edits affect only subsequently created meetings. Definitions appear newest first in the inspector. Definitions support cumulative or latest-exchange focus; both receive the same full original transcript, with focus expressed in the instruction.
 
 Each custom card has a refresh icon. Custom Insights has Generate for all editable definitions, including Overview. A batch freezes its source, provisional text, vocabulary, definitions, provider/model, and cutoff when clicked. It fills up to six active insight requests and queues the rest. Every success appends its own immutable snapshot, even when replies complete out of order. Stop cancels the batch; an individual Stop removes only that item.
 

@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class SettingsNavigation {
-    enum Tab: Hashable { case general, ai, vocabulary }
+    enum Tab: Hashable { case general, ai, vocabulary, insights }
     var selectedTab: Tab = .general
     var presentedHost: UUID? {
         didSet {
@@ -13,6 +13,7 @@ final class SettingsNavigation {
         }
     }
     let aiSettings: AISettings
+    let defaultInsights: DefaultInsightSettings
     let aiController: AISettingsController
     let vocabularyEditor: VocabularyEditorStore
     let languageSettings: AppLanguageSettings
@@ -23,9 +24,10 @@ final class SettingsNavigation {
     private var hosts: [Host] = []
     private var pendingPresentation = false
 
-    init(aiSettings: AISettings, vocabularyEditor: VocabularyEditorStore,
+    init(aiSettings: AISettings, defaultInsights: DefaultInsightSettings, vocabularyEditor: VocabularyEditorStore,
          languageSettings: AppLanguageSettings = AppLanguageSettings()) {
         self.aiSettings = aiSettings
+        self.defaultInsights = defaultInsights
         aiController = AISettingsController(settings: aiSettings)
         self.vocabularyEditor = vocabularyEditor
         self.languageSettings = languageSettings
@@ -125,6 +127,7 @@ struct SettingsView: View {
                 Text("General").tag(SettingsNavigation.Tab.general)
                 Text("AI Services").tag(SettingsNavigation.Tab.ai)
                 Text("Vocabulary").tag(SettingsNavigation.Tab.vocabulary)
+                Text("Insights").tag(SettingsNavigation.Tab.insights)
             }
             .pickerStyle(.segmented).labelsHidden()
             .padding(.horizontal, 16).padding(.bottom, 12)
@@ -133,6 +136,9 @@ struct SettingsView: View {
             ZStack {
                 if navigation.selectedTab == .general {
                     GeneralSettingsView(settings: navigation.languageSettings, aiController: navigation.aiController)
+                }
+                if navigation.selectedTab == .insights {
+                    DefaultInsightsSettingsView(settings: navigation.defaultInsights)
                 }
                 AISettingsView(controller: navigation.aiController)
                     .opacity(navigation.selectedTab == .ai ? 1 : 0)

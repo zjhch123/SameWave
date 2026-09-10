@@ -60,10 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let speechVocabularySettings = SpeechVocabularySettings()
         self.speechVocabularySettings = speechVocabularySettings
         vocabularyEditor = VocabularyEditorStore(aiSettings: aiSettings, settings: speechVocabularySettings)
-        settingsNavigation = SettingsNavigation(aiSettings: aiSettings, vocabularyEditor: vocabularyEditor)
         coordinator = CaptureCoordinator(
             speechVocabularySettings: speechVocabularySettings
         )
+        settingsNavigation = SettingsNavigation(aiSettings: aiSettings, defaultInsights: coordinator.defaultInsights,
+            vocabularyEditor: vocabularyEditor)
         do {
             history = try MeetingHistoryStore(configuration:
                 ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
