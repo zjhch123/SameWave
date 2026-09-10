@@ -9,11 +9,11 @@ final class SettingsNavigation {
     var selectedTab: Tab = .general
     var presentedHost: UUID? {
         didSet {
-            if oldValue != nil && presentedHost == nil { aiDraft.cancelRequests() }
+            if oldValue != nil && presentedHost == nil { aiController.cancelRequests() }
         }
     }
     let aiSettings: AISettings
-    let aiDraft: AISettingsDraft
+    let aiController: AISettingsController
     let vocabularyEditor: VocabularyEditorStore
     let languageSettings: AppLanguageSettings
     private struct Host {
@@ -26,7 +26,7 @@ final class SettingsNavigation {
     init(aiSettings: AISettings, vocabularyEditor: VocabularyEditorStore,
          languageSettings: AppLanguageSettings = AppLanguageSettings()) {
         self.aiSettings = aiSettings
-        aiDraft = AISettingsDraft(settings: aiSettings)
+        aiController = AISettingsController(settings: aiSettings)
         self.vocabularyEditor = vocabularyEditor
         self.languageSettings = languageSettings
     }
@@ -112,6 +112,7 @@ private struct SettingsHostWindow: NSViewRepresentable {
 
 struct SettingsView: View {
     @Environment(SettingsNavigation.self) private var navigation
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -128,12 +129,12 @@ struct SettingsView: View {
             .pickerStyle(.segmented).labelsHidden()
             .padding(.horizontal, 16).padding(.bottom, 12)
             Divider()
-            // Keep both drafts mounted when switching tabs, including pending edits.
+            // Keep service checks, vocabulary edits, and scroll positions mounted across tabs.
             ZStack {
                 if navigation.selectedTab == .general {
                     GeneralSettingsView(settings: navigation.languageSettings)
                 }
-                AISettingsView(draft: navigation.aiDraft)
+                AISettingsView(controller: navigation.aiController)
                     .opacity(navigation.selectedTab == .ai ? 1 : 0)
                     .disabled(navigation.selectedTab != .ai)
                     .allowsHitTesting(navigation.selectedTab == .ai)
@@ -145,8 +146,17 @@ struct SettingsView: View {
                     .allowsHitTesting(navigation.selectedTab == .vocabulary)
                     .accessibilityHidden(navigation.selectedTab != .vocabulary)
             }
+            Divider()
+            HStack(spacing: 12) {
+                Spacer(minLength: 0)
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("settings.done")
+            }
+            .padding(12)
         }
         .frame(width: 600, height: 540)
+        .onExitCommand { dismiss() }
     }
 }
 

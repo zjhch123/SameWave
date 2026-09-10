@@ -3,34 +3,32 @@ import XCTest
 
 @MainActor
 final class AIAvailabilityTests: XCTestCase {
-    func testSwitchPersistsIndependentlyOfConnectionDraftAndKeepsCredentials() {
+    func testSwitchPersistsAndKeepsCurrentCredentials() {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults, initialAPIKey: "test-key")
         settings.selectedProviderID = "custom"
         settings.customAPIAddress = "https://example.com/v1"
         settings.customModel = "saved-model"
-        let draft = AISettingsDraft(settings: settings)
+        let controller = AISettingsController(settings: settings)
         XCTAssertTrue(settings.isEnabled)
         XCTAssertTrue(settings.isAvailable)
         XCTAssertNotNil(settings.makeProvider())
         var cancellations = 0
         settings.onDisable = { cancellations += 1 }
-        draft.customModel = "pending-model"
-        draft.isEnabled = false
+        controller.customModel = "pending-model"
+        controller.isEnabled = false
         XCTAssertEqual(cancellations, 1)
         XCTAssertFalse(settings.isAvailable)
         XCTAssertTrue(settings.isConfigured)
         XCTAssertNil(settings.makeProvider())
         XCTAssertEqual(settings.apiKey, "test-key")
-        XCTAssertEqual(draft.customModel, "pending-model")
-        draft.revert()
-        XCTAssertFalse(draft.isEnabled, "Cancel only reverts connection preferences")
-        XCTAssertFalse(draft.isDirty)
+        XCTAssertEqual(controller.customModel, "pending-model")
+        XCTAssertFalse(controller.isEnabled)
         let reopened = AISettings(defaults: defaults, initialAPIKey: "test-key")
         XCTAssertFalse(reopened.isEnabled)
         XCTAssertEqual(reopened.customAPIAddress, "https://example.com/v1")
-        XCTAssertEqual(reopened.customModel, "saved-model")
-        draft.isEnabled = true
+        XCTAssertEqual(reopened.customModel, "pending-model")
+        controller.isEnabled = true
         XCTAssertTrue(settings.isAvailable)
         XCTAssertNotNil(settings.makeProvider())
         XCTAssertEqual(cancellations, 1)

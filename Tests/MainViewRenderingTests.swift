@@ -35,9 +35,33 @@ final class MainViewRenderingTests: XCTestCase {
             settings.isEnabled = enabled
             try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
                 name: "compact-ai-settings-\(enabled)-\(chinese ? "zh-Hans" : "en")",
-                expectedLabels: chinese ? ["启用", "服务", "立即生效", "测试连接", "保存"]
-                    : ["Enable", "Services", "Applies immediately", "Test Connection", "Save"],
-                absentLabels: ["Audio is never uploaded", "One configuration for insights"])
+                expectedLabels: chinese ? ["启用", "服务", "测试连接", "完成"]
+                    : ["Enable", "Services", "Test Connection", "Done"],
+                absentLabels: ["Cancel", "取消", "Save Changes", "保存更改", "Revert", "还原", "Audio is never uploaded", "One configuration for insights"])
+        }
+    }
+
+    func testLocalizedSettingsHaveOnlyDoneAndInlineValidation() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let defaults = Phase2Fixture.defaults(self)
+        let navigation = Phase2Fixture.settingsNavigation(AISettings(defaults: defaults), defaults: defaults)
+        navigation.aiController.customModel = "saved-model"
+        for appearance in [NSAppearance(named: .aqua)!, NSAppearance(named: .darkAqua)!] {
+            for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
+                navigation.selectedTab = tab
+                try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+                    name: "settings-autosave-\(tab)-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
+                    expectedLabels: chinese ? ["完成"] : ["Done"],
+                    absentLabels: ["Cancel", "取消", "Draft", "草稿", "unsaved", "未保存", "Save Changes", "Revert"],
+                    appearance: appearance, textRegion: CGRect(x: 0, y: 0, width: 1, height: 0.15))
+            }
+            navigation.selectedTab = .ai
+            navigation.aiController.contextBudgetText = "invalid"
+            try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
+                name: "settings-invalid-window-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
+                expectedLabels: chinese ? ["完成", "16,384", "2,000,000"] : ["Done", "Enter a context window"],
+                absentLabels: ["Save Changes", "Revert", "保存更改", "还原", "草稿"], appearance: appearance)
+            navigation.aiController.contextBudgetText = "1000000"
         }
     }
 
@@ -378,7 +402,7 @@ final class MainViewRenderingTests: XCTestCase {
             let labels: [String]
             switch tab {
             case .general: labels = ["General", "App Language", "Follow System", "Done"]
-            case .ai: labels = ["Settings", "Services", "Vocabulary", "Cancel", "Save"]
+            case .ai: labels = ["Settings", "Services", "Vocabulary", "Test Connection", "Done"]
             case .vocabulary: labels = ["Extract from Markdown", "Choose Markdown", "Add Terms", "Done"]
             }
             try await render(SettingsView().environment(navigation),
@@ -643,10 +667,10 @@ final class MainViewRenderingTests: XCTestCase {
             expectedLabels: ["Invalid term", "Save", "Cancel", "Done"])
         editor.cancelEditing()
         editor.importer.candidates = [.init(originalPhrase: "SwiftData", text: "SwiftData")]
-        navigation.aiDraft.customModel = "Pending model"
+        navigation.aiController.customModel = "Pending model"
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
             name: "embedded-vocabulary-suggestions",
-            expectedLabels: ["Suggested Terms", "Add to Vocabulary", "Discard Suggestions", "Services has unsaved changes", "Done"])
+            expectedLabels: ["Suggested Terms", "Add to Vocabulary", "Discard Suggestions", "Done"])
     }
 
     func testLocalizedVocabularySettingsKeepActionsVisibleInBothAppearances() async throws {
@@ -817,7 +841,8 @@ final class MainViewRenderingTests: XCTestCase {
 
     private func render<V: View>(_ view: V, size: NSSize, name: String,
                                  expectedLabels: [String] = [], absentLabels: [String] = [],
-                                 alignedLabels: (String, String)? = nil, appearance: NSAppearance? = nil) async throws {
+                                 alignedLabels: (String, String)? = nil, appearance: NSAppearance? = nil,
+                                 textRegion: CGRect? = nil) async throws {
         let host = NSHostingView(rootView: view
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor)))
@@ -836,7 +861,8 @@ final class MainViewRenderingTests: XCTestCase {
         if !expectedLabels.isEmpty || !absentLabels.isEmpty {
             // OCR normalizes typographic spaces and reports wrapped labels as separate lines.
             func normalized(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
-            let labels = normalized(try visibleText(host))
+            let labels = normalized(try visibleTextObservations(host, region: textRegion)
+                .compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n"))
             for label in expectedLabels { XCTAssertTrue(labels.contains(normalized(label)), "Missing \(label) in \(labels)") }
             for label in absentLabels { XCTAssertFalse(labels.contains(normalized(label)), "Unexpected \(label) in \(labels)") }
         }
@@ -854,12 +880,13 @@ final class MainViewRenderingTests: XCTestCase {
         try visibleTextObservations(view).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
-    private func visibleTextObservations(_ view: NSView) throws -> [VNRecognizedTextObservation] {
+    private func visibleTextObservations(_ view: NSView, region: CGRect? = nil) throws -> [VNRecognizedTextObservation] {
         // Verify the pixels: hidden test windows do not publish a SwiftUI accessibility tree.
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
+        if let region { request.regionOfInterest = region }
         request.recognitionLanguages = Bundle.main.preferredLocalizations.first == "zh-Hans" ? ["zh-Hans", "en-US"] : ["en-US"]
         try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage), options: [:]).perform([request])
         return request.results ?? []

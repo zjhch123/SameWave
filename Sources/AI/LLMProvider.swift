@@ -77,6 +77,7 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
     case server(Int)            // other non-2xx
     case network(String)        // transport failure (offline, DNS, timeout)
     case invalidRequest(String) // 400, including an unsupported/invalid JSON Schema
+    case invalidContextWindow
     case contextWindowExceeded(estimate: Int, limit: Int) // local preflight; no request was sent
     case badResponse            // 2xx but body wasn't the expected shape
     case emptyContent           // model returned no usable content
@@ -94,8 +95,10 @@ enum LLMError: Error, LocalizedError, Equatable, Sendable {
         case .server(let c): return String(localized: "The service returned an error (\(c)).")
         case .network(let m): return String(localized: "Network request failed: \(m)")
         case .invalidRequest(let m): return String(localized: "The AI service rejected the request: \(m)")
+        case .invalidContextWindow:
+            return String(localized: "Enter a model context window from 16,384 to 2,000,000 tokens in Settings → AI Services.")
         case .contextWindowExceeded(let estimate, let limit):
-            return String(localized: "This meeting exceeds the configured model context window (conservative estimate: \(estimate.formatted()) tokens including output; configured: \(limit.formatted())). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate.")
+            return String(localized: "This meeting exceeds the configured model context window (conservative estimate: \(estimate.formatted()) tokens including output; configured: \(limit.formatted())). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit and regenerate.")
         case .badResponse:   return String(localized: "Could not parse the service response.")
         case .emptyContent:  return String(localized: "The service returned no usable content.")
         case .schemaViolation:

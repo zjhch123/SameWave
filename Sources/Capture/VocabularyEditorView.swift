@@ -43,17 +43,15 @@ struct VocabularyEditorView: View {
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, offset in
                 if trackingScroll { editor.scrollOffset = max(0, offset) }
             }
-            Divider()
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    if isEmbeddedInSettings && settingsNavigation.aiDraft.isDirty {
-                        Text("AI Services has unsaved changes")
-                    }
+            if !isEmbeddedInSettings {
+                Divider()
+                HStack {
                     Text("Drafts are kept until you quit the app.")
-                }.font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Done") { dismiss() }
-            }.padding(12)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Done") { dismiss() }
+                }.padding(12)
+            }
         }
         .frame(width: 600, height: isEmbeddedInSettings ? nil : 540)
         .background(Color(nsColor: .windowBackgroundColor))

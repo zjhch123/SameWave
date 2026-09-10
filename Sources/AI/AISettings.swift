@@ -10,7 +10,7 @@ import Security
 final class AISettings {
     static let defaultContextTokenBudget = 1_000_000
 
-    /// The master switch applies immediately, independently of the connection draft.
+    /// The master switch applies immediately and keeps the connection preferences.
     var isEnabled: Bool {
         didSet {
             defaults.set(isEnabled, forKey: Keys.enabled)
@@ -34,8 +34,17 @@ final class AISettings {
     }
 
     /// Conservative full-input preflight budget; the user sets the provider's supported window.
-    var insightContextTokenBudget: Int {
-        didSet { defaults.set(insightContextTokenBudget, forKey: "insight.contextTokenBudget") }
+    var contextBudgetText: String {
+        didSet { defaults.set(contextBudgetText, forKey: "insight.contextTokenBudget") }
+    }
+
+    /// Persist the visible input even when incomplete; never use an older hidden value.
+    var insightContextTokenBudget: Int? {
+        let text = contextBudgetText.trimmed
+        guard text.wholeMatch(of: /(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)/) != nil,
+              let value = Int(text.replacingOccurrences(of: ",", with: "")),
+              (16_384...2_000_000).contains(value) else { return nil }
+        return value
     }
 
     var modelIdentity: String {
@@ -45,20 +54,25 @@ final class AISettings {
 
     /// The API key, backed by the Keychain. Setting to empty deletes it.
     var apiKey: String {
-        didSet {
-            let trimmed = apiKey.trimmed
-            if trimmed.isEmpty { KeychainStore.delete(Keys.apiKey) }
-            else { KeychainStore.set(trimmed, for: Keys.apiKey) }
-        }
+        didSet { persistAPIKey() }
     }
+    private(set) var apiKeyStorageError: String?
 
     private let defaults: UserDefaults
+    private let storeAPIKey: (String) throws -> Void
 
-    init(defaults: UserDefaults = .standard, initialAPIKey: String? = nil) {
+    init(defaults: UserDefaults = .standard, initialAPIKey: String? = nil,
+         storeAPIKey: ((String) throws -> Void)? = nil) {
         self.defaults = defaults
+        let isTesting = ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+        // Hosted tests must neither read nor overwrite the user's credential.
+        self.storeAPIKey = storeAPIKey ?? (isTesting ? { _ in } : { value in
+            if value.isEmpty { try KeychainStore.delete(Keys.apiKey) }
+            else { try KeychainStore.set(value, for: Keys.apiKey) }
+        })
         isEnabled = defaults.object(forKey: Keys.enabled) as? Bool ?? true
-        let savedBudget = defaults.integer(forKey: "insight.contextTokenBudget")
-        insightContextTokenBudget = savedBudget > 0 ? savedBudget : Self.defaultContextTokenBudget
+        contextBudgetText = defaults.string(forKey: "insight.contextTokenBudget")
+            ?? String(Self.defaultContextTokenBudget)
         let persistedProviderID = defaults.string(forKey: Keys.provider)
         let supportedProvider = persistedProviderID.flatMap { id in
             LLMProviderConfig.builtIn.first { $0.id == id }
@@ -70,8 +84,7 @@ final class AISettings {
         // user's real API key before the test bundle can start. A key saved for a now-
         // unsupported provider is also kept disabled so it cannot be sent to Qwen by
         // the default-provider selection; the user must explicitly configure again.
-        let mayLoadSavedKey = ProcessInfo.processInfo.environment["XCTestBundlePath"] == nil
-            && supportedProvider != nil
+        let mayLoadSavedKey = !isTesting && supportedProvider != nil
         apiKey = initialAPIKey ?? (mayLoadSavedKey
             ? KeychainStore.get(Keys.apiKey) ?? ""
             : "")
@@ -82,7 +95,7 @@ final class AISettings {
 
     /// All AI features require a key and, for custom services, a valid endpoint and model.
     var isConfigured: Bool {
-        Self.isConfigured(
+        apiKeyStorageError == nil && insightContextTokenBudget != nil && Self.isConfigured(
             provider: selectedConfig, apiKey: apiKey,
             customAPIAddress: customAPIAddress, customModel: customModel
         )
@@ -94,7 +107,7 @@ final class AISettings {
         isEnabled ? String(localized: "Configure AI Services") : String(localized: "Enable AI Services")
     }
 
-    /// Shared validation for saved configuration and the Settings connection-test draft.
+    /// Shared connection validation; incomplete edits cannot start AI requests.
     static func isConfigured(provider: LLMProviderConfig, apiKey: String,
                              customAPIAddress: String, customModel: String) -> Bool {
         guard !apiKey.trimmed.isEmpty else { return false }
@@ -113,6 +126,15 @@ final class AISettings {
             config: cfg, apiKey: apiKey.trimmed,
             apiAddressOverride: cfg.isCustom ? customAPIAddress : nil,
             modelOverride: cfg.isCustom ? customModel : nil)
+    }
+
+    func persistAPIKey() {
+        do {
+            try storeAPIKey(apiKey.trimmed)
+            apiKeyStorageError = nil
+        } catch {
+            apiKeyStorageError = String(localized: "Could not save the API key: \(error.localizedDescription)")
+        }
     }
 
     private enum Keys {
@@ -138,14 +160,24 @@ enum KeychainStore {
          kSecAttrAccount as String: account]
     }
 
-    static func set(_ value: String, for account: String) {
-        guard let data = value.data(using: .utf8) else { return }
-        // Delete-then-add is the simplest idempotent upsert for the Keychain.
-        SecItemDelete(baseQuery(account) as CFDictionary)
+    struct StorageError: LocalizedError {
+        let status: OSStatus
+        var errorDescription: String? {
+            SecCopyErrorMessageString(status, nil) as String? ?? String(localized: "Keychain error (\(status)).")
+        }
+    }
+
+    static func set(_ value: String, for account: String) throws {
+        let data = Data(value.utf8)
+        let status = SecItemUpdate(baseQuery(account) as CFDictionary,
+                                   [kSecValueData as String: data] as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw StorageError(status: status) }
         var attrs = baseQuery(account)
         attrs[kSecValueData as String] = data
         attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(attrs as CFDictionary, nil)
+        let added = SecItemAdd(attrs as CFDictionary, nil)
+        guard added == errSecSuccess else { throw StorageError(status: added) }
     }
 
     static func get(_ account: String) -> String? {
@@ -158,7 +190,8 @@ enum KeychainStore {
         return String(data: data, encoding: .utf8)
     }
 
-    static func delete(_ account: String) {
-        SecItemDelete(baseQuery(account) as CFDictionary)
+    static func delete(_ account: String) throws {
+        let status = SecItemDelete(baseQuery(account) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw StorageError(status: status) }
     }
 }

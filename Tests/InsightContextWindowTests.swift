@@ -7,18 +7,38 @@ final class InsightContextWindowTests: XCTestCase {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults)
         XCTAssertEqual(settings.insightContextTokenBudget, 1_000_000)
-        settings.insightContextTokenBudget = 65_536
+        settings.contextBudgetText = "65,536"
         XCTAssertEqual(AISettings(defaults: defaults).insightContextTokenBudget, 65_536)
-        let draft = AISettingsDraft(settings: settings)
-        draft.contextBudget = 128_000
-        XCTAssertEqual(settings.insightContextTokenBudget, 65_536)
-        draft.revert()
-        XCTAssertEqual(draft.contextBudget, 65_536)
+        let controller = AISettingsController(settings: settings)
+        controller.contextBudgetText = "128,000"
+        XCTAssertEqual(settings.insightContextTokenBudget, 128_000)
+        XCTAssertEqual(AISettings(defaults: defaults).insightContextTokenBudget, 128_000)
     }
 
-    func testSavingLargerWindowRetriesTheCompleteMeetingAndFreezesInflightInput() async throws {
+    func testInvalidWindowBlocksSingleAndBatchRequestsInsteadOfUsingPreviousValue() async throws {
+        let settings = AISettings(defaults: Phase2Fixture.defaults(self), initialAPIKey: "test-key")
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(record, .ended)
+        let definition = try XCTUnwrap(record.definitions.first)
+        let provider = ControlledInsightProvider()
+        addTeardownBlock { await provider.releaseAll() }
+        let engine = InsightEngine(settings: settings, history: history, providerFactory: { provider })
+        settings.contextBudgetText = "invalid"
+        engine.generate(record: record, configuration: definition.configuration, kind: .manual,
+                        sources: Phase2Fixture.source(), vocabulary: [], elapsedSeconds: 1)
+        XCTAssertEqual(engine.states[.init(meetingID: record.id, definitionID: definition.id)],
+                       .failed(LLMError.invalidContextWindow.localizedDescription))
+        XCTAssertFalse(engine.canGenerateAll(record))
+        engine.generateAll(record: record, sources: Phase2Fixture.source(), vocabulary: [], elapsedSeconds: 1)
+        await Task.yield()
+        let count = await provider.count
+        XCTAssertEqual(count, 0)
+    }
+
+    func testEditingLargerWindowRetriesTheCompleteMeetingAndFreezesInflightInput() async throws {
         let settings = AISettings(defaults: Phase2Fixture.defaults(self))
-        settings.insightContextTokenBudget = 32_768
+        settings.contextBudgetText = "32,768"
         let history = try Phase2Fixture.history()
         let record = try history.createDraft(languagePair: .simplifiedChineseToSimplifiedChinese)
         try history.beginCapture(record, languagePair: .simplifiedChineseToSimplifiedChinese)
@@ -46,12 +66,8 @@ final class InsightContextWindowTests: XCTestCase {
         let rejectedRequestCount = await provider.count
         XCTAssertEqual(rejectedRequestCount, 0)
 
-        let draft = AISettingsDraft(settings: settings)
-        draft.contextBudget = 1_000_000
-        generate()
-        let unsavedRequestCount = await provider.count
-        XCTAssertEqual(unsavedRequestCount, 0)
-        draft.save()
+        let controller = AISettingsController(settings: settings)
+        controller.contextBudgetText = "1,000,000"
         generate()
         try await Phase2Fixture.waitUntil { await provider.count == 1 }
         let raw = await provider.users[0]
@@ -60,9 +76,8 @@ final class InsightContextWindowTests: XCTestCase {
         XCTAssertEqual(input.sources, sources)
         XCTAssertEqual(input.vocabulary, vocabulary)
 
-        // Saving a smaller window cannot retroactively change an active request.
-        draft.contextBudget = 32_768
-        draft.save()
+        // Editing a smaller window cannot retroactively change an active request.
+        controller.contextBudgetText = "32,768"
         try await provider.succeed(0)
         try await Phase2Fixture.waitUntil { record.insightSnapshots.count == 1 }
         XCTAssertEqual(try record.insightSnapshots[0].decoded().input, input)

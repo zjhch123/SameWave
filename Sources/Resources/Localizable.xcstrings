@@ -366,22 +366,6 @@
         }
       }
     },
-    "AI Services has unsaved changes": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI Services has unsaved changes"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI 服务设置有未保存的更改"
-          }
-        }
-      }
-    },
     "AI is off. Enable it in Settings → AI Services.": {
       "localizations": {
         "en": {
@@ -463,8 +447,8 @@
       }
     },
     "Action Items": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -628,26 +612,6 @@
             "value": "Added %#@terms@ · Skipped %#@duplicates@"
           },
           "substitutions": {
-            "terms": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "one": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg term"
-                    }
-                  },
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg terms"
-                    }
-                  }
-                }
-              }
-            },
             "duplicates": {
               "argNum": 2,
               "formatSpecifier": "lld",
@@ -663,6 +627,26 @@
                     "stringUnit": {
                       "state": "translated",
                       "value": "%arg duplicates"
+                    }
+                  }
+                }
+              }
+            },
+            "terms": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg term"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg terms"
                     }
                   }
                 }
@@ -786,22 +770,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用语言"
-          }
-        }
-      }
-    },
-    "Applies immediately. Turning off stops AI tasks and keeps your configuration.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Applies immediately. Turning off stops AI tasks and keeps your configuration."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "立即生效。关闭后停止 AI 任务，保留配置。"
           }
         }
       }
@@ -1286,6 +1254,22 @@
         }
       }
     },
+    "Could not save the API key: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not save the API key: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存 API 密钥：%@"
+          }
+        }
+      }
+    },
     "Could not save the meeting. Try ending it again: %@": {
       "localizations": {
         "en": {
@@ -1463,8 +1447,8 @@
       }
     },
     "Decisions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1784,6 +1768,22 @@
         }
       }
     },
+    "Enter a model context window from 16,384 to 2,000,000 tokens in Settings → AI Services.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a model context window from 16,384 to 2,000,000 tokens in Settings → AI Services."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在设置 → AI 服务中输入 16,384 至 2,000,000 之间的模型上下文窗口大小。"
+          }
+        }
+      }
+    },
     "Enter a single-line term of 1–100 characters.": {
       "localizations": {
         "en": {
@@ -1796,6 +1796,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入单行术语，长度为 1–100 个字符。"
+          }
+        }
+      }
+    },
+    "Enter a valid HTTP or HTTPS URL.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid HTTP or HTTPS URL."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效的 HTTP 或 HTTPS 地址。"
           }
         }
       }
@@ -2324,6 +2340,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "术语无效"
+          }
+        }
+      }
+    },
+    "Keychain error (%d).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keychain error (%d)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钥匙串错误（%d）。"
           }
         }
       }
@@ -2857,8 +2889,8 @@
       }
     },
     "No action items assigned.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2875,8 +2907,8 @@
       }
     },
     "No additional topics recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2909,8 +2941,8 @@
       }
     },
     "No decisions recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2943,8 +2975,8 @@
       }
     },
     "No further suggestions.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3073,8 +3105,8 @@
       }
     },
     "No unresolved questions recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3123,8 +3155,8 @@
       }
     },
     "Open Questions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3328,22 +3360,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出"
-          }
-        }
-      }
-    },
-    "Quit and reopen SameWave to apply language changes.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit and reopen SameWave to apply language changes."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出并重新打开 SameWave 后应用语言更改。"
           }
         }
       }
@@ -3799,6 +3815,22 @@
         }
       }
     },
+    "Saved automatically. Quit and reopen SameWave to apply language changes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved automatically. Quit and reopen SameWave to apply language changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动保存。退出并重新打开 SameWave 后，语言更改才会生效。"
+          }
+        }
+      }
+    },
     "Saved history": {
       "localizations": {
         "en": {
@@ -4200,8 +4232,8 @@
       }
     },
     "Suggestions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4569,18 +4601,18 @@
         }
       }
     },
-    "This meeting exceeds the configured model context window (conservative estimate: %@ tokens including output; configured: %@). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate.": {
+    "This meeting exceeds the configured model context window (conservative estimate: %@ tokens including output; configured: %@). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit and regenerate.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This meeting exceeds the configured model context window (conservative estimate: %@ tokens including output; configured: %@). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit, save, and regenerate."
+            "value": "This meeting exceeds the configured model context window (conservative estimate: %@ tokens including output; configured: %@). No text was truncated or sent. Set Model context window in Settings → AI Services to your model's supported limit and regenerate."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本次会议超出了配置的模型上下文窗口（含输出的保守估算：%@ token；已配置：%@）。文本未被截断或发送。请在设置 → AI 服务中将模型上下文窗口设为模型支持的上限，保存后重新生成。"
+            "value": "此会议超出配置的模型上下文窗口（包含输出的保守估计：%@ 个词元；配置值：%@）。未截断或发送任何文本。请在设置 → AI 服务中将模型上下文窗口设为模型支持的上限，然后重新生成。"
           }
         }
       }
@@ -4714,8 +4746,8 @@
       }
     },
     "Topics": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4763,6 +4795,22 @@
         }
       }
     },
+    "Turning off stops AI tasks and keeps your configuration.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turning off stops AI tasks and keeps your configuration."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭后会停止 AI 任务，并保留配置。"
+          }
+        }
+      }
+    },
     "UTF-8 Markdown · 3 MB per file · 30 MB per meeting": {
       "localizations": {
         "en": {
@@ -4791,22 +4839,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "未知错误"
-          }
-        }
-      }
-    },
-    "Unsaved changes": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unsaved changes"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有未保存的更改"
           }
         }
       }
