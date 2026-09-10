@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         aiSettings.onDisable = { [weak self] in
             self?.coordinator.cancelAIWork()
             self?.vocabularyEditor.importer.stop()
-            self?.settingsNavigation.aiDraft.cancelRequests()
+            self?.settingsNavigation.aiController.cancelRequests()
         }
     }
 

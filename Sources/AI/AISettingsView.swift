@@ -1,60 +1,70 @@
 import SwiftUI
 
-/// Enablement is immediate; connection actions never dismiss Settings.
+/// Preferences save as edited; service checks never dismiss Settings.
 struct AISettingsView: View {
-    @Bindable var draft: AISettingsDraft
+    @Bindable var controller: AISettingsController
     @FocusState private var focusedField: Field?
     private enum Field: Hashable { case key, address, model, context }
 
     var body: some View {
         Form {
             SwiftUI.Section {
-                Toggle("Enable AI Services", isOn: $draft.isEnabled)
+                Toggle("Enable AI Services", isOn: $controller.isEnabled)
                     .toggleStyle(.switch)
             } footer: {
-                Text("Applies immediately. No save needed. Turning off stops AI tasks and keeps your configuration.")
+                Text("Turning off stops AI tasks and keeps your configuration.")
             }
 
             SwiftUI.Section {
-                Picker("AI Provider", selection: $draft.providerID) {
+                Picker("AI Provider", selection: $controller.providerID) {
                     ForEach(LLMProviderConfig.builtIn) { cfg in
                         Text(cfg.displayName).tag(cfg.id)
                     }
                 }
 
-                SecureField("API Key", text: $draft.apiKey,
-                            prompt: Text(draft.config.keyHint))
+                SecureField("API Key", text: $controller.apiKey,
+                            prompt: Text(controller.config.keyHint))
                     .focused($focusedField, equals: .key)
+                if let error = controller.apiKeyStorageError {
+                    HStack {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                        Button("Retry") { controller.retrySavingAPIKey() }
+                    }
+                }
 
-                if draft.config.isCustom {
-                    TextField("API URL", text: $draft.customAPIAddress,
+                if controller.config.isCustom {
+                    TextField("API URL", text: $controller.customAPIAddress,
                               prompt: Text("https://api.example.com"))
                         .focused($focusedField, equals: .address)
+                    if !controller.customAPIAddress.isEmpty && !controller.isCustomAddressValid {
+                        Text("Enter a valid HTTP or HTTPS URL.")
+                            .font(.caption).foregroundStyle(.red)
+                    }
 
                     HStack(spacing: 10) {
-                        TextField("Model ID", text: $draft.customModel,
+                        TextField("Model ID", text: $controller.customModel,
                                   prompt: Text("Fetch models or enter an ID"))
                             .focused($focusedField, equals: .model)
-                        if !draft.availableModels.isEmpty {
+                        if !controller.availableModels.isEmpty {
                             Menu("Select Model") {
-                                ForEach(draft.availableModels) { model in
-                                    Button(modelLabel(model)) { draft.customModel = model.id }
+                                ForEach(controller.availableModels) { model in
+                                    Button(modelLabel(model)) { controller.customModel = model.id }
                                 }
                             }
                         }
-                        Button(draft.availableModels.isEmpty ? String(localized: "Fetch Models") : String(localized: "Refresh List")) {
-                            draft.fetchModels()
+                        Button(controller.availableModels.isEmpty ? String(localized: "Fetch Models") : String(localized: "Refresh List")) {
+                            controller.fetchModels()
                         }
-                        .disabled(!draft.canFetchModels)
+                        .disabled(!controller.canFetchModels)
                     }
                     modelDiscoveryStatus
                     Text("Supports a base URL or full endpoint. The model must support Structured Outputs.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                TextField("Model context window (tokens)", text: $draft.contextBudgetText)
+                TextField("Model context window (tokens)", text: $controller.contextBudgetText)
                     .focused($focusedField, equals: .context)
-                if !draft.isContextBudgetValid {
+                if !controller.isContextBudgetValid {
                     Text("Enter a context window from 16,384 to 2,000,000 tokens.")
                         .font(.caption).foregroundStyle(.red)
                 }
@@ -62,38 +72,22 @@ struct AISettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
 
                 HStack(spacing: 10) {
-                    Button("Test Connection") { draft.testConnection() }
-                        .disabled(!draft.isEnabled || !draft.isConfigured || draft.testState == .testing)
+                    Button("Test Connection") { controller.testConnection() }
+                        .disabled(!controller.isEnabled || !controller.isConfigured || controller.testState == .testing)
                     testStatus
                 }
 
-                HStack(spacing: 10) {
-                    if draft.isDirty {
-                        Text("Unsaved changes").foregroundStyle(.secondary)
-                    } else {
-                        Text("No unsaved changes").foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Button("Revert") { draft.revert() }
-                        .disabled(!draft.isDirty)
-                        .accessibilityIdentifier("ai.revert")
-                    Button("Save Changes") { draft.save() }
-                        .disabled(!draft.canSave)
-                        .accessibilityIdentifier("ai.save")
-                }
             } header: {
                 Text("Connection")
-            } footer: {
-                Text("Connection changes apply only when saved.")
             }
         }
         .formStyle(.grouped)
         .onSubmit { focusedField = nil }
-        .onDisappear { draft.cancelRequests() }
+        .onDisappear { controller.cancelRequests() }
     }
 
     @ViewBuilder private var testStatus: some View {
-        switch draft.testState {
+        switch controller.testState {
         case .idle:
             EmptyView()
         case .testing:
@@ -102,7 +96,7 @@ struct AISettingsView: View {
                 Text("Testing…").font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
             }
         case .ok:
-            Label(draft.isDirty ? String(localized: "Connection works · not saved") : String(localized: "Connected"),
+            Label("Connected",
                   systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.green)
@@ -115,7 +109,7 @@ struct AISettingsView: View {
     }
 
     @ViewBuilder private var modelDiscoveryStatus: some View {
-        switch draft.modelDiscoveryState {
+        switch controller.modelDiscoveryState {
         case .idle:
             EmptyView()
         case .loading:

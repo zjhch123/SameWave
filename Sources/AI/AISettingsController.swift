@@ -1,10 +1,10 @@
 import Foundation
 import Observation
 
-/// Pending AI preferences and their service checks remain independent of vocabulary edits.
+/// Binds directly to persisted preferences and owns only cancellable service checks.
 @MainActor
 @Observable
-final class AISettingsDraft {
+final class AISettingsController {
     enum TestState: Equatable { case idle, testing, ok, failed(String) }
     enum ModelDiscoveryState: Equatable { case idle, loading, loaded(Int), failed(String) }
 
@@ -22,11 +22,48 @@ final class AISettingsDraft {
             if !newValue { cancelRequests() }
         }
     }
-    var providerID: String { didSet { if oldValue != providerID { connectionDetailsChanged() } } }
-    var apiKey: String { didSet { if oldValue != apiKey { connectionDetailsChanged() } } }
-    var customAPIAddress: String { didSet { if oldValue != customAPIAddress { connectionDetailsChanged() } } }
-    var customModel: String { didSet { if oldValue != customModel { cancelConnectionTest() } } }
-    var contextBudgetText: String
+    var providerID: String {
+        get { settings.selectedProviderID }
+        set {
+            guard newValue != providerID else { return }
+            settings.selectedProviderID = newValue
+            connectionDetailsChanged()
+        }
+    }
+    var apiKey: String {
+        get { settings.apiKey }
+        set {
+            guard newValue != apiKey else { return }
+            settings.apiKey = newValue
+            connectionDetailsChanged()
+        }
+    }
+    var customAPIAddress: String {
+        get { settings.customAPIAddress }
+        set {
+            guard newValue != customAPIAddress else { return }
+            settings.customAPIAddress = newValue
+            connectionDetailsChanged()
+        }
+    }
+    var customModel: String {
+        get { settings.customModel }
+        set {
+            guard newValue != customModel else { return }
+            settings.customModel = newValue
+            cancelConnectionTest()
+        }
+    }
+    var contextBudgetText: String {
+        get { settings.contextBudgetText }
+        set { settings.contextBudgetText = newValue }
+    }
+    var isContextBudgetValid: Bool { settings.insightContextTokenBudget != nil }
+    var isCustomAddressValid: Bool {
+        OpenAIEndpointResolver.chatCompletionsURL(from: customAPIAddress) != nil
+    }
+    var apiKeyStorageError: String? { settings.apiKeyStorageError }
+    func retrySavingAPIKey() { settings.persistAPIKey() }
     private(set) var availableModels: [LLMModel] = []
     private(set) var testState: TestState = .idle
     private(set) var modelDiscoveryState: ModelDiscoveryState = .idle
@@ -36,62 +73,15 @@ final class AISettingsDraft {
     @ObservationIgnored private var discoveryToken = UUID()
 
     var config: LLMProviderConfig { LLMProviderConfig.byID(providerID) }
-    var isConfigured: Bool {
-        AISettings.isConfigured(provider: config, apiKey: apiKey,
-                                customAPIAddress: customAPIAddress, customModel: customModel)
-    }
+    var isConfigured: Bool { settings.isConfigured }
     var canFetchModels: Bool {
-        isEnabled && config.isCustom && !apiKey.trimmed.isEmpty
+        isEnabled && apiKeyStorageError == nil && config.isCustom && !apiKey.trimmed.isEmpty
             && OpenAIEndpointResolver.modelsURL(from: customAPIAddress) != nil
             && modelDiscoveryState != .loading
     }
 
     init(settings: AISettings) {
         self.settings = settings
-        providerID = settings.selectedProviderID
-        apiKey = settings.apiKey
-        customAPIAddress = settings.customAPIAddress
-        customModel = settings.customModel
-        contextBudgetText = String(settings.insightContextTokenBudget)
-    }
-
-    var isDirty: Bool {
-        providerID != settings.selectedProviderID || apiKey != settings.apiKey
-            || customAPIAddress != settings.customAPIAddress || customModel != settings.customModel
-            || contextBudget != settings.insightContextTokenBudget
-    }
-
-    // Retain incomplete input instead of silently saving the last parseable value.
-    var contextBudget: Int? {
-        let text = contextBudgetText.trimmed
-        guard text.wholeMatch(of: /(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)/) != nil else { return nil }
-        return Int(text.replacingOccurrences(of: ",", with: ""))
-    }
-
-    var isContextBudgetValid: Bool {
-        guard let contextBudget else { return false }
-        return (16_384...2_000_000).contains(contextBudget)
-    }
-
-    var canSave: Bool { isDirty && isContextBudgetValid }
-
-    func save() {
-        guard canSave, let contextBudget else { return }
-        settings.selectedProviderID = providerID
-        settings.customAPIAddress = customAPIAddress
-        settings.customModel = customModel
-        settings.insightContextTokenBudget = contextBudget
-        if apiKey != settings.apiKey { settings.apiKey = apiKey }
-        cancelRequests()
-    }
-
-    func revert() {
-        providerID = settings.selectedProviderID
-        apiKey = settings.apiKey
-        customAPIAddress = settings.customAPIAddress
-        customModel = settings.customModel
-        contextBudgetText = String(settings.insightContextTokenBudget)
-        connectionDetailsChanged()
     }
 
     func testConnection(using provider: (any LLMProvider)? = nil) {
@@ -147,7 +137,7 @@ final class AISettingsDraft {
         }
     }
 
-    /// Dismissal releases requests and their loading states while keeping the editable draft.
+    /// Dismissal releases requests and their loading states; preferences are already saved.
     func cancelRequests() {
         cancelConnectionTest()
         cancelModelDiscovery()

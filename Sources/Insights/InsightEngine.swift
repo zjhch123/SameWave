@@ -97,20 +97,26 @@ final class InsightEngine {
 
     private func makeInput(record: MeetingRecord, configuration: InsightConfiguration, kind: InsightKind,
                    sources: [InsightSource], vocabulary: [String], elapsedSeconds: TimeInterval,
+                   contextTokenBudget: Int,
                    now: Date = .now) -> InsightInput {
         InsightInput(meetingID: record.id, configuration: configuration, kind: kind, requestedAt: now,
                      elapsedSeconds: elapsedSeconds, sources: sources, vocabulary: vocabulary,
                      additionalInstructions: kind == .summary ? record.orderedDefinitions.map(\.configuration) : [],
-                     providerModel: settings.modelIdentity, contextTokenBudget: settings.insightContextTokenBudget)
+                     providerModel: settings.modelIdentity, contextTokenBudget: contextTokenBudget)
     }
 
     func generate(record: MeetingRecord, configuration: InsightConfiguration, kind: InsightKind,
                   sources: [InsightSource], vocabulary: [String], elapsedSeconds: TimeInterval,
                   now: Date = .now) {
         if kind == .automatic && inputs.count >= Self.maximumConcurrentRequests { return }
-        let input = makeInput(record: record, configuration: configuration, kind: kind,
-                              sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
         let key = InsightKey(meetingID: record.id, definitionID: configuration.id)
+        guard let budget = settings.insightContextTokenBudget else {
+            states[key] = .failed(LLMError.invalidContextWindow.localizedDescription)
+            return
+        }
+        let input = makeInput(record: record, configuration: configuration, kind: kind,
+                              sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds,
+                              contextTokenBudget: budget, now: now)
         let existing = inputs[key] ?? queue.first(where: { $0.key == key })?.input
         if let existing, input.analyzesSameContent(as: existing) { return }
         // Replacement requests affect only their own meeting; navigation owns no work.
@@ -135,13 +141,14 @@ final class InsightEngine {
 
     func canGenerateAll(_ record: MeetingRecord) -> Bool {
         let ids = Set(record.definitions.map(\.id))
-        return settings.isEnabled && !batchMeetingIDs.contains(record.id) && record.meetingStatus != .draft && !ids.isEmpty
+        return settings.isEnabled && settings.insightContextTokenBudget != nil
+            && !batchMeetingIDs.contains(record.id) && record.meetingStatus != .draft && !ids.isEmpty
             && !unsaved.values.contains { $0.input.meetingID == record.id && ids.contains($0.input.configuration.id) }
     }
 
     func generateAll(record: MeetingRecord, sources: [InsightSource], vocabulary: [String],
                      elapsedSeconds: TimeInterval, now: Date = .now) {
-        guard canGenerateAll(record) else { return }
+        guard canGenerateAll(record), let budget = settings.insightContextTokenBudget else { return }
         for (key, input) in Array(inputs) where key.meetingID == record.id && input.kind != .automatic {
             removeRequest(key)
         }
@@ -151,7 +158,8 @@ final class InsightEngine {
         let provider = providerFactory()
         for definition in record.insightReadingOrder {
             let input = makeInput(record: record, configuration: definition.configuration, kind: .manual,
-                                  sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds, now: now)
+                                  sources: sources, vocabulary: vocabulary, elapsedSeconds: elapsedSeconds,
+                                  contextTokenBudget: budget, now: now)
             removeRequest(InsightKey(meetingID: record.id, definitionID: definition.id))
             enqueue(input, provider: provider)
         }

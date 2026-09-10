@@ -35,37 +35,33 @@ final class MainViewRenderingTests: XCTestCase {
             settings.isEnabled = enabled
             try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
                 name: "compact-ai-settings-\(enabled)-\(chinese ? "zh-Hans" : "en")",
-                expectedLabels: chinese ? ["启用", "服务", "无需保存", "测试连接", "保存更改", "还原", "完成"]
-                    : ["Enable", "Services", "No save needed", "Test Connection", "Save Changes", "Revert", "Done"],
-                absentLabels: ["Cancel", "取消", "Audio is never uploaded", "One configuration for insights"])
+                expectedLabels: chinese ? ["启用", "服务", "测试连接", "完成"]
+                    : ["Enable", "Services", "Test Connection", "Done"],
+                absentLabels: ["Cancel", "取消", "Save Changes", "保存更改", "Revert", "还原", "Audio is never uploaded", "One configuration for insights"])
         }
     }
 
-    func testLocalizedSettingsKeepDraftOwnershipVisibleAcrossTabsAndInvalidInput() async throws {
+    func testLocalizedSettingsHaveOnlyDoneAndInlineValidation() async throws {
         let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
         let defaults = Phase2Fixture.defaults(self)
         let navigation = Phase2Fixture.settingsNavigation(AISettings(defaults: defaults), defaults: defaults)
-        navigation.aiDraft.customModel = "pending-model"
+        navigation.aiController.customModel = "saved-model"
         for appearance in [NSAppearance(named: .aqua)!, NSAppearance(named: .darkAqua)!] {
             for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
                 navigation.selectedTab = tab
                 try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
-                    name: "settings-draft-\(tab)-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
-                    expectedLabels: (chinese ? ["完成", "草稿"] : ["Done", "Drafts"])
-                        + (tab == .ai ? (chinese ? ["连接有未保存的更改"] : ["Connection has unsaved changes"])
-                            : (chinese ? ["服务设置有未保存的更改"] : ["Services has unsaved changes"])),
-                    absentLabels: ["Cancel", "取消"], appearance: appearance,
-                    textRegion: CGRect(x: 0, y: 0, width: 1, height: 0.15))
+                    name: "settings-autosave-\(tab)-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
+                    expectedLabels: chinese ? ["完成"] : ["Done"],
+                    absentLabels: ["Cancel", "取消", "Draft", "草稿", "unsaved", "未保存", "Save Changes", "Revert"],
+                    appearance: appearance, textRegion: CGRect(x: 0, y: 0, width: 1, height: 0.15))
             }
             navigation.selectedTab = .ai
-            navigation.aiDraft.providerID = "custom"
-            navigation.aiDraft.contextBudgetText = "invalid"
+            navigation.aiController.contextBudgetText = "invalid"
             try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
-                name: "settings-invalid-custom-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
-                expectedLabels: chinese ? ["完成", "连接有未保存的更改", "草稿"]
-                    : ["Done", "Connection has unsaved changes", "Drafts"], appearance: appearance)
-            navigation.aiDraft.revert()
-            navigation.aiDraft.customModel = "pending-model"
+                name: "settings-invalid-window-\(appearance.name.rawValue)-\(chinese ? "zh-Hans" : "en")",
+                expectedLabels: chinese ? ["完成", "16,384", "2,000,000"] : ["Done", "Enter a context window"],
+                absentLabels: ["Save Changes", "Revert", "保存更改", "还原", "草稿"], appearance: appearance)
+            navigation.aiController.contextBudgetText = "1000000"
         }
     }
 
@@ -406,7 +402,7 @@ final class MainViewRenderingTests: XCTestCase {
             let labels: [String]
             switch tab {
             case .general: labels = ["General", "App Language", "Follow System", "Done"]
-            case .ai: labels = ["Settings", "Services", "Vocabulary", "Revert", "Save Changes", "Done"]
+            case .ai: labels = ["Settings", "Services", "Vocabulary", "Test Connection", "Done"]
             case .vocabulary: labels = ["Extract from Markdown", "Choose Markdown", "Add Terms", "Done"]
             }
             try await render(SettingsView().environment(navigation),
@@ -671,10 +667,10 @@ final class MainViewRenderingTests: XCTestCase {
             expectedLabels: ["Invalid term", "Save", "Cancel", "Done"])
         editor.cancelEditing()
         editor.importer.candidates = [.init(originalPhrase: "SwiftData", text: "SwiftData")]
-        navigation.aiDraft.customModel = "Pending model"
+        navigation.aiController.customModel = "Pending model"
         try await render(SettingsView().environment(navigation), size: NSSize(width: 600, height: 540),
             name: "embedded-vocabulary-suggestions",
-            expectedLabels: ["Suggested Terms", "Add to Vocabulary", "Discard Suggestions", "Services has unsaved changes", "Done"])
+            expectedLabels: ["Suggested Terms", "Add to Vocabulary", "Discard Suggestions", "Done"])
     }
 
     func testLocalizedVocabularySettingsKeepActionsVisibleInBothAppearances() async throws {

@@ -16,11 +16,28 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260910-002"></a>
+## DEC-20260910-002: Save preferences as edited, with field-level validation
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Scope:** Preference persistence, configuration validity, credential errors, and dismissal
+- **Replaces:** [DEC-20260910-001](#dec-20260910-001). Shared Done, native keyboard ownership, immediate AI shutdown, and independent vocabulary review remain in effect.
+- **Context:** The user rejected a connection draft even after Save/Revert were moved into the form. Ordinary preferences should persist as edited, without a transaction users must remember to commit. Automatic saving must also handle incomplete input and failed credential writes truthfully.
+- **Decision:** Bind editable AI preferences directly to the shared persisted settings. Remove the connection draft, Save/Revert actions, and unsaved-change notices. Done and unconsumed Return/Escape only dismiss. Persist the exact context-window text and derive an optional validated integer; malformed or out-of-range values block new AI operations rather than reusing an older hidden number. Persist other fields independently, including while AI is off. Keep existing request snapshots immutable. Test Connection checks the current configuration; model discovery immediately persists its selected model. Vocabulary suggestions remain explicitly reviewed and added as content.
+- **Rejected alternatives:** A hidden draft committed only on blur/close still ties persistence to navigation. Saving only valid numeric edits can display one value while requests use another. Replacing incomplete input with a default loses user input. Global confirmation dialogs or a separate connection editor add an unnecessary commit step. Retaining both saved and pending preference models would preserve the rejected complexity.
+- **Rationale/tradeoffs:** A single persisted source makes closing predictable and removes cross-tab ownership instructions. Incomplete edits can temporarily make AI unavailable, with inline validation explaining how to correct them. API key edits use synchronous Keychain updates; update failures preserve the stored key, surface Retry beside the field, and prevent new operations with an unpersisted credential. Failed input remains in memory until retried or app exit; there is no false saved state.
+- **Impact:** `AISettingsController` owns service-check tasks and direct bindings, not a second configuration. Existing UserDefaults keys and Keychain accounts remain the storage boundaries, with no parallel path or migration. Tests isolate both credential reads and writes from the user's Keychain. No dependency is added.
+- **Validation:** Persistence/reload tests cover independent fields, invalid input, disabled editing, credential write/delete failure and retry, service-check cancellation, and late replies. Native text-entry tests verify persistence before focus leaves the field; keyboard and bilingual rendering tests verify dismissal and inline validation. Full validation and desktop smoke results are recorded in the [development guide](06-development-and-validation.md#settings-autosave-smoke-checks).
+- **Files:** `Sources/AI/AISettings.swift`, `Sources/AI/AISettingsController.swift`, `Sources/AI/AISettingsView.swift`, `Sources/App/SettingsView.swift`, `Sources/Insights/InsightEngine.swift`, settings/context-window/presentation tests, and product/AI/development references.
+
+---
+
 <a id="dec-20260910-001"></a>
 ## DEC-20260910-001: Separate Settings dismissal from connection commits
 
 - **Date:** 2026-09-10
-- **Status:** Accepted
+- **Status:** Superseded by [DEC-20260910-002](#dec-20260910-002)
 - **Scope:** Settings action ownership, connection drafts, and keyboard behavior
 - **Replaces:** The Save/Cancel dismissal actions in [DEC-20260906-001](#dec-20260906-001) and the connection action labels in [DEC-20260908-004](#dec-20260908-004). Immediate AI enablement, shared configuration, and vocabulary ownership retain their existing scope.
 - **Context:** Issue #32 reports that the immediate AI switch appears to need Save and a clean AI settings page can only close through Cancel. Open Design reviewed the existing three-tab, 600×540 native sheet and recommended one persistent Done with connection-local actions.

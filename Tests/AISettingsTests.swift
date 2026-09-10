@@ -122,7 +122,7 @@ final class AISettingsTests: XCTestCase {
         settings.selectedProviderID = LLMProviderConfig.custom.id
         settings.customAPIAddress = "http://localhost:8080/v1"
         settings.customModel = "my-model"
-        let host = NSHostingView(rootView: AISettingsView(draft: AISettingsDraft(settings: settings))
+        let host = NSHostingView(rootView: AISettingsView(controller: AISettingsController(settings: settings))
             .background(Color(nsColor: .windowBackgroundColor)))
         let window = makeWindow(host: host)
         defer { window.close() }

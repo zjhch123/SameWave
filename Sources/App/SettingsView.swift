@@ -9,11 +9,11 @@ final class SettingsNavigation {
     var selectedTab: Tab = .general
     var presentedHost: UUID? {
         didSet {
-            if oldValue != nil && presentedHost == nil { aiDraft.cancelRequests() }
+            if oldValue != nil && presentedHost == nil { aiController.cancelRequests() }
         }
     }
     let aiSettings: AISettings
-    let aiDraft: AISettingsDraft
+    let aiController: AISettingsController
     let vocabularyEditor: VocabularyEditorStore
     let languageSettings: AppLanguageSettings
     private struct Host {
@@ -26,7 +26,7 @@ final class SettingsNavigation {
     init(aiSettings: AISettings, vocabularyEditor: VocabularyEditorStore,
          languageSettings: AppLanguageSettings = AppLanguageSettings()) {
         self.aiSettings = aiSettings
-        aiDraft = AISettingsDraft(settings: aiSettings)
+        aiController = AISettingsController(settings: aiSettings)
         self.vocabularyEditor = vocabularyEditor
         self.languageSettings = languageSettings
     }
@@ -129,12 +129,12 @@ struct SettingsView: View {
             .pickerStyle(.segmented).labelsHidden()
             .padding(.horizontal, 16).padding(.bottom, 12)
             Divider()
-            // Keep both drafts mounted when switching tabs, including pending edits.
+            // Keep service checks, vocabulary edits, and scroll positions mounted across tabs.
             ZStack {
                 if navigation.selectedTab == .general {
                     GeneralSettingsView(settings: navigation.languageSettings)
                 }
-                AISettingsView(draft: navigation.aiDraft)
+                AISettingsView(controller: navigation.aiController)
                     .opacity(navigation.selectedTab == .ai ? 1 : 0)
                     .disabled(navigation.selectedTab != .ai)
                     .allowsHitTesting(navigation.selectedTab == .ai)
@@ -148,19 +148,6 @@ struct SettingsView: View {
             }
             Divider()
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    if navigation.aiDraft.isDirty {
-                        if navigation.selectedTab == .ai {
-                            Text("Connection has unsaved changes.").foregroundStyle(.secondary)
-                        } else {
-                            Button("AI Services has unsaved changes") { navigation.selectedTab = .ai }
-                                .buttonStyle(.link)
-                                .accessibilityIdentifier("settings.reviewAI")
-                        }
-                    }
-                    Text("Drafts are kept until you quit the app.")
-                        .foregroundStyle(.secondary)
-                }.font(.caption)
                 Spacer(minLength: 0)
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
