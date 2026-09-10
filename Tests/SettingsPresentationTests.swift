@@ -6,6 +6,108 @@ import XCTest
 
 @MainActor
 final class SettingsPresentationTests: XCTestCase {
+    func testReturnAndEscapeCloseEveryTabWithoutSavingOrDiscardingDrafts() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults, initialAPIKey: "test-key")
+        let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        let draft = navigation.aiDraft
+        let window = testWindow()
+        window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
+            .modifier(SettingsSheet()).environment(navigation))
+        defer { window.close() }
+        for tab in [SettingsNavigation.Tab.general, .ai, .vocabulary] {
+            navigation.selectedTab = tab
+            for key in ["\r", "\u{1b}"] {
+                draft.customModel = "pending-model"
+                draft.contextBudgetText = "invalid"
+                navigation.vocabularyEditor.manualText = "Pending vocabulary"
+                navigation.openSettings()
+                try await Phase2Fixture.waitUntil { window.attachedSheet != nil }
+                let sheet = try XCTUnwrap(window.attachedSheet)
+                sheet.makeKeyAndOrderFront(nil)
+                sheet.makeFirstResponder(nil)
+                let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: sheet.windowNumber, context: nil,
+                    characters: key, charactersIgnoringModifiers: key, isARepeat: false,
+                    keyCode: key == "\r" ? 36 : 53))
+                sheet.sendEvent(event)
+                try await Phase2Fixture.waitUntil { window.attachedSheet == nil }
+                XCTAssertEqual(settings.customModel, "")
+                XCTAssertEqual(settings.insightContextTokenBudget, AISettings.defaultContextTokenBudget)
+                XCTAssertEqual(draft.customModel, "pending-model")
+                XCTAssertEqual(draft.contextBudgetText, "invalid")
+                XCTAssertEqual(navigation.vocabularyEditor.manualText, "Pending vocabulary")
+            }
+        }
+    }
+
+    func testReturnInConnectionFieldEndsEditingBeforeClosingSettings() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let navigation = Phase2Fixture.settingsNavigation(settings, defaults: defaults)
+        navigation.aiDraft.contextBudgetText = "invalid"
+        let window = testWindow()
+        window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
+            .modifier(SettingsSheet()).environment(navigation))
+        defer { window.close() }
+        navigation.openAISettings()
+        try await Phase2Fixture.waitUntil { window.attachedSheet != nil }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        let field = try XCTUnwrap(textField(in: sheet.contentView, value: "invalid"))
+        sheet.makeKeyAndOrderFront(nil)
+        sheet.makeFirstResponder(field)
+        let enter = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: sheet.windowNumber, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        sheet.sendEvent(enter)
+        await Task.yield()
+        XCTAssertTrue(window.attachedSheet === sheet)
+        XCTAssertEqual(navigation.aiDraft.contextBudgetText, "invalid")
+        XCTAssertEqual(settings.insightContextTokenBudget, AISettings.defaultContextTokenBudget)
+        sheet.sendEvent(enter)
+        try await Phase2Fixture.waitUntil { window.attachedSheet == nil }
+        XCTAssertEqual(navigation.aiDraft.contextBudgetText, "invalid")
+    }
+
+    private func textField(in view: NSView?, value: String) -> NSTextField? {
+        guard let view else { return nil }
+        if let field = view as? NSTextField, field.stringValue == value { return field }
+        return view.subviews.lazy.compactMap { self.textField(in: $0, value: value) }.first
+    }
+
+    func testVocabularyEscapeCancelsOnlyTheRowBeforeClosingSettings() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults)
+        let saved = SpeechVocabularySettings(defaults: defaults)
+        saved.save(["SameWave"])
+        let editor = VocabularyEditorStore(aiSettings: settings, settings: saved)
+        let navigation = SettingsNavigation(aiSettings: settings, vocabularyEditor: editor)
+        navigation.selectedTab = .vocabulary
+        navigation.aiDraft.customModel = "pending-model"
+        editor.beginEditing("SameWave")
+        editor.editedText = "Uncommitted term"
+        editor.focusedField = .saved
+        let window = testWindow()
+        window.contentViewController = NSHostingController(rootView: Text("Workspace").frame(width: 600, height: 540)
+            .modifier(SettingsSheet()).environment(navigation))
+        defer { window.close() }
+        navigation.openSettings()
+        try await Phase2Fixture.waitUntil { window.attachedSheet != nil }
+        let sheet = try XCTUnwrap(window.attachedSheet)
+        sheet.makeKeyAndOrderFront(nil)
+        try await Phase2Fixture.waitUntil { (sheet.firstResponder as? NSTextView)?.string == "Uncommitted term" }
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: sheet.windowNumber, context: nil,
+            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        sheet.sendEvent(escape)
+        try await Phase2Fixture.waitUntil { editor.editingPhrase == nil }
+        XCTAssertTrue(window.attachedSheet === sheet)
+        XCTAssertEqual(saved.phrases, ["SameWave"])
+        XCTAssertEqual(navigation.aiDraft.customModel, "pending-model")
+        sheet.sendEvent(escape)
+        try await Phase2Fixture.waitUntil { window.attachedSheet == nil }
+    }
+
     func testDismissingSettingsEndsModelLoadingAndKeepsDraft() async throws {
         let defaults = Phase2Fixture.defaults(self)
         let settings = AISettings(defaults: defaults)
@@ -80,7 +182,7 @@ final class SettingsPresentationTests: XCTestCase {
         let settingsSheet = try XCTUnwrap(window.attachedSheet)
         let initialSize = settingsSheet.frame.size
         navigation.aiDraft.customModel = "Pending model"
-        navigation.aiDraft.contextBudget = 64_000
+        navigation.aiDraft.contextBudgetText = "64,000"
         navigation.selectedTab = .vocabulary
         await Task.yield()
         XCTAssertNil(settingsSheet.attachedSheet)

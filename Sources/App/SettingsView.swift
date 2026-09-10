@@ -112,6 +112,7 @@ private struct SettingsHostWindow: NSViewRepresentable {
 
 struct SettingsView: View {
     @Environment(SettingsNavigation.self) private var navigation
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -145,8 +146,30 @@ struct SettingsView: View {
                     .allowsHitTesting(navigation.selectedTab == .vocabulary)
                     .accessibilityHidden(navigation.selectedTab != .vocabulary)
             }
+            Divider()
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if navigation.aiDraft.isDirty {
+                        if navigation.selectedTab == .ai {
+                            Text("Connection has unsaved changes.").foregroundStyle(.secondary)
+                        } else {
+                            Button("AI Services has unsaved changes") { navigation.selectedTab = .ai }
+                                .buttonStyle(.link)
+                                .accessibilityIdentifier("settings.reviewAI")
+                        }
+                    }
+                    Text("Drafts are kept until you quit the app.")
+                        .foregroundStyle(.secondary)
+                }.font(.caption)
+                Spacer(minLength: 0)
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("settings.done")
+            }
+            .padding(12)
         }
         .frame(width: 600, height: 540)
+        .onExitCommand { dismiss() }
     }
 }
 

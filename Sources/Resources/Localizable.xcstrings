@@ -463,8 +463,8 @@
       }
     },
     "Action Items": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -628,26 +628,6 @@
             "value": "Added %#@terms@ · Skipped %#@duplicates@"
           },
           "substitutions": {
-            "terms": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "one": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg term"
-                    }
-                  },
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%arg terms"
-                    }
-                  }
-                }
-              }
-            },
             "duplicates": {
               "argNum": 2,
               "formatSpecifier": "lld",
@@ -663,6 +643,26 @@
                     "stringUnit": {
                       "state": "translated",
                       "value": "%arg duplicates"
+                    }
+                  }
+                }
+              }
+            },
+            "terms": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg term"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg terms"
                     }
                   }
                 }
@@ -790,18 +790,18 @@
         }
       }
     },
-    "Applies immediately. Turning off stops AI tasks and keeps your configuration.": {
+    "Applies immediately. No save needed. Turning off stops AI tasks and keeps your configuration.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applies immediately. Turning off stops AI tasks and keeps your configuration."
+            "value": "Applies immediately. No save needed. Turning off stops AI tasks and keeps your configuration."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "立即生效。关闭后停止 AI 任务，保留配置。"
+            "value": "立即生效，无需保存。关闭会停止 AI 任务，并保留您的配置。"
           }
         }
       }
@@ -1026,6 +1026,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接"
+          }
+        }
+      }
+    },
+    "Connection changes apply only when saved.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection changes apply only when saved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接更改在保存后生效。"
+          }
+        }
+      }
+    },
+    "Connection has unsaved changes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection has unsaved changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接有未保存的更改。"
+          }
+        }
+      }
+    },
+    "Connection works · not saved": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection works · not saved"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接正常 · 尚未保存"
           }
         }
       }
@@ -1463,8 +1511,8 @@
       }
     },
     "Decisions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2857,8 +2905,8 @@
       }
     },
     "No action items assigned.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2875,8 +2923,8 @@
       }
     },
     "No additional topics recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2909,8 +2957,8 @@
       }
     },
     "No decisions recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2943,8 +2991,8 @@
       }
     },
     "No further suggestions.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3073,8 +3121,8 @@
       }
     },
     "No unresolved questions recorded.": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3086,6 +3134,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "未记录待解决问题。"
+          }
+        }
+      }
+    },
+    "No unsaved changes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No unsaved changes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有未保存的更改"
           }
         }
       }
@@ -3123,8 +3187,8 @@
       }
     },
     "Open Questions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -3328,22 +3392,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出"
-          }
-        }
-      }
-    },
-    "Quit and reopen SameWave to apply language changes.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quit and reopen SameWave to apply language changes."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "退出并重新打开 SameWave 后应用语言更改。"
           }
         }
       }
@@ -3716,6 +3764,22 @@
         }
       }
     },
+    "Revert": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revert"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还原"
+          }
+        }
+      }
+    },
     "SameWave": {
       "shouldTranslate": false
     },
@@ -3731,6 +3795,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "保存"
+          }
+        }
+      }
+    },
+    "Save Changes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Changes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存更改"
           }
         }
       }
@@ -3795,6 +3875,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "已保存的词汇"
+          }
+        }
+      }
+    },
+    "Saved automatically. Quit and reopen SameWave to apply language changes.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved automatically. Quit and reopen SameWave to apply language changes."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动保存。退出并重新打开 SameWave 后，语言更改才会生效。"
           }
         }
       }
@@ -4200,8 +4296,8 @@
       }
     },
     "Suggestions": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -4714,8 +4810,8 @@
       }
     },
     "Topics": {
-      "extractionState": "manual",
       "comment": "MeetingSummary.Part UI copy; export uses the English source value.",
+      "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {

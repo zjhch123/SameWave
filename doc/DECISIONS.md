@@ -16,6 +16,23 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260910-001"></a>
+## DEC-20260910-001: Separate Settings dismissal from connection commits
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Scope:** Settings action ownership, connection drafts, and keyboard behavior
+- **Replaces:** The Save/Cancel dismissal actions in [DEC-20260906-001](#dec-20260906-001) and the connection action labels in [DEC-20260908-004](#dec-20260908-004). Immediate AI enablement, shared configuration, and vocabulary ownership retain their existing scope.
+- **Context:** Issue #32 reports that the immediate AI switch appears to need Save and a clean AI settings page can only close through Cancel. Open Design reviewed the existing three-tab, 600×540 native sheet and recommended one persistent Done with connection-local actions.
+- **Decision:** Let Settings own one Done footer across General, AI Services, and Vocabulary. Done and unconsumed Return/Escape dismiss without saving or reverting drafts. Put Save Changes and Revert inside Connection; both leave Settings open and affect only connection preferences. Explain that AI enablement needs no save and language changes save automatically. Keep pending connection work visible in the fixed footer; General and Vocabulary link back to it. Return in connection text entry ends editing before the default Done action. Keep vocabulary's local editing/commit shortcuts. Retain raw context-window input and validate it before writing any connection preference. A successful draft connection test must identify unsaved changes.
+- **Rejected alternatives:** Autosaving every credential keystroke or partial numeric input can replace working configuration while the user is still editing. Moving the AI switch into the save transaction would delay shutdown. A separate credential sheet adds another modal and dismissal context. A global Cancel cannot consistently undo immediate preferences, connection drafts, and independently saved vocabulary. Close confirmation dialogs interrupt navigation despite drafts already surviving for the app session.
+- **Rationale/tradeoffs:** Action placement makes the existing persistence boundaries visible without another editor, storage model, or dependency. Custom connection forms require scrolling to their local actions, while Done and the pending-draft notice stay visible. Closing keeps unfinished drafts only until app exit. The reviewed OD prototype also proposed request-lifetime and credential-storage changes; those are outside this interaction fix. Existing dismissal cancellation, local endpoint support, explicit credential clearing, and provider validation remain authoritative.
+- **Impact:** Removes the obsolete AI Save-and-close/Cancel-and-close path and duplicate tab-owned dismissal controls. General preferences and vocabulary commits remain independent. No data migration or network-request policy change is introduced.
+- **Validation:** Draft tests cover strict numeric boundaries, switch independence, save/revert, test-versus-save distinction, and late replies. Native keyboard tests cover all tabs, retained invalid input, focus submission, and vocabulary row cancellation. Bilingual native renders cover clean/dirty/off/custom states and both appearances. Final build, test, and signed desktop smoke results are recorded in the [development guide](06-development-and-validation.md).
+- **Files:** `Sources/App/SettingsView.swift`, `Sources/App/GeneralSettingsView.swift`, `Sources/AI/AISettingsView.swift`, `Sources/AI/AISettingsDraft.swift`, `Sources/Capture/VocabularyEditorView.swift`, `Sources/Resources/Localizable.xcstrings`, settings and rendering tests, README and product/AI/development references.
+
+---
+
 <a id="dec-20260909-003"></a>
 ## DEC-20260909-003: Reject an unexpected history model before automatic migration
 
@@ -69,7 +86,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260908-004: Separate AI enablement from saved connection configuration
 
 - **Date:** 2026-09-08
-- **Status:** Accepted
+- **Status:** Superseded for Settings connection action labels by [DEC-20260910-001](#dec-20260910-001). Immediate enablement, cancellation, and shared configuration remain accepted.
 - **Scope:** App-wide AI availability, cancellation, and Settings behavior
 - **Replaces:** The rejection of a global enable switch in [DEC-20260905-003](#dec-20260905-003). Shared configuration ownership and provider boundaries remain adopted.
 - **Context:** Issue #21 requires temporarily disabling AI while retaining a configured provider. Insights can be queued across meetings, refinement and titles continue in the background, and extraction retries retain their original provider. Blocking only new provider creation would leave these operations running.
@@ -338,7 +355,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260906-001: Separate Settings presentation from meeting vocabulary work
 
 - **Date:** 2026-09-06
-- **Status:** Superseded for vocabulary interaction and Settings draft lifetime by [DEC-20260906-005](#dec-20260906-005), source metadata by [DEC-20260906-002](#dec-20260906-002), and Review navigation by [DEC-20260906-004](#dec-20260906-004); other decisions remain accepted.
+- **Status:** Superseded for vocabulary interaction and Settings draft lifetime by [DEC-20260906-005](#dec-20260906-005), source metadata by [DEC-20260906-002](#dec-20260906-002), Review navigation by [DEC-20260906-004](#dec-20260906-004), and Settings dismissal actions by [DEC-20260910-001](#dec-20260910-001); other decisions remain accepted.
 - **Scope:** Settings presentation, meeting extraction lifetime, and attachment removal
 - **Replaces:** The management-sheet cancellation policy in [DEC-20260905-012](#dec-20260905-012). The personal Markdown import window retains its independent close-to-cancel behavior.
 - **Context:** The user prefers Preparation's native sheets for settings, needs personal Markdown analysis to remain nonblocking, and reported inaccessible attachment removal and uncertain behavior when closing meeting vocabulary extraction.

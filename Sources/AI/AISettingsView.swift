@@ -1,103 +1,94 @@
 import SwiftUI
 
-/// The master switch is immediate; connection preferences commit through Save.
+/// Enablement is immediate; connection actions never dismiss Settings.
 struct AISettingsView: View {
-    @Environment(\.dismiss) private var dismiss
     @Bindable var draft: AISettingsDraft
+    @FocusState private var focusedField: Field?
+    private enum Field: Hashable { case key, address, model, context }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                SwiftUI.Section {
-                    Toggle("Enable AI Services", isOn: $draft.isEnabled)
-                        .toggleStyle(.switch)
-                } footer: {
-                    Text("Applies immediately. Turning off stops AI tasks and keeps your configuration.")
+        Form {
+            SwiftUI.Section {
+                Toggle("Enable AI Services", isOn: $draft.isEnabled)
+                    .toggleStyle(.switch)
+            } footer: {
+                Text("Applies immediately. No save needed. Turning off stops AI tasks and keeps your configuration.")
+            }
+
+            SwiftUI.Section {
+                Picker("AI Provider", selection: $draft.providerID) {
+                    ForEach(LLMProviderConfig.builtIn) { cfg in
+                        Text(cfg.displayName).tag(cfg.id)
+                    }
                 }
 
-                SwiftUI.Section {
-                    Picker("AI Provider", selection: $draft.providerID) {
-                        ForEach(LLMProviderConfig.builtIn) { cfg in
-                            Text(cfg.displayName).tag(cfg.id)
-                        }
-                    }
+                SecureField("API Key", text: $draft.apiKey,
+                            prompt: Text(draft.config.keyHint))
+                    .focused($focusedField, equals: .key)
 
-                    SecureField("API Key", text: $draft.apiKey,
-                                prompt: Text(draft.config.keyHint))
+                if draft.config.isCustom {
+                    TextField("API URL", text: $draft.customAPIAddress,
+                              prompt: Text("https://api.example.com"))
+                        .focused($focusedField, equals: .address)
 
-                    if draft.config.isCustom {
-                        TextField("API URL", text: $draft.customAPIAddress,
-                                  prompt: Text("https://api.example.com"))
-
-                        HStack(spacing: 10) {
-                            TextField("Model ID", text: $draft.customModel,
-                                      prompt: Text("Fetch models or enter an ID"))
-
-                            if !draft.availableModels.isEmpty {
-                                Menu("Select Model") {
-                                    ForEach(draft.availableModels) { model in
-                                        Button(modelLabel(model)) {
-                                            draft.customModel = model.id
-                                        }
-                                    }
+                    HStack(spacing: 10) {
+                        TextField("Model ID", text: $draft.customModel,
+                                  prompt: Text("Fetch models or enter an ID"))
+                            .focused($focusedField, equals: .model)
+                        if !draft.availableModels.isEmpty {
+                            Menu("Select Model") {
+                                ForEach(draft.availableModels) { model in
+                                    Button(modelLabel(model)) { draft.customModel = model.id }
                                 }
                             }
-
-                            Button(draft.availableModels.isEmpty ? String(localized: "Fetch Models") : String(localized: "Refresh List")) {
-                                draft.fetchModels()
-                            }
-                            .disabled(!draft.canFetchModels)
                         }
-
-                        modelDiscoveryStatus
+                        Button(draft.availableModels.isEmpty ? String(localized: "Fetch Models") : String(localized: "Refresh List")) {
+                            draft.fetchModels()
+                        }
+                        .disabled(!draft.canFetchModels)
                     }
-                } header: {
-                    Text("Connection")
-                } footer: {
-                    if draft.config.isCustom {
-                        Text("Supports a base URL or full endpoint. The model must support Structured Outputs.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(CaptionsView.meta)
-                    }
-                }
-
-                SwiftUI.Section {
-                    TextField("Model context window (tokens)", value: $draft.contextBudget, format: .number)
-                    if draft.contextBudget < 16_384 || draft.contextBudget > 2_000_000 {
-                        Text("Enter a context window from 16,384 to 2,000,000 tokens.").font(.caption).foregroundStyle(.red)
-                    }
-                    Text("Use your model’s token limit; for example, 1,000,000 for a 1M model.")
+                    modelDiscoveryStatus
+                    Text("Supports a base URL or full endpoint. The model must support Structured Outputs.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                SwiftUI.Section {
-                    HStack(spacing: 10) {
-                        Button("Test Connection") { draft.testConnection() }
-                            .disabled(!draft.isEnabled || !draft.isConfigured || draft.testState == .testing)
-                        testStatus
-                    }
+                TextField("Model context window (tokens)", text: $draft.contextBudgetText)
+                    .focused($focusedField, equals: .context)
+                if !draft.isContextBudgetValid {
+                    Text("Enter a context window from 16,384 to 2,000,000 tokens.")
+                        .font(.caption).foregroundStyle(.red)
                 }
-            }
-            .formStyle(.grouped)
+                Text("Use your model’s token limit; for example, 1,000,000 for a 1M model.")
+                    .font(.caption).foregroundStyle(.secondary)
 
-            // Bottom action bar: draft is only applied on Save.
-            Divider()
-            HStack(spacing: 10) {
-                if draft.isDirty {
-                    Text("Unsaved changes")
-                        .font(.system(size: 12))
-                        .foregroundStyle(CaptionsView.meta)
+                HStack(spacing: 10) {
+                    Button("Test Connection") { draft.testConnection() }
+                        .disabled(!draft.isEnabled || !draft.isConfigured || draft.testState == .testing)
+                    testStatus
                 }
-                Spacer()
-                Button("Cancel") { draft.revert(); dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                Button("Save") { draft.save(); dismiss() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!draft.isDirty || draft.contextBudget < 16_384 || draft.contextBudget > 2_000_000)
+
+                HStack(spacing: 10) {
+                    if draft.isDirty {
+                        Text("Unsaved changes").foregroundStyle(.secondary)
+                    } else {
+                        Text("No unsaved changes").foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button("Revert") { draft.revert() }
+                        .disabled(!draft.isDirty)
+                        .accessibilityIdentifier("ai.revert")
+                    Button("Save Changes") { draft.save() }
+                        .disabled(!draft.canSave)
+                        .accessibilityIdentifier("ai.save")
+                }
+            } header: {
+                Text("Connection")
+            } footer: {
+                Text("Connection changes apply only when saved.")
             }
-            .padding(12)
         }
+        .formStyle(.grouped)
+        .onSubmit { focusedField = nil }
         .onDisappear { draft.cancelRequests() }
     }
 
@@ -111,7 +102,8 @@ struct AISettingsView: View {
                 Text("Testing…").font(.system(size: 12)).foregroundStyle(CaptionsView.muted)
             }
         case .ok:
-            Label("Connected", systemImage: "checkmark.circle.fill")
+            Label(draft.isDirty ? String(localized: "Connection works · not saved") : String(localized: "Connected"),
+                  systemImage: "checkmark.circle.fill")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.green)
         case .failed(let msg):

@@ -26,7 +26,7 @@ final class AISettingsDraft {
     var apiKey: String { didSet { if oldValue != apiKey { connectionDetailsChanged() } } }
     var customAPIAddress: String { didSet { if oldValue != customAPIAddress { connectionDetailsChanged() } } }
     var customModel: String { didSet { if oldValue != customModel { cancelConnectionTest() } } }
-    var contextBudget: Int
+    var contextBudgetText: String
     private(set) var availableModels: [LLMModel] = []
     private(set) var testState: TestState = .idle
     private(set) var modelDiscoveryState: ModelDiscoveryState = .idle
@@ -52,7 +52,7 @@ final class AISettingsDraft {
         apiKey = settings.apiKey
         customAPIAddress = settings.customAPIAddress
         customModel = settings.customModel
-        contextBudget = settings.insightContextTokenBudget
+        contextBudgetText = String(settings.insightContextTokenBudget)
     }
 
     var isDirty: Bool {
@@ -61,7 +61,22 @@ final class AISettingsDraft {
             || contextBudget != settings.insightContextTokenBudget
     }
 
+    // Retain incomplete input instead of silently saving the last parseable value.
+    var contextBudget: Int? {
+        let text = contextBudgetText.trimmed
+        guard text.wholeMatch(of: /(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)/) != nil else { return nil }
+        return Int(text.replacingOccurrences(of: ",", with: ""))
+    }
+
+    var isContextBudgetValid: Bool {
+        guard let contextBudget else { return false }
+        return (16_384...2_000_000).contains(contextBudget)
+    }
+
+    var canSave: Bool { isDirty && isContextBudgetValid }
+
     func save() {
+        guard canSave, let contextBudget else { return }
         settings.selectedProviderID = providerID
         settings.customAPIAddress = customAPIAddress
         settings.customModel = customModel
@@ -75,7 +90,7 @@ final class AISettingsDraft {
         apiKey = settings.apiKey
         customAPIAddress = settings.customAPIAddress
         customModel = settings.customModel
-        contextBudget = settings.insightContextTokenBudget
+        contextBudgetText = String(settings.insightContextTokenBudget)
         connectionDetailsChanged()
     }
 

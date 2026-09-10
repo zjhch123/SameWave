@@ -3,6 +3,55 @@ import XCTest
 
 @MainActor
 final class AISettingsDraftTests: XCTestCase {
+    func testVisibleInvalidContextPreventsEveryConnectionPreferenceFromSaving() {
+        let settings = AISettings(defaults: Phase2Fixture.defaults(self), initialAPIKey: "test-key")
+        let draft = AISettingsDraft(settings: settings)
+        draft.providerID = "custom"
+        draft.customAPIAddress = "https://example.com/v1"
+        draft.customModel = "pending-model"
+        for text in ["", " ", "16384x", "16384.5", "16,,384", "1e6", "16383", "2000001",
+                     "999999999999999999999999"] {
+            draft.contextBudgetText = text
+            XCTAssertTrue(draft.isDirty, text)
+            XCTAssertFalse(draft.canSave, text)
+            draft.save()
+            XCTAssertEqual(settings.selectedProviderID, LLMProviderConfig.qwen.id, text)
+            XCTAssertEqual(settings.customAPIAddress, "", text)
+            XCTAssertEqual(settings.customModel, "", text)
+            XCTAssertEqual(settings.insightContextTokenBudget, AISettings.defaultContextTokenBudget, text)
+            XCTAssertEqual(draft.contextBudgetText, text)
+        }
+        draft.isEnabled = false
+        XCTAssertFalse(settings.isEnabled, "Invalid connection input must not block immediate shutdown")
+        draft.revert()
+        XCTAssertFalse(draft.isDirty)
+        XCTAssertFalse(settings.isEnabled)
+    }
+
+    func testSavingConnectionWhileDisabledCommitsOnlyExplicitValidDraft() {
+        let defaults = Phase2Fixture.defaults(self)
+        let settings = AISettings(defaults: defaults, initialAPIKey: "test-key")
+        let draft = AISettingsDraft(settings: settings)
+        draft.isEnabled = false
+        XCTAssertFalse(draft.isDirty, "The immediate switch never needs a connection save")
+        draft.providerID = "custom"
+        draft.customAPIAddress = "https://example.com/v1"
+        draft.customModel = "saved-model"
+        for (text, expected) in [("16,384", 16_384), ("2000000", 2_000_000), (" 64,000 ", 64_000)] {
+            draft.contextBudgetText = text
+            XCTAssertTrue(draft.canSave)
+            draft.save()
+            XCTAssertFalse(draft.isDirty)
+            XCTAssertFalse(draft.canSave)
+            XCTAssertFalse(settings.isEnabled)
+            let reopened = AISettings(defaults: defaults, initialAPIKey: "test-key")
+            XCTAssertEqual(reopened.selectedProviderID, "custom")
+            XCTAssertEqual(reopened.customAPIAddress, "https://example.com/v1")
+            XCTAssertEqual(reopened.customModel, "saved-model")
+            XCTAssertEqual(reopened.insightContextTokenBudget, expected)
+        }
+    }
+
     func testDisablingBeforeScheduledChecksStartMakesNoRequests() async throws {
         let draft = makeDraft()
         let provider = HeldSettingsProvider()
@@ -18,6 +67,35 @@ final class AISettingsDraftTests: XCTestCase {
         XCTAssertEqual(lists, 0)
         XCTAssertEqual(draft.testState, .idle)
         XCTAssertEqual(draft.modelDiscoveryState, .idle)
+    }
+
+    func testConnectionChecksNeverSaveAndLocalActionsRejectLateReplies() async throws {
+        let settings = AISettings(defaults: Phase2Fixture.defaults(self), initialAPIKey: "test-key")
+        let draft = AISettingsDraft(settings: settings)
+        let provider = HeldSettingsProvider()
+        addTeardownBlock { await provider.releaseAll() }
+        draft.customModel = "first-model"
+        draft.testConnection(using: provider)
+        try await Phase2Fixture.waitUntil { await provider.count == 1 }
+        await provider.complete(0)
+        try await Phase2Fixture.waitUntil { draft.testState == .ok }
+        XCTAssertTrue(draft.isDirty)
+        XCTAssertEqual(settings.customModel, "")
+        draft.testConnection(using: provider)
+        try await Phase2Fixture.waitUntil { await provider.count == 2 }
+        draft.save()
+        await provider.complete(1)
+        await Task.yield()
+        XCTAssertEqual(draft.testState, .idle)
+        XCTAssertEqual(settings.customModel, "first-model")
+        draft.customModel = "second-model"
+        draft.testConnection(using: provider)
+        try await Phase2Fixture.waitUntil { await provider.count == 3 }
+        draft.revert()
+        await provider.complete(2)
+        await Task.yield()
+        XCTAssertEqual(draft.testState, .idle)
+        XCTAssertEqual(draft.customModel, "first-model")
     }
 
     func testMasterSwitchCancelsAndBlocksDraftRequestsWithoutLosingEdits() async throws {

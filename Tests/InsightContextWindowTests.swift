@@ -10,7 +10,7 @@ final class InsightContextWindowTests: XCTestCase {
         settings.insightContextTokenBudget = 65_536
         XCTAssertEqual(AISettings(defaults: defaults).insightContextTokenBudget, 65_536)
         let draft = AISettingsDraft(settings: settings)
-        draft.contextBudget = 128_000
+        draft.contextBudgetText = "128,000"
         XCTAssertEqual(settings.insightContextTokenBudget, 65_536)
         draft.revert()
         XCTAssertEqual(draft.contextBudget, 65_536)
@@ -47,7 +47,7 @@ final class InsightContextWindowTests: XCTestCase {
         XCTAssertEqual(rejectedRequestCount, 0)
 
         let draft = AISettingsDraft(settings: settings)
-        draft.contextBudget = 1_000_000
+        draft.contextBudgetText = "1,000,000"
         generate()
         let unsavedRequestCount = await provider.count
         XCTAssertEqual(unsavedRequestCount, 0)
@@ -61,7 +61,7 @@ final class InsightContextWindowTests: XCTestCase {
         XCTAssertEqual(input.vocabulary, vocabulary)
 
         // Saving a smaller window cannot retroactively change an active request.
-        draft.contextBudget = 32_768
+        draft.contextBudgetText = "32,768"
         draft.save()
         try await provider.succeed(0)
         try await Phase2Fixture.waitUntil { record.insightSnapshots.count == 1 }

@@ -156,9 +156,9 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`HistoryDetailView.swift`](../Sources/History/HistoryDetailView.swift): saved transcript lines.
 - [`InsightResultCard.swift`](../Sources/Insights/InsightResultCard.swift): concise results with independent reading state, history, and local save retry. [`MeetingSummaryCards.swift`](../Sources/Insights/MeetingSummaryCards.swift) renders the expanded named sections.
 - [`MeetingPreparationView.swift`](../Sources/Meeting/MeetingPreparationView.swift): four preparation cards and retained-result archive. `MeetingContextView.swift` owns attachment controls; `MeetingVocabularyView.swift` hosts the shared vocabulary editor; `InsightDefinitionEditor.swift` owns definition edits.
-- [`SettingsView.swift`](../Sources/App/SettingsView.swift): General, AI Services, and Vocabulary tabs with native sheet routing over the current main/preparation surface; AI configuration actions select AI Services directly.
-- [`GeneralSettingsView.swift`](../Sources/App/GeneralSettingsView.swift): language picker, automatic-save/reopen guidance, and Done. [`AppLanguageSettings.swift`](../Sources/App/AppLanguageSettings.swift) owns the native per-app language preference.
-- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): renders the immediate AI master switch and the connection draft with discovery, testing, Save, and Cancel actions.
+- [`SettingsView.swift`](../Sources/App/SettingsView.swift): General, AI Services, and Vocabulary tabs with native sheet routing over the current main/preparation surface; AI configuration actions select AI Services directly. One shared Done footer dismisses every tab without saving or discarding drafts; a pending-connection link on General and Vocabulary returns to AI Services.
+- [`GeneralSettingsView.swift`](../Sources/App/GeneralSettingsView.swift): language picker and automatic-save/reopen guidance. [`AppLanguageSettings.swift`](../Sources/App/AppLanguageSettings.swift) owns the native per-app language preference.
+- [`AISettingsView.swift`](../Sources/AI/AISettingsView.swift): renders the immediate AI master switch and the connection draft with discovery, testing, and scoped Save Changes/Revert actions that leave Settings open.
 - [`TrafficLightConfigurator.swift`](../Sources/App/TrafficLightConfigurator.swift): macOS window button positioning after hiding the title bar.
 
 ### 5.7 Resources
