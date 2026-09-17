@@ -49,6 +49,7 @@ final class CaptureCoordinator {
         didSet { persistSelection() }
     }
     private var autosaveTask: Task<Void, Never>?
+    private var captionCommitTask: Task<Void, Never>?
     var activeRecordID: UUID? { activeRecord?.id }
     var workspaceRecord: MeetingRecord? { selectedHistoryRecord ?? activeRecord }
     var globalVocabulary: [String] { speechVocabularySettings.phrases }
@@ -78,7 +79,7 @@ final class CaptureCoordinator {
         }
         translation.onFailed = { [weak self] request in
             guard let self, request.sessionID == self.sessionID else { return }
-            self.store.failTranslation(id: request.sectionId, generation: request.generation)
+            guard self.store.failTranslation(id: request.sectionId, generation: request.generation) else { return }
             self.statusMessage = String(localized: "Translation is temporarily unavailable. Source text has been kept.")
             self.persistTranslationIfPaused()
         }
@@ -567,6 +568,22 @@ final class CaptureCoordinator {
             if languagePair.needsTranslation { scheduleTranslation(id: id) }
             else { store.setNativeCaption(id: id) }
         }
+        scheduleDraftCommit()
+    }
+
+    private func scheduleDraftCommit() {
+        captionCommitTask?.cancel()
+        captionCommitTask = nil
+        guard let deadline = store.nextDraftCommitDeadline else { return }
+        let expectedSessionID = sessionID
+        captionCommitTask = Task { @MainActor [weak self] in
+            do { try await ContinuousClock().sleep(until: deadline) }
+            catch is CancellationError { return }
+            catch { preconditionFailure("Caption clock failed: \(error)") }
+            guard let self, self.sessionID == expectedSessionID else { return }
+            let ready = self.store.commitReadyDrafts()
+            self.updateCaptions(ready)
+        }
     }
 
     private func sealTurn(_ speaker: Speaker) {
@@ -584,24 +601,20 @@ final class CaptureCoordinator {
             translation.cancel(sectionId: id)
             return
         }
-        let target = section.sourceText
-        let context = section.priorContext.joined(separator: " ").trimmed
-        let hasContext = !context.isEmpty
-        let source = hasContext ? context + " ||| " + target : target
         guard let generation = store.beginTranslation(id: id) else { return }
         translation.enqueue(
             sessionID: sessionID,
             generation: generation,
             sectionId: id,
-            source: source,
-            target: target,
-            hasContext: hasContext
+            source: section.sourceText
         )
     }
 
     // MARK: - Persistence and state helpers
 
     private func beginFreshSession() {
+        captionCommitTask?.cancel()
+        captionCommitTask = nil
         translation.cancelPending()
         translation.restart()
         sessionID = UUID()

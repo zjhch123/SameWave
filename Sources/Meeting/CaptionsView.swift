@@ -28,23 +28,17 @@ struct CaptionsView: View {
     /// HH:mm formatter for the per-line spoken time.
     static func timeString(_ date: Date) -> String { DateFormat.clock.string(from: date) }
 
-    /// Cheap change signal so the scroll view knows to re-pin to the bottom.
-    private var scrollSignal: String {
-        store.sections.suffix(2).map { section in
-            "\(section.id)|\(section.sourceText)|\(section.targetText)|\(translationSignal(section.translationState))"
-        }.joined(separator: "\n")
-    }
+    @State private var followsLatestCaption = true
+    @State private var isUserScrolling = false
+    @State private var pendingFollow = true
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
 
-    private func translationSignal(_ state: TranslationState) -> Int {
-        switch state {
-        case .pending: 0
-        case .translating: 1
-        case .done: 2
-        case .failed: 3
-        }
+    private struct ScrollMetrics: Equatable {
+        let contentHeight: CGFloat
+        let viewportHeight: CGFloat
+        let visibleBottom: CGFloat
+        var isNearBottom: Bool { contentHeight - visibleBottom <= 32 }
     }
-
-    private static let bottomAnchor = "captions.bottom"
 
     var body: some View {
         // Empty stage → a truly centered placeholder (not pinned inside the scroll
@@ -59,31 +53,45 @@ struct CaptionsView: View {
     }
 
     private var transcriptScroll: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 32) {
-                    ForEach(store.sections) { section in
-                        transcriptBlock(section)
-                    }
-                    Color.clear.frame(height: 1).id(Self.bottomAnchor)
+        ScrollView(.vertical, showsIndicators: true) {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ForEach(store.paragraphLayout.paragraphs) { paragraph in
+                    CaptionParagraphRow(sections: paragraph.sectionIDs.compactMap { store.section(id: $0) },
+                                        hideSourceEcho: hideSourceEcho)
                 }
-                .frame(maxWidth: 800)
-                .frame(maxWidth: .infinity)               // center the 800pt column
-                .padding(.horizontal, 40)
-                .padding(.top, 24)
-                .padding(.bottom, 16)                     // the dock occupies its own layout row
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Self.bg)
-            .onChange(of: scrollSignal) { _, _ in
-                // NB: a plain scrollTo, NOT withAnimation. withAnimation opens a
-                // transaction that captures EVERY view change in the same render
-                // pass — including the active section's text refining — and
-                // cross-dissolves it. That transaction was the flicker. A direct
-                // scrollTo keeps the feed pinned to the bottom without animating text.
-                proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+            .frame(maxWidth: 800)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 40)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Self.bg)
+        .scrollPosition($scrollPosition)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .onScrollPhaseChange { _, phase in
+            isUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            if isUserScrolling { pendingFollow = false }
+        }
+        .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
+            ScrollMetrics(contentHeight: geometry.contentSize.height,
+                          viewportHeight: geometry.containerSize.height,
+                          visibleBottom: geometry.visibleRect.maxY)
+        } action: { old, new in
+            if isUserScrolling {
+                followsLatestCaption = new.isNearBottom
+            } else if old.contentHeight != new.contentHeight || old.viewportHeight != new.viewportHeight {
+                if followsLatestCaption {
+                    pendingFollow = true
+                    scrollPosition.scrollTo(edge: .bottom)
+                }
+            } else if pendingFollow {
+                if new.isNearBottom { pendingFollow = false }
+                else { scrollPosition.scrollTo(edge: .bottom) }
+            } else {
+                followsLatestCaption = new.isNearBottom
             }
-            .onAppear { proxy.scrollTo(Self.bottomAnchor, anchor: .bottom) }
         }
     }
 
@@ -107,57 +115,93 @@ struct CaptionsView: View {
         }
     }
 
-    // MARK: - One section
+}
 
-    @ViewBuilder
-    private func transcriptBlock(_ section: Section) -> some View {
-        let mine = (section.speaker == .mine)
+struct CaptionParagraphRow: View {
+    let sections: [Section]
+    let hideSourceEcho: Bool
+
+    private var source: String { TranscriptText.join(sections.map(\.sourceText)) }
+
+    private func primaryText(for section: Section) -> String {
         let target = section.targetText.trimmed
-        let source = section.sourceText
-        let failed = section.translationState == .failed
-        let primary = failed || target.isEmpty ? source : target
+        return hideSourceEcho || section.translationState == .failed || target.isEmpty
+            ? section.sourceText : target
+    }
+
+    private var primary: AttributedString {
+        var result = AttributedString()
+        var previous = ""
+        for section in sections {
+            let text = primaryText(for: section)
+            guard !text.isEmpty else { continue }
+            var span = AttributedString(TranscriptText.separator(between: previous, and: text) + text)
+            span.foregroundColor = section.contentState == .open ? CaptionsView.muted : CaptionsView.fg
+            result.append(span)
+            previous = text
+        }
+        return result
+    }
+
+    var body: some View {
+        let mine = sections.first?.speaker == .mine
+        let failed = sections.contains { $0.translationState == .failed }
+        let showsSource = sections.contains { primaryText(for: $0) != $0.sourceText }
         VStack(alignment: .leading, spacing: 6) {
-            // Speaker label + spoken time + translation status (UI-only).
             HStack(spacing: 8) {
                 Text(mine ? String(localized: "You") : String(localized: "Speaker"))
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(0.5)
-                    .foregroundStyle(mine ? Self.accent : Self.meta)
-                Text(Self.timeString(section.startedAt))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Self.meta.opacity(0.7))
+                    .foregroundStyle(mine ? CaptionsView.accent : CaptionsView.meta)
+                if let first = sections.first {
+                    Text(CaptionsView.timeString(first.startedAt))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(CaptionsView.meta.opacity(0.7))
+                }
                 if failed {
                     Text("Translation failed · Showing source text")
                         .font(.system(size: 11))
-                        .foregroundStyle(Self.danger)
+                        .foregroundStyle(CaptionsView.danger)
                 }
             }
 
-            // Show source immediately until the first translation is ready.
             Text(primary)
                 .font(.system(size: 25, weight: .medium))
                 .tracking(-0.2)
-                .foregroundStyle(Self.fg)
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(CaptionHeightReservation())
 
-            // Source text = small muted secondary line. Never shown in same-language mode
-            // (it would duplicate the primary), nor when it's identical to the target.
-            if !failed && !hideSourceEcho && !source.isEmpty && source != primary {
+            if !hideSourceEcho && !source.isEmpty {
                 Text(source)
                     .font(.system(size: 14))
-                    .foregroundStyle(Self.muted)
+                    .foregroundStyle(CaptionsView.muted)
                     .lineSpacing(2)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(showsSource ? 1 : 0)
+                    .accessibilityHidden(!showsSource)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Hard-disable any ambient/inherited animation on this block: text updates
-        // (translation refining in place) must snap, never cross-dissolve. This is
-        // the belt to the scroll's suspenders — even if some other view change opens
-        // an animation transaction, the transcript text stays flicker-free.
+        .modifier(CaptionHeightReservation())
         .transaction { $0.animation = nil }
+    }
+}
+
+private struct CaptionHeightReservation: ViewModifier {
+    @State private var reservedHeight: CGFloat = 0
+    @State private var measuredWidth: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content.fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                if abs(size.width - measuredWidth) > 1 {
+                    measuredWidth = size.width
+                    reservedHeight = size.height
+                } else { reservedHeight = max(reservedHeight, size.height) }
+            }
+            .frame(minHeight: reservedHeight, alignment: .topLeading)
     }
 }

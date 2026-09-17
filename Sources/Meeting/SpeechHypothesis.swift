@@ -8,6 +8,8 @@ struct SpeechHypothesis {
         let text: String
         let key: String
         var sectionID: Int?
+        var endsSentence = false
+        var endsClause = false
     }
 
     var words: [Word] = []
@@ -53,11 +55,20 @@ struct SpeechHypothesis {
         let tokenizer = NLTokenizer(unit: .word)
         tokenizer.string = text
         let ranges = tokenizer.tokens(for: text.startIndex..<text.endIndex)
+        let sentences = NLTokenizer(unit: .sentence)
+        sentences.string = text
+        let sentenceEnds = Set(sentences.tokens(for: text.startIndex..<text.endIndex).map(\.upperBound))
         return ranges.enumerated().map { index, range in
             let start = index == 0 ? text.startIndex : range.lowerBound
             let end = index + 1 < ranges.count ? ranges[index + 1].lowerBound : text.endIndex
-            return Word(text: String(text[start..<end]),
-                        key: String(text[range]).lowercased(), sectionID: nil)
+            let punctuation = text[range.upperBound..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = String(text[range]).lowercased()
+            let abbreviation = ["mr", "mrs", "ms", "dr", "prof", "sr", "jr", "vs"].contains(key)
+            return Word(text: String(text[start..<end]), key: key, sectionID: nil,
+                        endsSentence: sentenceEnds.contains(end) && !abbreviation
+                            && !punctuation.contains("...") && !punctuation.contains("…")
+                            && punctuation.contains(where: { ".!?。！？".contains($0) }),
+                        endsClause: punctuation.contains(where: { ",;:，；：".contains($0) }))
         }
     }
 }
