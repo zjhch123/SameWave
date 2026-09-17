@@ -7,7 +7,7 @@ The interface supports English and Simplified Chinese. Open **SameWave → Setti
 ![SameWave with a bilingual conversation and AI insights from a saved meeting](doc/images/samewave-overview.png)
 
 - **Follow the conversation.** Caption system audio and your microphone in speaking order, including overlapping speech.
-- **Translate as you go.** Choose English or Simplified Chinese as source and target, or use the same language for transcription only.
+- **Translate as you go.** See live draft translations before a sentence finishes. Confirm sentence boundaries separately, combine rapid recognition updates, and translate each unit's own text. Sentences and clauses appear together in readable speaker paragraphs, in both live captions and history. Reading earlier captions pauses automatic scrolling. Choose English or Simplified Chinese as source and target, or use the same language for transcription only.
 - **Keep your notes.** Prepare meetings, add vocabulary, pause and resume, and revisit automatically saved transcripts. Export to Markdown when you're done.
 - **Add AI when useful.** Generate custom insights, meeting summaries, and refined transcripts with an optional AI service.
 

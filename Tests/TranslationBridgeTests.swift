@@ -4,6 +4,56 @@ import XCTest
 
 @MainActor
 final class TranslationBridgeTests: XCTestCase {
+    func testDraftCadenceRetainsFastFirstRequestAndUsesTheNewestSnapshot() async throws {
+        let bridge = TranslationBridge()
+        let start = ContinuousClock.now
+        var dispatches: [(ContinuousClock.Instant, Int)] = []
+        let consumer = Task { @MainActor in
+            await bridge.run(prepare: {}, translate: { request in
+                dispatches.append((.now, request.generation))
+                return request.source
+            }, cancel: {})
+        }
+        defer { consumer.cancel() }
+        for generation in 1...10 {
+            enqueue(bridge, section: 0, generation: generation, text: "update \(generation)")
+            try await Task.sleep(for: .milliseconds(70))
+        }
+        let idle = await bridge.waitUntilIdle(timeout: .seconds(2))
+        XCTAssertTrue(idle)
+        let first = try XCTUnwrap(dispatches.first)
+        XCTAssertLessThan(start.duration(to: first.0), .milliseconds(300))
+        XCTAssertLessThanOrEqual(dispatches.count, 3)
+        XCTAssertEqual(dispatches.last?.1, 10)
+        for pair in zip(dispatches, dispatches.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(pair.0.0.duration(to: pair.1.0), .milliseconds(390))
+        }
+    }
+
+    func testCoalescingWindowDoesNotWaitForContinuousInputToStop() async throws {
+        let bridge = TranslationBridge()
+        var latestGeneration = 0
+        var generationsAtDispatch: [Int] = []
+        let consumer = Task { @MainActor in
+            await bridge.run(prepare: {}, translate: { request in
+                generationsAtDispatch.append(latestGeneration)
+                return request.source
+            }, cancel: {})
+        }
+        defer { consumer.cancel() }
+        for generation in 1...30 {
+            latestGeneration = generation
+            enqueue(bridge, section: 0, generation: generation, text: "update \(generation)")
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let idle = await bridge.waitUntilIdle(timeout: .seconds(1))
+        XCTAssertTrue(idle)
+        let first = try XCTUnwrap(generationsAtDispatch.first)
+        XCTAssertGreaterThan(first, 1)
+        XCTAssertLessThan(first, 30)
+        XCTAssertLessThan(generationsAtDispatch.count, 30)
+    }
+
     func testCoalescesPerSectionAndPreservesCrossSectionOrder() async throws {
         let bridge = TranslationBridge()
         let probe = TranslationProbe()
@@ -173,7 +223,7 @@ final class TranslationBridgeTests: XCTestCase {
 
     private func enqueue(_ bridge: TranslationBridge, section: Int, generation: Int, text: String) {
         bridge.enqueue(sessionID: UUID(), generation: generation, sectionId: section,
-                       source: text, target: text, hasContext: false)
+                       source: text)
     }
 
     private func run(_ bridge: TranslationBridge, probe: TranslationProbe,

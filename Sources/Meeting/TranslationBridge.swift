@@ -12,8 +12,6 @@ final class TranslationBridge {
         let generation: Int
         let sectionId: Int
         let source: String
-        let target: String
-        let hasContext: Bool
     }
 
     var onTranslated: ((Request, String) -> Void)?
@@ -22,6 +20,8 @@ final class TranslationBridge {
 
     private var pending: [Int: Request] = [:]
     private var order: [Int] = []
+    private var readyAt: [Int: ContinuousClock.Instant] = [:]
+    private var lastDispatch: [Int: ContinuousClock.Instant] = [:]
     private var inFlight: Request?
     private var consumerID: UUID?
     private var unavailable = false
@@ -31,27 +31,32 @@ final class TranslationBridge {
 
     var isIdle: Bool { pending.isEmpty && inFlight == nil }
 
-    func enqueue(sessionID: UUID, generation: Int, sectionId: Int, source: String,
-                 target: String, hasContext: Bool) {
+    func enqueue(sessionID: UUID, generation: Int, sectionId: Int, source: String) {
         let request = Request(sessionID: sessionID, generation: generation, sectionId: sectionId,
-                              source: source, target: target, hasContext: hasContext)
+                              source: source)
         guard !unavailable else {
             onFailed?(request)
             return
         }
-        if pending[sectionId] == nil { order.append(sectionId) }
+        if pending[sectionId] == nil {
+            order.append(sectionId)
+            let coalesced = ContinuousClock.now.advanced(by: .milliseconds(60))
+            readyAt[sectionId] = max(coalesced, lastDispatch[sectionId]?.advanced(by: .milliseconds(400)) ?? coalesced)
+        }
         pending[sectionId] = request
         signal?.yield()
     }
 
     func cancel(sectionId: Int) {
         pending.removeValue(forKey: sectionId)
+        readyAt.removeValue(forKey: sectionId)
         order.removeAll { $0 == sectionId }
         resumeIdleWaitersIfNeeded()
     }
 
     func cancelPending() {
         pending.removeAll()
+        readyAt.removeAll()
         order.removeAll()
         resumeIdleWaitersIfNeeded()
     }
@@ -85,7 +90,13 @@ final class TranslationBridge {
                 try Task.checkCancellation()
                 for await _ in signals.stream {
                     guard !Task.isCancelled, consumerID == id else { return }
-                    while consumerID == id, !Task.isCancelled, let request = takeNext() {
+                    while consumerID == id, !Task.isCancelled, let sectionID = order.first {
+                        if let deadline = readyAt[sectionID] {
+                            try await ContinuousClock().sleep(until: deadline)
+                        }
+                        guard consumerID == id, !Task.isCancelled else { return }
+                        guard order.first == sectionID else { continue }
+                        guard let request = takeNext() else { continue }
                         let deadline = Task { @MainActor [weak self] in
                             do { try await Task.sleep(for: requestTimeout) }
                             catch { return }
@@ -119,6 +130,8 @@ final class TranslationBridge {
     private func takeNext() -> Request? {
         guard let sectionId = order.first else { return nil }
         order.removeFirst()
+        readyAt.removeValue(forKey: sectionId)
+        lastDispatch[sectionId] = .now
         inFlight = pending.removeValue(forKey: sectionId)
         return inFlight
     }
@@ -134,6 +147,8 @@ final class TranslationBridge {
         let failed = (inFlight.map { [$0] } ?? []) + order.compactMap { pending[$0] }
         inFlight = nil
         pending.removeAll()
+        readyAt.removeAll()
+        lastDispatch.removeAll()
         order.removeAll()
         failed.forEach { onFailed?($0) }
         cancel?()
