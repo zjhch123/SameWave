@@ -24,13 +24,17 @@ Interim English Speech results can have only whole-hypothesis timing. Word align
 
 ## 3. Caption presentation and independent translation
 
-- Never show Translating text or a translation spinner. Before the first translation returns, show source as the primary caption once. When available, show translated text above distinct secondary source.
+- In the full workspace, never show Translating text or a translation spinner. Before the first translation returns, show source as the primary caption once. When available, show translated text above distinct secondary source.
 - Source segmentation never waits for translation. Open and sealed Sections can both have pending or completed translation.
 - Translate changed source snapshots only. Identical interims, finals, and sealing must not invalidate useful work. Corrections spanning several Sections schedule all affected fragments.
 - Display each completed result that advances the displayed generation, even when newer source is queued. Never replace a newer displayed result with an older completion.
 - Mark the internal state done only when the latest requested snapshot completes. A later source update returns the internal state to translating without a visible busy label.
-- A failed or empty translation shows source with an explicit failure label. Restored missing translations do not pretend work is running.
+- In the full workspace, a failed or empty translation shows source with an explicit failure label. Restored missing translations do not pretend work is running.
 - Same-language captions bypass Translation and suppress duplicate source text.
+
+Simple Mode shows the latest two nonempty Sections in their existing order, with unobtrusive speaker identity and target text only. Before the first target result, show Translating; on failure, show Translation unavailable. Keep any completed target text readable while updates are pending or failing. Never substitute source text in a different-language Simple Mode session. Same-language sessions show the current recognized source directly. Long text remains scrollable. New translations follow the bottom until the user scrolls upward or presses an upward reading key; then retain the displayed snapshot until Latest subtitles resumes following. Session and translation ownership survive every mode switch; the complete conversation remains available in the full workspace and history.
+
+The floating panel has no traffic-light buttons or language selectors. Its meeting actions are microphone on/off, pause/resume, end, and return to the full window. Header and menu entries exist only while a session is active, including pauses and resource transitions. Preparation, empty workspaces, and ended history have no entry or mode shortcut. Successful End or startup failure returns to the retained full window; a failed final save keeps the paused session and panel available for retry. Capture actions are disabled during resource transitions; languages and new meetings are configured in the full window. Background opacity ranges from 0% to 100%, defaults to 85%, and persists as a presentation preference. Changing it leaves text and control opacity unchanged.
 
 ## 4. Scheduling and lifecycle
 

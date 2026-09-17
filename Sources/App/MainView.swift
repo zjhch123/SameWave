@@ -2,11 +2,28 @@ import SwiftUI
 
 struct MainView: View {
     @Bindable var coordinator: CaptureCoordinator
+    let presentation: MainWindowPresentation
 
     @State private var sidebarOpen = true
     @AppStorage("inspectorWidth") private var inspectorWidth: Double = 280
 
     var body: some View {
+        fullWorkspace
+        .frame(minWidth: 940, minHeight: 480)
+        .background(MainWindowConfigurator(presentation: presentation))
+        .onChange(of: coordinator.isRunning) { _, isRunning in
+            if !isRunning { presentation.isSimpleMode = false }
+        }
+        .ignoresSafeArea(.container, edges: .top)
+        .modifier(
+            TranslationPump(
+                bridge: coordinator.translation,
+                languagePair: coordinator.languagePair
+            )
+        )
+    }
+
+    private var fullWorkspace: some View {
         HStack(spacing: 0) {
             if sidebarOpen {
                 MeetingSidebar(coordinator: coordinator, selectedRecord: $coordinator.selectedHistoryRecord)
@@ -16,6 +33,7 @@ struct MainView: View {
 
             MeetingStage(
                 coordinator: coordinator,
+                presentation: presentation,
                 sidebarOpen: $sidebarOpen,
                 selectedRecord: $coordinator.selectedHistoryRecord
             )
@@ -28,12 +46,6 @@ struct MainView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CaptionsView.bg)
         .ignoresSafeArea(.container, edges: .top)
-        .modifier(
-            TranslationPump(
-                bridge: coordinator.translation,
-                languagePair: coordinator.languagePair
-            )
-        )
         .animation(.easeOut(duration: 0.22), value: sidebarOpen)
     }
 }

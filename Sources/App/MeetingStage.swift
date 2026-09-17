@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeetingStage: View {
     let coordinator: CaptureCoordinator
+    let presentation: MainWindowPresentation
     @Binding var sidebarOpen: Bool
     @Binding var selectedRecord: MeetingRecord?
     @State private var showRefined = true
@@ -11,6 +12,7 @@ struct MeetingStage: View {
         VStack(spacing: 0) {
             StageHeader(
                 coordinator: coordinator,
+                presentation: presentation,
                 sidebarOpen: $sidebarOpen,
                 selectedRecord: $selectedRecord,
                 showRefined: $showRefined
@@ -65,6 +67,7 @@ struct MeetingStage: View {
 
 private struct StageHeader: View {
     let coordinator: CaptureCoordinator
+    let presentation: MainWindowPresentation
     @Binding var sidebarOpen: Bool
     @Binding var selectedRecord: MeetingRecord?
     @Binding var showRefined: Bool
@@ -78,6 +81,17 @@ private struct StageHeader: View {
             iconButton("sidebar.left", help: String(localized: "Toggle Sidebar")) { sidebarOpen.toggle() }
             if let record = coordinator.workspaceRecord, record.meetingStatus != .draft {
                 iconButton("slider.horizontal.3", help: String(localized: "Meeting Preparation")) { showingPreparation = true }
+            }
+            if presentation.canEnterSimpleMode {
+                Button { presentation.isSimpleMode = true } label: {
+                    Label("Simple Mode", systemImage: "captions.bubble")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .fixedSize()
+                .padding(.horizontal, 6)
+                .help("Simple Mode")
+                .accessibilityIdentifier("window.simpleMode")
             }
 
             if let record = selectedRecord {
@@ -239,6 +253,7 @@ private struct StageHeader: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -250,12 +265,12 @@ private struct MeetingControlDock: View {
             HStack(spacing: 6) {
                 languages
                 divider
-                captureControls
+                CaptureControls(coordinator: coordinator)
             }
             .fixedSize()
             VStack(spacing: 6) {
                 languages
-                captureControls
+                CaptureControls(coordinator: coordinator)
             }
             .fixedSize()
         }
@@ -273,37 +288,63 @@ private struct MeetingControlDock: View {
             .disabled(coordinator.isRunning)
     }
 
-    private var captureControls: some View {
+    private var divider: some View {
+        Rectangle().fill(CaptionsView.borderSoft)
+            .frame(width: 1, height: 16)
+            .padding(.horizontal, 2)
+    }
+}
+
+struct CaptureControls: View {
+    let coordinator: CaptureCoordinator
+    var compact = false
+
+    var body: some View {
         HStack(spacing: 6) {
             Button {
                 Task { await coordinator.setCaptionMyMic(!coordinator.captionMyMic) }
             } label: {
                 Image(systemName: coordinator.captionMyMic ? "mic.fill" : "mic.slash.fill")
                     .font(.system(size: 15))
-                    .foregroundStyle(coordinator.captionMyMic ? CaptionsView.accent : CaptionsView.muted)
-                    .frame(width: 32, height: 32)
+                    .foregroundStyle(coordinator.captionMyMic ? CaptionsView.accent : (compact ? .secondary : CaptionsView.muted))
+                    .frame(width: compact ? 26 : 32, height: compact ? 26 : 32)
             }
             .buttonStyle(.plain)
-            divider
+            .accessibilityLabel(coordinator.captionMyMic ? Text("Turn Microphone Off") : Text("Turn Microphone On"))
+            .help(coordinator.captionMyMic ? Text("Turn Microphone Off") : Text("Turn Microphone On"))
+            .accessibilityIdentifier("capture.microphone")
+            if !compact { divider }
 
-            if coordinator.isRunning {
+            if coordinator.isRunning || compact {
                 Button {
                     Task {
                         if coordinator.isPaused { await coordinator.resume() }
                         else { await coordinator.pause() }
                     }
                 } label: {
-                    Image(systemName: coordinator.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(CaptionsView.accent)
-                        .frame(width: 32, height: 32)
+                    if compact {
+                        Label(coordinator.isPaused ? "Resume" : "Pause", systemImage: coordinator.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 11))
+                            .padding(.horizontal, 6)
+                            .frame(height: 26)
+                            .contentShape(Rectangle())
+                    } else {
+                        Image(systemName: coordinator.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(CaptionsView.accent)
+                            .frame(width: 32, height: 32)
+                    }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(coordinator.isPaused ? Text("Resume") : Text("Pause"))
+                .help(coordinator.isPaused ? Text("Resume") : Text("Pause"))
+                .accessibilityIdentifier("capture.pauseResume")
                 .disabled(!coordinator.sessionState.acceptsCaptureControls)
 
                 primaryButton(icon: "stop.fill", label: String(localized: "End"), color: CaptionsView.fg) {
                     Task { await coordinator.stop() }
                 }
+                .disabled(!coordinator.isRunning)
             } else {
                 primaryButton(icon: "play.fill", label: String(localized: "Start"), color: CaptionsView.accent) {
                     Task { await coordinator.startGlobal() }
@@ -320,15 +361,24 @@ private struct MeetingControlDock: View {
 
     private func primaryButton(icon: String, label: String, color: Color,
                                action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(label, systemImage: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(color))
+        Group {
+            if compact {
+                Button(action: action) { Label(label, systemImage: icon) }
+                    .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+            } else {
+                Button(action: action) {
+                    Label(label, systemImage: icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(color))
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
     }
 }
 

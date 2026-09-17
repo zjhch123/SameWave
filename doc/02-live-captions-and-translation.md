@@ -175,7 +175,8 @@ sequenceDiagram
 
 - Independent source and target menus both use the fixed English labels English and Simplified Chinese, yielding four combinations.
 - Source determines both ASR locales: `en-US` or `zh-CN`. English vocabulary applies only to an English source.
-- Different languages use `TranslationSession` to produce `targetText`, displayed above secondary source text. Until a translation exists, source is the primary caption and is shown once. Pending/updating work has no spinner or Translating text; explicit failures retain their source/failure label.
+- Different languages use `TranslationSession` to produce `targetText`. The full workspace displays it above secondary source text; until a translation exists, source is the primary caption and is shown once. Its pending/updating work has no spinner or Translating text; explicit failures retain their source/failure label.
+- Simple Mode displays only target text for the latest two nonempty Sections in chronological order. A first result that is still pending displays Translating; a failed result displays Translation unavailable. A previously completed translation remains readable during later updates or failure. Same-language mode uses the current source directly. Changing the window presentation retains the same `TranslationPump` attachment and `CaptureCoordinator`; no second consumer, capture pipeline, or transcript store is created.
 - Matching languages create neither a Translation session nor requests. The coordinator sets `targetText = sourceText`; the UI hides duplicate source echo.
 - Both menus are disabled after starting to keep recognizers, translation, and the persisted pair consistent throughout the meeting.
 

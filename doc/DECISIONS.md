@@ -16,6 +16,39 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
+<a id="dec-20260917-002"></a>
+## DEC-20260917-002: Limit Simple Mode to active meetings
+
+- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Scope:** Simple Mode availability and session completion
+- **Replaces:** The preparation and ended-meeting availability in [DEC-20260917-001](#dec-20260917-001). Its retained panel, shared translation ownership, caption projection, reading, geometry, and opacity decisions remain in effect.
+- **Context:** Simple Mode is for following an ongoing meeting. The user requires its entry to disappear during preparation and after the meeting ends.
+- **Decision:** Derive every entry point and the mode-request guard from the shared coordinator's active-session state. Include paused sessions and resource transitions. Hide header, View-menu, and menu-bar entries and remove the mode shortcut while idle. Successful End or startup failure restores the retained full window. A failed final save stays paused and keeps the panel available for retry. Simple Mode renders live session Sections only; ended transcripts are reviewed in the full workspace.
+- **Rejected alternatives:** Hiding only the header would leave menu and shortcut entry paths available. Keeping the panel open after End would create a presentation with no active meeting. Closing on the End button press would leave the panel before final-save success is known. Treating pause as completion would interrupt subtitle reading.
+- **Rationale/tradeoffs:** Coordinator state supplies one availability rule without duplicating the meeting lifecycle. The mounted full workspace observes the transition to idle and restores its existing window. Window presentation remains separate from capture and persistence.
+- **Impact:** Preparation and ended history use the full workspace. Active meetings retain their native panel, capture controls, background opacity, and mode shortcuts. No persistence changes or dependencies are required.
+- **Validation:** Native window tests verify rejection for empty/preparation/history states, paused entry, automatic restoration after End, and completion before delayed attachment. Bilingual rendering verifies header and menu visibility through the lifecycle. Signed desktop checks are recorded in the development guide.
+- **Files:** `Sources/App/MainWindowPresentation.swift`, `Sources/App/MainView.swift`, `Sources/App/MeetingStage.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Meeting/SimpleCaptionsView.swift`, `Tests/MainWindowPresentationTests.swift`, `Tests/MainViewRenderingTests.swift`, `doc/03-session-lifecycle-and-data.md`.
+
+---
+
+<a id="dec-20260917-001"></a>
+## DEC-20260917-001: Present translation-only captions in a retained native panel
+
+- **Date:** 2026-09-17
+- **Status:** Superseded by [DEC-20260917-002](#dec-20260917-002) for session availability and completion; the retained-panel architecture remains in effect.
+- **Scope:** Simple Mode, window lifetime, and caption presentation
+- **Context:** Issue #42 requests a compact view of real-time translations above other applications. The full workspace also owns the live Apple Translation task and users' meeting and reading state.
+- **Decision:** Present a retained, nonactivating floating `NSPanel`, sharing the existing coordinator and caption store. Hide the full window while leaving its view hierarchy and sole `TranslationPump` mounted. Closing the panel or switching modes restores the full window. Use a borderless, resizable panel with a 680×220 default frame, 440×180 minimum, native geometry persistence, microphone/pause/end controls, and semantic light/dark appearance. Languages and meeting preparation stay in the full window. Persist adjustable background opacity separately from opaque text and controls. Project the latest two chronological turns as target text only; same-language sessions use recognized text. Pending and failed first translations have explicit labels, and previous successful target text stays readable. Upward reading freezes the displayed snapshot until Latest subtitles resumes following. Ended records use their saved language and caption order.
+- **Rejected alternatives:** Rebuilding the full workspace on each switch loses view and reading state. Creating a second capture or translation owner introduces competing consumers and duplicated work. Showing source text before translation contradicts the requested target-only presentation. Copying every feature from the reference application would broaden the requested product scope.
+- **Rationale/tradeoffs:** A separate presentation owner preserves native window behavior and the existing meeting lifecycle. The panel stays available across Spaces without raising its level above ordinary floating windows. Keeping both hosts mounted retains their UI state and consumes their normal view memory. Long captions remain accessible by scrolling rather than shrinking or truncating text.
+- **Impact:** Adds header, View-menu, and menu-bar entries plus Command–Shift–T. Capture, language locking, persistence, and AI policy retain their existing owners. No new service, dependency, or data-model migration is required.
+- **Validation:** XCTest covers live and saved projection, missing/progressive/failed translations, same-language interim text, frozen reading, delayed native attachment, retained hosts, minimum panel size, panel close, and unchanged meeting/translation ownership. Bilingual native rendering checks minimum-size controls, long/ended captions, and both appearances; bitmap checks verify background opacity independently of foreground rendering. Final signed-app validation is recorded in the development guide.
+- **Files:** `Sources/App/MainWindowPresentation.swift`, `Sources/App/MainView.swift`, `Sources/App/MeetingStage.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Meeting/SimpleCaptionsView.swift`, `Tests/MainWindowPresentationTests.swift`, `Tests/SimpleCaptionTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
 <a id="dec-20260910-003"></a>
 ## DEC-20260910-003: Copy personal insight defaults when a meeting is created
 

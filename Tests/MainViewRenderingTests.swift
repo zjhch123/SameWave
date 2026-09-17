@@ -7,6 +7,131 @@ import XCTest
 
 @MainActor
 final class MainViewRenderingTests: XCTestCase {
+    func testLocalizedSimpleModeEntryFollowsMeetingLifecycle() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let settings = AISettings(defaults: defaults)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let presentation = MainWindowPresentation(coordinator: coordinator)
+        let workspace = MainView(coordinator: coordinator, presentation: presentation)
+            .modelContainer(history.container).environment(settings)
+            .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
+            .defaultAppStorage(defaults)
+        let menu = SameWaveMenu(presentation: presentation)
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let label = chinese ? "简洁模式" : "Simple Mode"
+        let suffix = chinese ? "zh-Hans" : "en"
+
+        func checkEntry(_ name: String, visible: Bool) async throws {
+            try await render(workspace, size: NSSize(width: 1180, height: 640), name: "simple-entry-\(name)-\(suffix)",
+                expectedLabels: visible ? [label] : [], absentLabels: visible ? [] : [label])
+            try await render(menu, size: NSSize(width: 260, height: 160), name: "simple-menu-\(name)-\(suffix)",
+                expectedLabels: visible ? [label] : [], absentLabels: visible ? [] : [label])
+        }
+
+        try await checkEntry("empty", visible: false)
+        await coordinator.startNewMeeting()
+        try await checkEntry("preparation", visible: false)
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(record, .paused)
+        await coordinator.loadSession(record)
+        try await checkEntry("paused", visible: true)
+        await coordinator.stop()
+        try await checkEntry("ended", visible: false)
+    }
+
+    func testSimpleBackgroundOpacityChangesOnlyBackground() async throws {
+        let defaults = Phase2Fixture.defaults(self)
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        let history = try Phase2Fixture.history()
+        coordinator.history = history
+        let record = try history.createDraft(languagePair: .englishToEnglish)
+        try history.setStatus(record, .paused)
+        await coordinator.loadSession(record)
+        var foregroundAlpha: CGFloat?
+        for opacity in [0.0, 0.5, 1.0] {
+            defaults.set(opacity, forKey: "simpleModeBackgroundOpacity")
+            let host = NSHostingView(rootView: SimpleCaptionsView(coordinator: coordinator, onShowFullWindow: {})
+                .defaultAppStorage(defaults))
+            let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 680, height: 220),
+                styleMask: [.borderless, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.contentView = host
+            defer { window.close() }
+            await Task.yield()
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let background = try XCTUnwrap(bitmap.colorAt(x: 20, y: bitmap.pixelsHigh / 2))
+            XCTAssertEqual(background.alphaComponent, opacity, accuracy: 0.02)
+            var maximumAlpha: CGFloat = 0
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
+                for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
+                    maximumAlpha = max(maximumAlpha, try XCTUnwrap(bitmap.colorAt(x: x, y: y)).alphaComponent)
+                }
+            }
+            if opacity == 0 {
+                foregroundAlpha = maximumAlpha
+                XCTAssertGreaterThan(maximumAlpha, 0.8)
+            } else if opacity < 1 {
+                let expected = try XCTUnwrap(foregroundAlpha) + opacity * (1 - XCTUnwrap(foregroundAlpha))
+                XCTAssertEqual(maximumAlpha, expected, accuracy: 0.02)
+            }
+        }
+    }
+
+    func testLocalizedSimpleModeContentAndControlsAtMinimumSize() async throws {
+        let chinese = Bundle.main.preferredLocalizations.first == "zh-Hans"
+        let suffix = chinese ? "zh-Hans" : "en"
+        let defaults = Phase2Fixture.defaults(self)
+        let history = try Phase2Fixture.history()
+        let coordinator = CaptureCoordinator(speechVocabularySettings: SpeechVocabularySettings(defaults: defaults), defaults: defaults)
+        coordinator.history = history
+        let emptyRecord = try history.createDraft(languagePair: .simplifiedChineseToEnglish)
+        try history.setStatus(emptyRecord, .paused)
+        await coordinator.loadSession(emptyRecord)
+        let view = SimpleCaptionsView(coordinator: coordinator, onShowFullWindow: {})
+            .defaultAppStorage(defaults)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            try await render(view, size: NSSize(width: 440, height: 180), name: "simple-empty-\(suffix)-\(name)",
+                expectedLabels: chinese ? ["简洁模式", "已暂停", "结束"] : ["Simple Mode", "Paused", "End"],
+                absentLabels: ["AI Insights", "New Meeting", "Source Language", "Target Language", "新建会议", "源语言", "目标语言"], appearance: NSAppearance(named: appearance))
+            try await render(SimpleBackgroundOpacityControls(opacity: .constant(0.85)),
+                size: NSSize(width: 260, height: 90), name: "simple-opacity-\(suffix)-\(name)",
+                expectedLabels: [chinese ? "背景不透明度" : "Background Opacity", "85%"], appearance: NSAppearance(named: appearance))
+        }
+
+        let record = try history.createDraft(languagePair: .simplifiedChineseToEnglish)
+        var section = Section(id: 0, speaker: .remote)
+        section.committedSource = ["Hidden original sentence"]
+        section.targetText = "Ready for release."
+        try history.sync(record: record, sections: [section], endedAt: .now, status: .paused)
+        await coordinator.loadSession(record)
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            try await render(view, size: NSSize(width: 440, height: 180), name: "simple-paused-\(suffix)-\(name)",
+                expectedLabels: ["Ready for release.", chinese ? "结束" : "End"],
+                absentLabels: ["Hidden original sentence"], appearance: NSAppearance(named: appearance))
+        }
+
+        coordinator.store.clear()
+        let ids = coordinator.store.updateSource("Hidden original sentence", speaker: .remote, isFinal: false)
+        let id = try XCTUnwrap(ids.first)
+        let generation = try XCTUnwrap(coordinator.store.beginTranslation(id: id))
+        try await render(view, size: NSSize(width: 440, height: 180), name: "simple-pending-\(suffix)",
+            expectedLabels: [chinese ? "正在翻译" : "Translating"], absentLabels: ["Hidden original sentence"])
+        coordinator.store.failTranslation(id: id, generation: generation)
+        try await render(view, size: NSSize(width: 440, height: 180), name: "simple-failed-\(suffix)",
+            expectedLabels: [chinese ? "翻译暂不可用" : "Translation unavailable"], absentLabels: ["Hidden original sentence"])
+
+        coordinator.store.restore(sections: [(id: 0, speaker: .remote, source: "Hidden original sentence",
+            target: String(repeating: "Earlier translated sentences. ", count: 30) + "Latest translated sentence.", startedAt: .now)])
+        try await render(view, size: NSSize(width: 680, height: 220), name: "simple-long-\(suffix)",
+            expectedLabels: ["Latest translated sentence.", chinese ? "结束" : "End"], absentLabels: ["Hidden original sentence"])
+    }
+
     func testLocalizedDefaultInsightsSettingsAndEditor() async throws {
         let defaults = Phase2Fixture.defaults(self)
         let aiSettings = AISettings(defaults: defaults)
@@ -163,7 +288,7 @@ final class MainViewRenderingTests: XCTestCase {
         let record = try history.createDraft(languagePair: .englishToEnglish)
         record.userTitle = "Settings"
         await coordinator.loadSession(record)
-        try await render(MainView(coordinator: coordinator).defaultAppStorage(defaults).environment(settings).environment(navigation)
+        try await render(MainView(coordinator: coordinator, presentation: MainWindowPresentation(coordinator: coordinator)).defaultAppStorage(defaults).environment(settings).environment(navigation)
             .modelContainer(history.container), size: NSSize(width: 940, height: 480), name: "localized-workspace-\(suffix)",
             expectedLabels: chinese ? ["会议准备", "新建会议", "Settings"] : ["Meeting Preparation", "New Meeting", "Settings"])
         navigation.selectedTab = .ai
@@ -231,13 +356,13 @@ final class MainViewRenderingTests: XCTestCase {
         try await Phase2Fixture.waitUntil { await provider.count == 1 }
         XCTAssertEqual(coordinator.backgroundActivity(for: first.id), "Refining transcript")
         XCTAssertNil(coordinator.backgroundActivity(for: second.id))
-        try await render(MainView(coordinator: coordinator)
+        try await render(MainView(coordinator: coordinator, presentation: MainWindowPresentation(coordinator: coordinator))
             .environment(settings)
             .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
             .modelContainer(history.container), size: NSSize(width: 940, height: 480), name: "background-refinement-switch",
             expectedLabels: ["Release Planning", "Design Review", "Review the", "release plan."])
         await coordinator.openHistory(first)
-        try await render(MainView(coordinator: coordinator)
+        try await render(MainView(coordinator: coordinator, presentation: MainWindowPresentation(coordinator: coordinator))
             .environment(settings)
             .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
             .modelContainer(history.container), size: NSSize(width: 1120, height: 760), name: "background-refinement-return",
@@ -343,7 +468,7 @@ final class MainViewRenderingTests: XCTestCase {
             history.context.insert(item)
         }
         try history.save()
-        let host = NSHostingView(rootView: MainView(coordinator: coordinator)
+        let host = NSHostingView(rootView: MainView(coordinator: coordinator, presentation: MainWindowPresentation(coordinator: coordinator))
             .modelContainer(history.container).environment(settings)
             .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults)).defaultAppStorage(defaults))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 760),
@@ -407,7 +532,7 @@ final class MainViewRenderingTests: XCTestCase {
         coordinator.sourceLanguage = .simplifiedChinese
         coordinator.targetLanguage = .simplifiedChinese
         let settings = AISettings(defaults: defaults)
-        let host = NSHostingView(rootView: MainView(coordinator: coordinator)
+        let host = NSHostingView(rootView: MainView(coordinator: coordinator, presentation: MainWindowPresentation(coordinator: coordinator))
             .modelContainer(container)
             .environment(settings)
             .environment(Phase2Fixture.settingsNavigation(settings, defaults: defaults))
