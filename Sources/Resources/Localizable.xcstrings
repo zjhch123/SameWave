@@ -7,18 +7,6 @@
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "背景不透明度" } }
       }
     },
-    "Reading earlier text": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Reading earlier text" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在阅读之前的文本" } }
-      }
-    },
-    "Latest subtitles": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Latest subtitles" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最新字幕" } }
-      }
-    },
     "Simple Mode": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Simple Mode" } },
@@ -53,36 +41,6 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Resume" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续" } }
-      }
-    },
-    "Waiting for speech…": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Waiting for speech…" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "等待语音…" } }
-      }
-    },
-    "Me": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Me" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "我" } }
-      }
-    },
-    "Other party": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Other party" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "对方" } }
-      }
-    },
-    "Translating…": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Translating…" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "正在翻译…" } }
-      }
-    },
-    "Translation unavailable": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Translation unavailable" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "翻译暂不可用" } }
       }
     },
     "": {

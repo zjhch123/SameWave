@@ -16,13 +16,30 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
-<a id="dec-20260917-002"></a>
-## DEC-20260917-002: Limit Simple Mode to active meetings
+<a id="dec-20260917-008"></a>
+## DEC-20260917-008: Share caption presentation between window modes
+
+- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Scope:** Simple Mode content and rendering ownership
+- **Replaces:** The caption projection and reading snapshot in [DEC-20260917-006](#dec-20260917-006). Retained windows and the active-session rule in [DEC-20260917-007](#dec-20260917-007) remain in effect.
+- **Context:** Simple Mode simplifies window controls while preserving the full window's complete conversation and presentation behavior.
+- **Decision:** Render both modes through `CaptionsView` with the same `CaptionStore` and language pair. Share every paragraph, source/target span, Speaker/You label, text style, translation status, height reservation, and scrolling rule. The panel supplies its background opacity and compact controls; capture, translation, and persistence keep their existing owners.
+- **Rejected alternatives:** An independent caption renderer permits source visibility, paragraph membership, labels, and reading behavior to diverge between modes.
+- **Rationale/tradeoffs:** One renderer makes presentation consistency structural. Each retained window keeps its own viewport position while observing the same live data. The shared lazy paragraph list preserves access to the complete conversation.
+- **Impact:** No data migration or new dependency. The shared caption view accepts its background color so the floating panel can adjust background opacity without fading text.
+- **Validation:** Native tests compare complete bilingual paragraph text between both modes and exercise long-conversation scrolling, reading during live updates, and resumed following. Minimum-size rendering covers source/target text, pending/failure states, controls, and both interface languages. Final build and signed-app results are recorded in [development validation](06-development-and-validation.md#simple-mode-validation-issue-42).
+- **Files:** `Sources/Meeting/CaptionsView.swift`, `Sources/Meeting/SimpleCaptionsView.swift`, `Tests/SimpleCaptionTests.swift`, `Tests/MainViewRenderingTests.swift`, and caption/product references.
+
+---
+
+<a id="dec-20260917-007"></a>
+## DEC-20260917-007: Limit Simple Mode to active meetings
 
 - **Date:** 2026-09-17
 - **Status:** Accepted
 - **Scope:** Simple Mode availability and session completion
-- **Replaces:** The preparation and ended-meeting availability in [DEC-20260917-001](#dec-20260917-001). Its retained panel, shared translation ownership, caption projection, reading, geometry, and opacity decisions remain in effect.
+- **Replaces:** The preparation and ended-meeting availability in [DEC-20260917-006](#dec-20260917-006). Its retained panel, shared translation ownership, geometry, and opacity decisions remain in effect. Caption presentation follows [DEC-20260917-008](#dec-20260917-008).
 - **Context:** Simple Mode is for following an ongoing meeting. The user requires its entry to disappear during preparation and after the meeting ends.
 - **Decision:** Derive every entry point and the mode-request guard from the shared coordinator's active-session state. Include paused sessions and resource transitions. Hide header, View-menu, and menu-bar entries and remove the mode shortcut while idle. Successful End or startup failure restores the retained full window. A failed final save stays paused and keeps the panel available for retry. Simple Mode renders live session Sections only; ended transcripts are reviewed in the full workspace.
 - **Rejected alternatives:** Hiding only the header would leave menu and shortcut entry paths available. Keeping the panel open after End would create a presentation with no active meeting. Closing on the End button press would leave the panel before final-save success is known. Treating pause as completion would interrupt subtitle reading.
@@ -33,11 +50,11 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 
 ---
 
-<a id="dec-20260917-001"></a>
-## DEC-20260917-001: Present translation-only captions in a retained native panel
+<a id="dec-20260917-006"></a>
+## DEC-20260917-006: Present translation-only captions in a retained native panel
 
 - **Date:** 2026-09-17
-- **Status:** Superseded by [DEC-20260917-002](#dec-20260917-002) for session availability and completion; the retained-panel architecture remains in effect.
+- **Status:** Superseded by [DEC-20260917-007](#dec-20260917-007) for session availability and completion and [DEC-20260917-008](#dec-20260917-008) for caption presentation; the retained-panel architecture remains in effect.
 - **Scope:** Simple Mode, window lifetime, and caption presentation
 - **Context:** Issue #42 requests a compact view of real-time translations above other applications. The full workspace also owns the live Apple Translation task and users' meeting and reading state.
 - **Decision:** Present a retained, nonactivating floating `NSPanel`, sharing the existing coordinator and caption store. Hide the full window while leaving its view hierarchy and sole `TranslationPump` mounted. Closing the panel or switching modes restores the full window. Use a borderless, resizable panel with a 680×220 default frame, 440×180 minimum, native geometry persistence, microphone/pause/end controls, and semantic light/dark appearance. Languages and meeting preparation stay in the full window. Persist adjustable background opacity separately from opaque text and controls. Project the latest two chronological turns as target text only; same-language sessions use recognized text. Pending and failed first translations have explicit labels, and previous successful target text stays readable. Upward reading freezes the displayed snapshot until Latest subtitles resumes following. Ended records use their saved language and caption order.
@@ -46,6 +63,90 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 - **Impact:** Adds header, View-menu, and menu-bar entries plus Command–Shift–T. Capture, language locking, persistence, and AI policy retain their existing owners. No new service, dependency, or data-model migration is required.
 - **Validation:** XCTest covers live and saved projection, missing/progressive/failed translations, same-language interim text, frozen reading, delayed native attachment, retained hosts, minimum panel size, panel close, and unchanged meeting/translation ownership. Bilingual native rendering checks minimum-size controls, long/ended captions, and both appearances; bitmap checks verify background opacity independently of foreground rendering. Final signed-app validation is recorded in the development guide.
 - **Files:** `Sources/App/MainWindowPresentation.swift`, `Sources/App/MainView.swift`, `Sources/App/MeetingStage.swift`, `Sources/App/SameWaveApp.swift`, `Sources/Meeting/SimpleCaptionsView.swift`, `Tests/MainWindowPresentationTests.swift`, `Tests/SimpleCaptionTests.swift`, `Tests/MainViewRenderingTests.swift`.
+
+---
+
+<a id="dec-20260917-005"></a>
+## DEC-20260917-005: Render saved history as one native text document
+
+- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Scope:** Long-history opening, native text layout, and reading interaction
+- **Replaces:** The eager per-paragraph SwiftUI implementation in [DEC-20260917-004](#dec-20260917-004). Complete document measurement and stable scroll geometry remain required.
+- **Context:** Opening meetings with many Sections stalled the interface. A 500-Section bilingual native benchmark measured 1,464 ms to open the eager SwiftUI history. Each paragraph also rebuilt an index of every saved line. Indexing once reduced opening to 887 ms, leaving the cost of creating and measuring hundreds of SwiftUI text views.
+- **Decision:** Build one observed value snapshot from saved lines, with a single Section index and groups determined by original source. Render the resulting attributed document through one read-only, selectable `NSTextView` inside `NSScrollView`. Use public TextKit layout with noncontiguous layout disabled, measuring the complete document when text or viewport width changes. Scrolling never changes the measured extent. Equal document updates preserve selection and reading position. SwiftData field observation continues to refresh arriving refinement text.
+- **Rejected alternatives:** Returning to lazy variable-height rows reintroduces estimated scroll extents. Indexing alone leaves measurable opening latency. Paging or truncating history prevents continuous reading and selection across the complete record. Retaining two history renderers adds an unnecessary behavior split.
+- **Rationale/tradeoffs:** AppKit handles text shaping, drawing, selection, and copying without hundreds of paragraph views. Full layout still scales with document length and is not a constant-time promise for arbitrarily large archives. Live captions retain their existing SwiftUI renderer and height reservation; both surfaces share paragraph membership, joining rules, typography, and colors.
+- **Impact:** Saved text, Section IDs, refinement fields, export, and persistence remain unchanged. The native document retains speaker/time headers, bilingual source echoes, centered width, and natural paragraph heights. No new dependency is required.
+- **Validation:** Native tests cover all 500 Section markers and complete layout through the last glyph, Original/Refined latency, observed refinement and added lines, selection/copy, equal updates, and switching to shorter or empty records. The existing mixed-height scrolling, resizing, and live-caption regressions pass. Timing, full-suite, and installed-app results are recorded in [development validation](06-development-and-validation.md).
+- **Files:** `Sources/History/HistoryDetailView.swift`, `Sources/History/HistoryTranscriptView.swift`, `Sources/Meeting/CaptionsView.swift`, `Tests/HistoryPerformanceTests.swift`, `Tests/HistoryTranscriptTests.swift`, `Tests/CaptionPresentationTests.swift`, and history/rendering references.
+
+---
+
+<a id="dec-20260917-004"></a>
+## DEC-20260917-004: Measure saved transcript paragraphs before scrolling
+
+- **Date:** 2026-09-17
+- **Status:** Superseded for eager per-paragraph SwiftUI rendering by [DEC-20260917-005](#dec-20260917-005). Complete measurement and stable scroll geometry remain adopted.
+- **Scope:** Saved transcript layout and reading-position stability
+- **Context:** A user reported freezing while scrolling a saved bilingual meeting. The system recorded a 34.35-second hang at 15:31 on September 17, with the main thread continuously processing SwiftUI/AttributeGraph layout, including lazy item phases and scroll geometry. A native regression reproduced changing document height and displaced reading offsets with unchanged long paragraphs. Lazy row measurement revised estimates as different paragraphs entered the viewport. Sampling after relaunch showed an idle event loop; the deterministic regression covers layout instability, not reproduction of the full hang duration.
+- **Decision:** Use an eager vertical layout for saved transcript paragraphs and natural text height. Exclude live height-observation modifiers from history. Recompute layout when displayed text or width changes; scrolling alone retains the measured document extent. Keep the existing live caption renderer and reader-controlled following behavior.
+- **Rejected alternatives:** Retaining estimated variable row heights allows later measurements to change the scroll range. Reserving live maximum heights in saved history adds unnecessary state and blank space. Disabling text selection does not address the reproduced height change.
+- **Rationale/tradeoffs:** Complete history measurements keep the reading position predictable at the cost of laying out all paragraphs when a meeting opens, its display mode changes, or its width changes. This uses native SwiftUI without a second renderer, fixed text heights, or a persistence change.
+- **Impact:** Saved originals, refined variants, Section IDs, paragraph membership, and export remain unchanged. Long-history layout is checked directly through native scroll geometry.
+- **Validation:** A 48-paragraph bilingual native regression failed before the change and passed afterward, covering Original/Refined, two widths, repeated scroll directions, document height, and exact requested offsets. Existing live promotion, source-baseline, and history-follow tests passed. Final build, language, installation, and desktop checks are recorded in [development validation](06-development-and-validation.md).
+- **Files:** `Sources/History/HistoryDetailView.swift`, `Sources/Meeting/CaptionsView.swift`, `Tests/CaptionPresentationTests.swift`, and history/rendering references.
+
+---
+
+<a id="dec-20260917-003"></a>
+## DEC-20260917-003: Confirm boundaries independently and translate each unit's own source
+
+- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Scope:** Live boundary confirmation, late source partitioning, translation input, and dispatch cadence
+- **Replaces:** The 240 ms promotion, smaller word/character guards, immutable ownership inside the newest open unit, preceding-context translation, and uniform 60 ms cadence in [DEC-20260917-001](#dec-20260917-001). The short-final and paragraph decisions in [DEC-20260917-002](#dec-20260917-002) remain adopted with these boundary rules.
+- **Context:** Real Apple Speech sometimes adds temporary punctuation and supplies later sentence boundaries after several following words. Small character cuts separated "while the current" from "sentence continues to grow". Translating preceding context with a synthetic separator repeated an earlier clause in the new unit's target. The user requires translations during speech and approved improving confirmation, clause completeness, and translation input.
+- **Decision:** Keep source immediate and the first translation request eligible after 60 ms. Space subsequent dispatches for the same unit by at least 400 ms, keeping the latest pending source, fixed deadlines, FIFO fairness, and useful in-flight progress. Confirm an unchanged sentence/clause prefix after 700 ms, independently of suffix growth. ASR finality confirms eligible boundaries immediately. Prefer sentence punctuation or clause punctuation after 96 characters (32 with Chinese); apply a 48-word/240-character guard (96 with Chinese), choosing an available natural boundary before a forced lexical cut. A late boundary may partition only the newest active unit, retaining the head ID, assigning a new suffix ID, transferring unfinished ownership, and invalidating all translations of the old combined unit. Earlier overlapping units retain their order. Send exactly the unit's source to Apple Translation and publish its returned target directly.
+- **Rejected alternatives:** Waiting for sentence completion prevents live translation. Fixed small cuts can divide dependent phrases. Translating previous context with delimiter extraction cannot ensure target isolation. Immediately trusting interim punctuation creates permanent fragments from temporary guesses. Moving existing words across an intervening speaker changes chronology. Retaining the combined target after splitting can display the same speech twice. Freezing arbitrary Chinese target prefixes cannot preserve correctness under English/Chinese word-order changes.
+- **Rationale/tradeoffs:** Boundary confirmation and first feedback have separate clocks. Larger units provide more context and preserve complete phrases; they can also undergo larger single revisions. The dispatch interval reduces request frequency without guaranteeing a fixed display cadence or fewer changed characters. An internal split briefly displays source until its replacement translations arrive. Timing describes ASR text stability, not acoustic silence or linguistic certainty. Some overlapping units can contain several sentences, and sealed units still accept genuine source corrections. Cross-unit pronouns receive no additional translation context.
+- **Impact:** Source conservation, pause/end, translation failures, session ownership, and incremental history remain enforced. A split updates the existing saved head row and adds the suffix; the persistence schema and historical text remain unchanged. No dependency or provider is added.
+- **Validation:** The focused production-state suite passed 67/67, covering temporary/late punctuation, suffix-growth deadlines, split generation invalidation, committed/interim conservation, batched long input, overlap order, native-language boundaries, cadence, and autosave identity. An isolated 17.79-second audio file produced an Apple Speech trace replayed at identical event timings through both compiled stores/mailboxes and actual Apple Translation. Final source was conserved, the reported repeated clause occurred once instead of twice, and requests fell from 67 to 48. Longer active targets had larger individual revisions; this is not evidence of universally reduced visual rewriting. Full build/test, quantitative replay, and signed-app results are recorded in [development validation](06-development-and-validation.md#caption-boundary-and-request-validation-2026-09-17).
+- **Files:** `Sources/Meeting/CaptionStore.swift`, `MeetingModels.swift`, `CaptureCoordinator.swift`, `TranslationBridge.swift`, `TranslationPump.swift`, caption/bridge/history tests, and caption/lifecycle references.
+
+---
+
+<a id="dec-20260917-002"></a>
+## DEC-20260917-002: Present independent translation units as continuous paragraphs
+
+- **Date:** 2026-09-17
+- **Status:** Accepted
+- **Scope:** Short ASR finals, live paragraph identity, and live/history transcript presentation
+- **Replaces:** One visible row per Section and unconditional final-result sealing in [DEC-20260917-001](#dec-20260917-001). Independent translation, punctuation promotion, coalescing, word ownership, and reader-controlled following remain adopted.
+- **Context:** The user's ended-meeting screenshot showed "I'd now like", "to", and "quote from" as separate tall blocks with repeated speaker/time headers. ASR finality can describe a short stable fragment; translation granularity also need not determine paragraph layout.
+- **Decision:** Commit a short unpunctuated final while retaining the open unit for the next hypothesis. Apply existing sentence/clause/word/character limits to committed plus interim source, and keep translating each changed snapshot immediately. Group adjacent same-speaker units into paragraphs, starting a new paragraph for a different speaker, a 20-second gap between unit starts, or a sentence ending after at least 240 source characters (96 with Chinese). Without sentence punctuation, allow continuation up to 360 characters (144 with Chinese) before the next unit starts a paragraph. Retain assigned live membership through revisions and remove only retracted spans. Use a shared continuous-text renderer with one speaker/time header and independently colored draft spans. Reserve live primary and paragraph height at a fixed width. History groups original stored source by the same rule and selects original/refined display text afterward.
+- **Rejected alternatives:** One row for each independently translated unit repeats metadata and breaks reading into fragments. Waiting for a full paragraph to translate delays live feedback and expands revisions. Regrouping live content on every changed character count moves existing text across paragraphs. Storing paragraph IDs would require a data-model change for presentation-only state.
+- **Rationale/tradeoffs:** Translation work stays bounded and responsive while text reads continuously. Membership freezes at unit arrival, so later source corrections may exceed the paragraph budget. Reopening history reconstructs groups from saved originals and can reflect those corrected lengths; Original/Refined retains the same groups. Time gaps describe observed unit starts, not acoustic silence. Existing independently translated fragments retain their wording, including any recognition/translation errors; grouping does not rewrite or refine them. Height reservation can retain blank space after a shorter live target and resets on width change; history uses natural height.
+- **Impact:** Existing fragmented history improves without modifying stored text, IDs, refinement variants, line counts, or the SwiftData schema. Pause/end and restored Section IDs retain their existing lifecycle. No new provider or dependency. The shared native Apple style is retained; Open Design returned `Transport closed` during this task.
+- **Validation:** Production-state tests cover the reported fragment sequence, continued translation between short finals, committed-prefix corrections, bounded repeated finals, Chinese joining, punctuation timing, stable paragraph membership, retractions, speaker/time boundaries, and refinement independence. Native tests verify a single readable history paragraph and retained earlier-word/source geometry through translation and promotion. Autosave tests verify one persistent line across short final continuations. Full build/test and signed-app evidence are recorded in [development validation](06-development-and-validation.md).
+- **Files:** `Sources/Meeting/CaptionParagraph.swift`, `CaptionStore.swift`, `MeetingModels.swift`, `CaptionsView.swift`, `Sources/History/HistoryDetailView.swift`, caption/history tests, and caption/lifecycle/architecture references.
+
+---
+
+<a id="dec-20260917-001"></a>
+## DEC-20260917-001: Translate live sentence and clause captions independently
+
+- **Date:** 2026-09-17
+- **Status:** Superseded for per-Section visual rows and unconditional final-result sealing by [DEC-20260917-002](#dec-20260917-002), and for boundary confirmation, translation context, active-unit partitioning, size guards, and request cadence by [DEC-20260917-003](#dec-20260917-003). Independent translation, sealed-unit correction ownership, generation progress, and scrolling remain adopted.
+- **Scope:** Live caption boundaries, translation scheduling, promotion, and reading position
+- **Replaces:** Paragraph-sized translation and presentation in [DEC-20260907-004](#dec-20260907-004). Its cumulative word ownership, correction handling, interruption ordering, and lifecycle rules remain adopted.
+- **Context:** Long unfinished English hypotheses repeatedly replaced a whole Chinese paragraph. The user approved applying the v2s-inspired mechanism demo while retaining translation before a sentence finishes. v2s's draft/commit behavior was inspected at commit `3aaaaa199bccddddb354bd9d2ee1a17e6b1f714c`; it does not provide an immutable translated prefix.
+- **Decision:** Make each Section an independently translated sentence or short clause. New trailing words open a caption at sentence boundaries, at sufficiently long clause punctuation, or after bounded unpunctuated growth. Existing words keep their IDs across ASR corrections. A punctuation-ended draft seals after 240 ms without a source revision; final ASR seals its affected captions immediately. Promotion retains the visible target and generation. Translate unfinished drafts through a 60 ms coalescing window measured from first pending enqueue, with FIFO fairness and useful in-flight progress. Render active drafts in secondary color, reserve source-line space and the row's maximum measured height at a fixed width, and follow content growth only while the reader remains at the bottom. Use the system content-edge scroll destination so lazy row measurement does not leave the newest text below the viewport.
+- **Rejected alternatives:** Waiting for final ASR before translation would sacrifice live feedback. Repeated whole-paragraph translation expands every correction's visual impact. Freezing arbitrary target prefixes cannot reliably handle English/Chinese word-order changes. Cancelling every in-flight request or restarting its debounce on every callback can starve visible progress. Discarding queued captions can lose useful translation during overlap.
+- **Rationale/tradeoffs:** Smaller translation units confine ordinary updates while preserving local Apple Speech and Translation. Frozen preceding context supports continuity. The active clause can still change, and genuine recognition corrections can update sealed captions. Split thresholds are checked between words; late punctuation does not redistribute existing ownership and corrections can exceed those thresholds. The 240 ms period controls promotion only, not the first translation. Retained row height can leave extra space after shorter translations and resets when width changes. Caption boundaries follow observed text rather than acoustic segmentation.
+- **Impact:** Saved lines retain the existing schema and stable Section IDs; historical lines restore as stored. No added translation provider, dependency, or persistence migration. The six-fragment paragraph limit is removed. The app keeps its existing native visual style; Open Design was unavailable with `Transport closed` during this task.
+- **Validation:** Production-state tests cover continuous unfinished input, English/Chinese boundaries, punctuation timing, simultaneous speakers, unchanged-caption request suppression, final corrections, source conservation, and non-starving translation coalescing. Native hosted tests verify stable previous-row pixels and promotion geometry, initial bottom positioning, retained history reading, and resumed following. History tests verify row identity across interim save, promotion, finalization, and restoration. Final build, language gates, and signed-app audio checks are recorded in [development validation](06-development-and-validation.md#live-caption-stability-validation-2026-09-17).
+- **Files:** `Sources/Meeting/CaptionStore.swift`, `SpeechHypothesis.swift`, `CaptureCoordinator.swift`, `TranslationBridge.swift`, `CaptionsView.swift`, caption/history/translation tests, and caption/lifecycle/architecture references.
 
 ---
 
@@ -217,7 +318,7 @@ Naming maintenance: historical project identifiers and file paths use current Sa
 ## DEC-20260907-004: Separate conversational turns from cumulative recognition
 
 - **Date:** 2026-09-07
-- **Status:** Accepted
+- **Status:** Superseded for paragraph-sized translation and presentation by [DEC-20260917-001](#dec-20260917-001). Cumulative word ownership, correction handling, interruption ordering, and lifecycle rules remain adopted.
 - **Scope:** Live source ownership, interruption ordering, and caption presentation
 - **Replaces:** The final-bound Section ownership and translation-busy presentation in [DEC-20260907-003](#dec-20260907-003). Its source-keyed translation mailbox, progressive generations, deadlines, cancellation, and lifecycle behavior remain adopted.
 - **Context:** Remote speech after a microphone reply continued inside an older paragraph because Sections stayed tied to each recognizer's final result. The user also requested removal of Translating. A native English DictationTranscriber probe exposed only whole-hypothesis interim timing; word times arrived at finalization. A SpeechDetector probe returned no activity results, including for padded silence. A signed-app counterexample showed that switching on every added word instead creates many tiny paragraphs during simultaneous input.

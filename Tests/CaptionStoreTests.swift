@@ -11,8 +11,8 @@ final class CaptionStoreTests: XCTestCase {
         store.updateSource(remote, speaker: .remote, isFinal: false, at: start)
         store.updateSource(mine, speaker: .mine, isFinal: false, at: start.advanced(by: .milliseconds(100)))
         for index in 1...20 {
-            remote += " remote\(index)"
-            mine += " mine\(index)"
+            remote += " r\(index)"
+            mine += " m\(index)"
             store.updateSource(remote, speaker: .remote, isFinal: false, at: start.advanced(by: .milliseconds(index * 200)))
             store.updateSource(mine, speaker: .mine, isFinal: false, at: start.advanced(by: .milliseconds(index * 200 + 100)))
         }
@@ -52,7 +52,6 @@ final class CaptionStoreTests: XCTestCase {
             XCTAssertEqual(store.sections.map(\.sourceText), ["The release is ready", "I have a question", "for review"])
             XCTAssertEqual(store.sections.map(\.contentState), [.sealed, .open, .open])
             XCTAssertTrue(store.sections.allSatisfy { $0.committedSource.isEmpty })
-            XCTAssertEqual(store.sections[2].priorContext, ["The release is ready"])
         }
     }
 
@@ -65,9 +64,10 @@ final class CaptionStoreTests: XCTestCase {
         XCTAssertEqual(store.updateSource("I had a question.", speaker: .mine, isFinal: true), [1])
         XCTAssertEqual(store.sections.map(\.committedSource), [["The release was ready"], ["I had a question."], ["for review."]])
         XCTAssertTrue(store.sections.allSatisfy { $0.interimSource.isEmpty })
-        XCTAssertEqual(store.sections.map(\.contentState), [.sealed, .sealed, .open])
+        XCTAssertEqual(store.sections.map(\.contentState), [.sealed, .sealed, .sealed])
         store.updateSource("Tomorrow works.", speaker: .remote, isFinal: true)
-        XCTAssertEqual(store.sections.last?.sourceText, "for review. Tomorrow works.")
+        XCTAssertEqual(store.sections.last?.sourceText, "Tomorrow works.")
+        XCTAssertEqual(store.sections[2].sourceText, "for review.")
     }
 
     func testCorrectionsDoNotTakeFloorFromOtherSpeaker() {
@@ -103,7 +103,7 @@ final class CaptionStoreTests: XCTestCase {
         XCTAssertEqual(store.sections.count, 42)
         XCTAssertEqual(store.sections.filter { $0.speaker == .remote }.map(\.sourceText).joined(separator: " "), first + ".")
         XCTAssertEqual(store.sections.filter { $0.speaker == .mine }.map(\.sourceText).joined(separator: " "), second + ".")
-        XCTAssertEqual(store.sections.filter { $0.contentState == .open }.map(\.id), [41])
+        XCTAssertTrue(store.sections.allSatisfy { $0.contentState == .sealed })
         XCTAssertTrue(store.sections.allSatisfy { $0.interimSource.isEmpty })
     }
 
@@ -147,7 +147,8 @@ final class CaptionStoreTests: XCTestCase {
             + "while I continue to speak we can see each sentences. It arrives and the meeting should remain responsive. "
             + "The final decision is to review the results tomorrow."
         store.updateSource(final, speaker: .remote, isFinal: true, at: start.advanced(by: .seconds(9)))
-        XCTAssertEqual(store.sections.map(\.speaker), [.remote, .mine, .remote, .mine, .remote])
+        XCTAssertEqual(Array(store.sections.prefix(4).map(\.speaker)), [.remote, .mine, .remote, .mine])
+        XCTAssertTrue(store.sections.dropFirst(4).allSatisfy { $0.speaker == .remote })
         XCTAssertEqual(store.sections[0].sourceText, "This is a live caption test.")
         XCTAssertEqual(store.sections[2].sourceText, "We are reviewing")
         XCTAssertEqual(store.sections.filter { $0.speaker == .remote }.map(\.sourceText).joined(separator: " "), final)
@@ -194,19 +195,19 @@ final class CaptionStoreTests: XCTestCase {
         XCTAssertEqual(store.sections.map(\.sourceText), ["We ship", "Yes", "Friday"])
     }
 
-    func testSeventhSentenceStartsNewSectionWithFrozenBoundedContext() {
+    func testCompletedSentencesStartIndependentCaptions() {
         for useInterim in [false, true] {
             let store = CaptionStore()
             for index in 1...7 {
-                if useInterim { store.updateSource("sentence \(index)", speaker: .remote, isFinal: false) }
-                store.updateSource("sentence \(index)", speaker: .remote, isFinal: true)
+                if useInterim { store.updateSource("sentence \(index).", speaker: .remote, isFinal: false) }
+                store.updateSource("sentence \(index).", speaker: .remote, isFinal: true)
             }
-            XCTAssertEqual(store.sections.count, 2)
-            XCTAssertEqual(store.sections[0].committedSource.count, 6)
-            XCTAssertEqual(store.sections[1].committedSource, ["sentence 7"])
-            XCTAssertEqual(store.sections[1].priorContext, (2...6).map { "sentence \($0)" })
-            store.updateSource("sentence 8", speaker: .remote, isFinal: true)
-            XCTAssertEqual(store.sections[1].priorContext, (2...6).map { "sentence \($0)" })
+            XCTAssertEqual(store.sections.count, 7)
+            XCTAssertTrue(store.sections.allSatisfy { $0.committedSource.count == 1 && $0.contentState == .sealed })
+            XCTAssertEqual(store.sections[6].committedSource, ["sentence 7."])
+            store.updateSource("sentence 8.", speaker: .remote, isFinal: true)
+            XCTAssertEqual(store.sections[6].sourceText, "sentence 7.")
+            XCTAssertEqual(store.sections[7].sourceText, "sentence 8.")
         }
     }
 
@@ -216,12 +217,12 @@ final class CaptionStoreTests: XCTestCase {
         store.updateSource("Still speaking", speaker: .remote, isFinal: false, at: .now.advanced(by: .seconds(-2)))
         store.updateSource("My reply", speaker: .mine, isFinal: false)
         store.updateSource("Still speaking after the reply", speaker: .remote, isFinal: false)
-        XCTAssertEqual(store.endTurn(.remote), [0, 2])
-        XCTAssertEqual(store.endTurn(.mine), [1])
-        XCTAssertEqual(store.sections.map(\.sourceText), ["Finished sentence. Still speaking", "My reply", "after the reply"])
+        XCTAssertEqual(store.endTurn(.remote), [1, 3])
+        XCTAssertEqual(store.endTurn(.mine), [2])
+        XCTAssertEqual(store.sections.map(\.sourceText), ["Finished sentence.", "Still speaking", "My reply", "after the reply"])
         XCTAssertTrue(store.sections.allSatisfy { $0.contentState == .sealed && $0.interimSource.isEmpty })
         XCTAssertEqual(store.endTurn(.remote), [])
-        XCTAssertEqual(store.updateSource("After resume", speaker: .remote, isFinal: true), [3])
+        XCTAssertEqual(store.updateSource("After resume", speaker: .remote, isFinal: true), [4])
     }
 
     func testEmptyInterimsDoNotCreateOrInterruptSections() {
@@ -243,7 +244,6 @@ final class CaptionStoreTests: XCTestCase {
             (id: 4, speaker: .remote, source: "earlier context", target: "上文", startedAt: .now)
         ])
         XCTAssertEqual(store.updateSource("new sentence", speaker: .remote, isFinal: true), [5])
-        XCTAssertEqual(store.sections.last?.priorContext, ["earlier context"])
         XCTAssertEqual(store.updateSource("My next sentence", speaker: .mine, isFinal: false), [5, 6])
         store.clear()
         XCTAssertEqual(store.updateSource("My next sentence", speaker: .mine, isFinal: true), [0])

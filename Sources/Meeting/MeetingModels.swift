@@ -125,11 +125,8 @@ struct Section: Identifiable, Equatable, Sendable {
     var translatedGeneration = 0
     var requestedSource = ""
     var startedAt = Date()
-    var priorContext: [String] = []
 
     var sourceText: String {
-        (committedSource + (interimSource.isEmpty ? [] : [interimSource]))
-            .joined(separator: " ")
-            .trimmed
+        TranscriptText.join(committedSource + [interimSource])
     }
 }

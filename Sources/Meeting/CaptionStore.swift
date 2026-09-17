@@ -1,23 +1,12 @@
 import Foundation
 import Observation
 
-/// Owns display turns independently of cumulative recognition. Continuous overlap
-/// retains each speaker's paragraph; speech returning after an interruption opens
-/// a later one, while corrections retain the existing words' ownership.
 @MainActor
 @Observable
 final class CaptionStore {
     private(set) var sections: [Section] = []
+    private(set) var paragraphLayout = CaptionParagraphLayout()
 
-    /// DISPLAY cap: a single-speaker section seals and opens a fresh one once it has
-    /// accumulated `maxSentencesPerSection` sentences of source, checked before the
-    /// next utterance (interim or final). Governs bubble size ONLY; translation context is the separate
-    /// sentence-scoped window below, so sealing a bubble never discards the running
-    /// paragraph's context.
-    private let maxSentencesPerSection = 6
-
-    private let contextWindowSentences = 5
-    private let contextWindowMaxChars = 240
     private var nextId = 0
     private var openSections: [Speaker: Int] = [:]
     private var hypotheses: [Speaker: SpeechHypothesis] = [:]
@@ -25,6 +14,25 @@ final class CaptionStore {
     /// it. A one-second gap in added words distinguishes a return from dense overlap.
     private let turnInactivity: Duration = .seconds(1)
     private var lastGrowth: [Speaker: ContinuousClock.Instant] = [:]
+    private struct Boundary {
+        let prefix: String
+        let deadline: ContinuousClock.Instant
+    }
+    private var boundaries: [Int: Boundary] = [:]
+    private let boundaryStability: Duration = .milliseconds(700)
+
+    var nextDraftCommitDeadline: ContinuousClock.Instant? {
+        openSections.values.compactMap { id -> ContinuousClock.Instant? in
+            guard let boundary = boundaries[id], let section = section(id: id),
+                  boundary.prefix == section.sourceText || sections.last?.id == id else { return nil }
+            return boundary.deadline
+        }.min()
+    }
+
+    @discardableResult
+    func commitReadyDrafts(at time: ContinuousClock.Instant = .now) -> [Int] {
+        confirmBoundaries(at: time, finalSpeaker: nil)
+    }
 
     // MARK: - Lookup
 
@@ -36,23 +44,6 @@ final class CaptionStore {
     }
     var hasContent: Bool { !sections.isEmpty }
 
-    /// The most recent context window for `speaker` (chronological, newest last),
-    /// bounded by sentence count and a char budget — frozen onto a section at open.
-    private func contextSnapshot(for speaker: Speaker) -> [String] {
-        let sentences = sections.filter { $0.speaker == speaker }.flatMap { section in
-            section.committedSource + (section.interimSource.isEmpty ? [] : [section.interimSource])
-        }
-        var picked: [String] = []
-        var chars = 0
-        for sentence in sentences.reversed() {
-            if picked.count >= contextWindowSentences { break }
-            if chars + sentence.count > contextWindowMaxChars && !picked.isEmpty { break }
-            picked.append(sentence)
-            chars += sentence.count
-        }
-        return picked.reversed()
-    }
-
     // MARK: - Source sections
 
     private func isGrowing(_ speaker: Speaker, at time: ContinuousClock.Instant) -> Bool {
@@ -60,9 +51,10 @@ final class CaptionStore {
         return last.duration(to: time) < turnInactivity
     }
 
-    private func takeTurn(_ speaker: Speaker, at time: ContinuousClock.Instant) -> (opened: Int, sealed: [Int]) {
+    private func takeTurn(_ speaker: Speaker, at time: ContinuousClock.Instant,
+                          startsCaption: Bool) -> (opened: Int, sealed: [Int]) {
         if let id = openSections[speaker], let current = section(id: id),
-           current.committedSource.count < maxSentencesPerSection,
+           current.contentState == .open, !startsCaption,
            sections.last?.id == id || isGrowing(speaker, at: time) {
             return (id, [])
         }
@@ -77,11 +69,109 @@ final class CaptionStore {
         }
         let id = nextId
         nextId += 1
-        var section = Section(id: id, speaker: speaker)
-        section.priorContext = contextSnapshot(for: speaker)
-        sections.append(section)
+        sections.append(Section(id: id, speaker: speaker))
         openSections[speaker] = id
         return (id, Array(sealed.values))
+    }
+
+    private func startsCaption(after words: ArraySlice<SpeechHypothesis.Word>, speaker: Speaker,
+                               isFinal: Bool, at time: ContinuousClock.Instant) -> Bool {
+        guard let id = words.last?.sectionID ?? openSections[speaker],
+              let current = section(id: id) else { return false }
+        let interim = words.filter { $0.sectionID == id }.map(\.text).joined()
+        let text = TranscriptText.join(current.committedSource + [interim])
+        let owned = SpeechHypothesis().revising(text)
+        guard let last = owned.last else { return false }
+        let chinese = TranscriptText.containsChinese(text)
+        if let boundary = boundaries[id], boundary.prefix == text, boundary.deadline <= time { return true }
+        return (sections.last?.id != id && (owned.count >= 48 || text.count >= (chinese ? 96 : 240)))
+            || (isFinal && (last.endsSentence || (last.endsClause && text.count >= (chinese ? 32 : 96))))
+    }
+
+    private func refreshBoundary(id: Int, at time: ContinuousClock.Instant) {
+        guard let section = section(id: id), section.contentState == .open else {
+            boundaries.removeValue(forKey: id)
+            return
+        }
+        let words = SpeechHypothesis().revising(section.sourceText)
+        let chinese = TranscriptText.containsChinese(section.sourceText)
+        let overLimit = words.count > 48 || section.sourceText.count > (chinese ? 96 : 240)
+        var prefix = ""
+        for (index, word) in words.enumerated() {
+            prefix += word.text
+            let text = prefix.trimmed
+            let hasTail = index < words.count - 1
+            let hardBoundary = hasTail && (index + 1 >= 48 || text.count >= (chinese ? 96 : 240))
+            if word.endsSentence || (word.endsClause && hasTail && text.count >= (chinese ? 32 : 96))
+                || hardBoundary {
+                let deadline = time.advanced(by: overLimit ? .zero : boundaryStability)
+                if boundaries[id]?.prefix != text {
+                    boundaries[id] = Boundary(prefix: text, deadline: deadline)
+                } else if let previous = boundaries[id], deadline < previous.deadline {
+                    boundaries[id] = Boundary(prefix: text, deadline: deadline)
+                }
+                return
+            }
+        }
+        boundaries.removeValue(forKey: id)
+    }
+
+    private func confirmBoundaries(at time: ContinuousClock.Instant, finalSpeaker: Speaker?) -> [Int] {
+        var changed: Set<Int> = []
+        for speaker in [Speaker.remote, .mine] {
+            while let id = openSections[speaker], let boundary = boundaries[id],
+                  boundary.deadline <= time || finalSpeaker == speaker,
+                  let current = section(id: id) {
+                if boundary.prefix == current.sourceText {
+                    mutate(id: id) { $0.contentState = .sealed }
+                    openSections.removeValue(forKey: speaker)
+                    boundaries.removeValue(forKey: id)
+                    changed.insert(id)
+                    break
+                }
+                guard sections.last?.id == id else { break }
+                let tailID = splitDraft(current, after: boundary.prefix)
+                changed.formUnion([id, tailID])
+                boundaries.removeValue(forKey: id)
+                refreshBoundary(id: tailID, at: time)
+            }
+        }
+        paragraphLayout.update(sections: sections)
+        return changed.sorted()
+    }
+
+    private func splitDraft(_ current: Section, after prefix: String) -> Int {
+        let id = nextId
+        nextId += 1
+        let committed = TranscriptText.join(current.committedSource)
+        var head = current
+        var tail = Section(id: id, speaker: current.speaker)
+        tail.startedAt = current.startedAt
+        if prefix.count <= committed.count {
+            head.committedSource = [prefix]
+            head.interimSource = ""
+            let remainder = String(committed.dropFirst(prefix.count)).trimmed
+            tail.committedSource = remainder.isEmpty ? [] : [remainder]
+            tail.interimSource = current.interimSource
+        } else {
+            head.interimSource = String(prefix.dropFirst(committed.count)).trimmed
+            tail.interimSource = String(current.sourceText.dropFirst(prefix.count)).trimmed
+        }
+        head.contentState = .sealed
+        head.targetText = ""
+        head.requestedSource = ""
+        head.translatedGeneration = head.generation
+        head.translationState = .pending
+        let retainedWords = SpeechHypothesis().revising(head.interimSource).count
+        if var hypothesis = hypotheses[current.speaker] {
+            let owned = hypothesis.words.indices.filter { hypothesis.words[$0].sectionID == current.id }
+            for index in owned.dropFirst(retainedWords) { hypothesis.words[index].sectionID = id }
+            hypotheses[current.speaker] = hypothesis
+        }
+        mutate(id: current.id) { $0 = head }
+        sections.append(tail)
+        openSections[current.speaker] = id
+        return id
     }
 
     /// Apply one cumulative ASR snapshot. Only added speech can acquire the floor;
@@ -95,13 +185,15 @@ final class CaptionStore {
         var words = previous.revising(text)
         guard !words.isEmpty else { return [] }
         var changed = Set(previous.words.compactMap(\.sectionID))
-        if words.contains(where: { $0.sectionID == nil }) {
-            let turn = takeTurn(speaker, at: time)
+        for index in words.indices where words[index].sectionID == nil {
+            let turn = takeTurn(speaker, at: time,
+                                startsCaption: startsCaption(after: words[..<index], speaker: speaker,
+                                                             isFinal: isFinal, at: time))
             changed.formUnion(turn.sealed)
             lastGrowth[speaker] = time
-            for index in words.indices where words[index].sectionID == nil {
-                words[index].sectionID = turn.opened
-            }
+            words[index].sectionID = turn.opened
+            let partial = words[...index].filter { $0.sectionID == turn.opened }.map(\.text).joined().trimmed
+            mutate(id: turn.opened) { $0.interimSource = partial }
         }
         changed.formUnion(words.compactMap(\.sectionID))
         for id in changed {
@@ -115,15 +207,20 @@ final class CaptionStore {
             }
         }
         hypotheses[speaker] = isFinal ? nil : SpeechHypothesis(words: words)
-        if isFinal, let id = openSections[speaker], sections.last?.id != id {
-            mutate(id: id) { $0.contentState = .sealed }
-            openSections.removeValue(forKey: speaker)
-            changed.insert(id)
-        }
         // A recognizer can retract an entire fragment. Remove its display row and
         // identity so a late translation cannot bring the deleted words back.
         sections.removeAll { changed.contains($0.id) && $0.sourceText.isEmpty }
-        openSections = openSections.filter { section(id: $0.value) != nil }
+        openSections = openSections.filter { section(id: $0.value)?.contentState == .open }
+        for id in changed { refreshBoundary(id: id, at: time) }
+        changed.formUnion(confirmBoundaries(at: time, finalSpeaker: isFinal ? speaker : nil))
+        if isFinal, let id = openSections[speaker],
+           let source = section(id: id)?.sourceText,
+           SpeechHypothesis().revising(source).last?.endsSentence == true {
+            mutate(id: id) { $0.contentState = .sealed }
+            openSections.removeValue(forKey: speaker)
+            boundaries.removeValue(forKey: id)
+        }
+        paragraphLayout.update(sections: sections)
         return changed.sorted()
     }
 
@@ -135,6 +232,7 @@ final class CaptionStore {
         if let id = openSections.removeValue(forKey: speaker) { changed.insert(id) }
         lastGrowth.removeValue(forKey: speaker)
         for id in changed {
+            boundaries.removeValue(forKey: id)
             mutate(id: id) { section in
                 section.contentState = .sealed
                 if !section.interimSource.isEmpty { section.committedSource.append(section.interimSource) }
@@ -176,11 +274,12 @@ final class CaptionStore {
         }
     }
 
-    func failTranslation(id: Int, generation: Int) {
-        mutate(id: id) { section in
-            guard generation == section.generation else { return }
-            section.translationState = .failed
-        }
+    @discardableResult
+    func failTranslation(id: Int, generation: Int) -> Bool {
+        guard let index = indexOf(id: id), generation == sections[index].generation,
+              generation > sections[index].translatedGeneration else { return false }
+        sections[index].translationState = .failed
+        return true
     }
 
     /// Same-language meetings display the recognized source directly.
@@ -195,9 +294,11 @@ final class CaptionStore {
 
     func clear() {
         sections.removeAll()
+        paragraphLayout = CaptionParagraphLayout()
         openSections.removeAll()
         hypotheses.removeAll()
         lastGrowth.removeAll()
+        boundaries.removeAll()
         nextId = 0
     }
 
@@ -211,9 +312,11 @@ final class CaptionStore {
     func restore(sections restored: [(id: Int, speaker: Speaker, source: String,
                                       target: String, startedAt: Date)]) {
         sections.removeAll()
+        paragraphLayout = CaptionParagraphLayout()
         openSections.removeAll()
         hypotheses.removeAll()
         lastGrowth.removeAll()
+        boundaries.removeAll()
         var maxId = -1
         for r in restored {
             var s = Section(id: r.id, speaker: r.speaker)
@@ -227,5 +330,6 @@ final class CaptionStore {
             maxId = max(maxId, r.id)
         }
         nextId = maxId + 1
+        paragraphLayout.update(sections: sections)
     }
 }

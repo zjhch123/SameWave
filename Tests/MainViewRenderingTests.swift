@@ -106,30 +106,41 @@ final class MainViewRenderingTests: XCTestCase {
 
         let record = try history.createDraft(languagePair: .simplifiedChineseToEnglish)
         var section = Section(id: 0, speaker: .remote)
-        section.committedSource = ["Hidden original sentence"]
+        section.committedSource = ["准备发布。"]
         section.targetText = "Ready for release."
         try history.sync(record: record, sections: [section], endedAt: .now, status: .paused)
         await coordinator.loadSession(record)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             try await render(view, size: NSSize(width: 440, height: 180), name: "simple-paused-\(suffix)-\(name)",
-                expectedLabels: ["Ready for release.", chinese ? "结束" : "End"],
-                absentLabels: ["Hidden original sentence"], appearance: NSAppearance(named: appearance))
+                expectedLabels: ["Ready for release.", "准备发布", chinese ? "结束" : "End"],
+                absentLabels: ["Other party"], appearance: NSAppearance(named: appearance),
+                recognitionLanguages: ["zh-Hans", "en-US"])
         }
 
         coordinator.store.clear()
-        let ids = coordinator.store.updateSource("Hidden original sentence", speaker: .remote, isFinal: false)
+        let ids = coordinator.store.updateSource("准备发布。", speaker: .remote, isFinal: false)
         let id = try XCTUnwrap(ids.first)
         let generation = try XCTUnwrap(coordinator.store.beginTranslation(id: id))
         try await render(view, size: NSSize(width: 440, height: 180), name: "simple-pending-\(suffix)",
-            expectedLabels: [chinese ? "正在翻译" : "Translating"], absentLabels: ["Hidden original sentence"])
+            expectedLabels: ["准备发布"], absentLabels: ["Translating", "正在翻译"], recognitionLanguages: ["zh-Hans", "en-US"])
         coordinator.store.failTranslation(id: id, generation: generation)
         try await render(view, size: NSSize(width: 440, height: 180), name: "simple-failed-\(suffix)",
-            expectedLabels: [chinese ? "翻译暂不可用" : "Translation unavailable"], absentLabels: ["Hidden original sentence"])
+            expectedLabels: ["准备发布", chinese ? "翻译失败" : "Translation failed"], recognitionLanguages: ["zh-Hans", "en-US"])
 
-        coordinator.store.restore(sections: [(id: 0, speaker: .remote, source: "Hidden original sentence",
+        coordinator.store.restore(sections: [(id: 0, speaker: .remote, source: "准备发布。",
             target: String(repeating: "Earlier translated sentences. ", count: 30) + "Latest translated sentence.", startedAt: .now)])
         try await render(view, size: NSSize(width: 680, height: 220), name: "simple-long-\(suffix)",
-            expectedLabels: ["Latest translated sentence.", chinese ? "结束" : "End"], absentLabels: ["Hidden original sentence"])
+            expectedLabels: ["Latest translated sentence.", "准备发布", chinese ? "结束" : "End"], recognitionLanguages: ["zh-Hans", "en-US"])
+
+        coordinator.store.restore(sections: [
+            (id: 0, speaker: .remote, source: "First source sentence.", target: "第一条译文。", startedAt: .now),
+            (id: 1, speaker: .mine, source: "Second source sentence.", target: "第二条译文。", startedAt: .now),
+            (id: 2, speaker: .remote, source: "Third source sentence.", target: "第三条译文。", startedAt: .now)
+        ])
+        try await render(view, size: NSSize(width: 680, height: 480), name: "simple-complete-\(suffix)",
+            expectedLabels: ["First source sentence.", "Second source sentence.", "Third source sentence.",
+                             "第一条译文", "第二条译文", "第三条译文", String(localized: "Speaker")],
+            absentLabels: ["Other party"], recognitionLanguages: ["zh-Hans", "en-US"])
     }
 
     func testLocalizedDefaultInsightsSettingsAndEditor() async throws {
@@ -1009,7 +1020,7 @@ final class MainViewRenderingTests: XCTestCase {
     private func render<V: View>(_ view: V, size: NSSize, name: String,
                                  expectedLabels: [String] = [], absentLabels: [String] = [],
                                  alignedLabels: (String, String)? = nil, appearance: NSAppearance? = nil,
-                                 textRegion: CGRect? = nil) async throws {
+                                 textRegion: CGRect? = nil, recognitionLanguages: [String]? = nil) async throws {
         let host = NSHostingView(rootView: view
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .background(Color(nsColor: .windowBackgroundColor)))
@@ -1028,7 +1039,7 @@ final class MainViewRenderingTests: XCTestCase {
         if !expectedLabels.isEmpty || !absentLabels.isEmpty {
             // OCR normalizes typographic spaces and reports wrapped labels as separate lines.
             func normalized(_ value: String) -> String { value.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
-            let labels = normalized(try visibleTextObservations(host, region: textRegion)
+            let labels = normalized(try visibleTextObservations(host, region: textRegion, languages: recognitionLanguages)
                 .compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n"))
             for label in expectedLabels { XCTAssertTrue(labels.contains(normalized(label)), "Missing \(label) in \(labels)") }
             for label in absentLabels { XCTAssertFalse(labels.contains(normalized(label)), "Unexpected \(label) in \(labels)") }
@@ -1047,14 +1058,14 @@ final class MainViewRenderingTests: XCTestCase {
         try visibleTextObservations(view).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
-    private func visibleTextObservations(_ view: NSView, region: CGRect? = nil) throws -> [VNRecognizedTextObservation] {
+    private func visibleTextObservations(_ view: NSView, region: CGRect? = nil, languages: [String]? = nil) throws -> [VNRecognizedTextObservation] {
         // Verify the pixels: hidden test windows do not publish a SwiftUI accessibility tree.
         let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         if let region { request.regionOfInterest = region }
-        request.recognitionLanguages = Bundle.main.preferredLocalizations.first == "zh-Hans" ? ["zh-Hans", "en-US"] : ["en-US"]
+        request.recognitionLanguages = languages ?? (Bundle.main.preferredLocalizations.first == "zh-Hans" ? ["zh-Hans", "en-US"] : ["en-US"])
         try VNImageRequestHandler(cgImage: XCTUnwrap(bitmap.cgImage), options: [:]).perform([request])
         return request.results ?? []
     }

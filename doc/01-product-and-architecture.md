@@ -11,7 +11,7 @@ SameWave aims to make one-on-one cross-language meetings a continuous workflow w
 5. Save meeting preparation before capture and save continuously during recording, supporting pause, switching, and crash recovery.
 6. Support custom, timestamped, persistent AI insights and deliberate full summaries after configuring a provider. Local captions remain independent.
 
-The app does not save audio. Its core data is a set of text Sections carrying speaker, time, source, and translation.
+The app does not save audio. Its core data is a set of independently translated sentence or clause Sections carrying speaker, time, source, and translation. Live drafts translate before sentence completion; boundary confirmation proceeds separately. Each request translates the unit's own source, and rapid subsequent revisions are combined at a bounded dispatch cadence. Sealing unchanged source retains its identity and target; splitting an active unit at a late boundary invalidates translations covering the old combined text. Adjacent same-speaker Sections render as continuous paragraphs in live captions and history, with one speaker/time header per paragraph. Reading earlier captions suspends automatic scrolling.
 
 ## 2. Current stack
 
@@ -121,6 +121,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`CaptureCoordinator.swift`](../Sources/Meeting/CaptureCoordinator.swift): lifecycle, dual-stream assembly, ASR routing, translation and persistence scheduling.
 - [`MeetingModels.swift`](../Sources/Meeting/MeetingModels.swift): speakers, languages, lifecycle, Section content/translation state types.
 - [`CaptionStore.swift`](../Sources/Meeting/CaptionStore.swift): chronological display turns, source fragments, translation progress.
+- [`CaptionParagraph.swift`](../Sources/Meeting/CaptionParagraph.swift): stable paragraph membership and English/Chinese fragment joining, shared by live captions and history.
 - [`SpeechHypothesis.swift`](../Sources/Meeting/SpeechHypothesis.swift): cumulative recognition word alignment and ownership across interruptions.
 - [`TranslationBridge.swift`](../Sources/Meeting/TranslationBridge.swift): latest pending request per Section, in-flight tracking, awaitable idle boundary.
 - [`TranslationPump.swift`](../Sources/Meeting/TranslationPump.swift): long-lived `TranslationSession`, translation execution and results.
@@ -150,12 +151,12 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 
 - [`MainView.swift`](../Sources/App/MainView.swift): keeps the full three-column workspace and its single translation-session attachment mounted while Simple Mode is visible; retains the draggable Inspector width.
 - [`MainWindowPresentation.swift`](../Sources/App/MainWindowPresentation.swift): owns a retained, nonactivating floating `NSPanel` independently of capture; derives entry availability from the shared coordinator's active-session state and guards mode requests. Hides the full window without rebuilding it and restores it when the panel closes, the user exits Simple Mode, or the session becomes idle.
-- [`SimpleCaptionsView.swift`](../Sources/Meeting/SimpleCaptionsView.swift): presents the latest two target-language turns, explicit pending/failure states, microphone/pause/end controls, and persisted background opacity. Languages and meeting preparation remain in the full window.
+- [`SimpleCaptionsView.swift`](../Sources/Meeting/SimpleCaptionsView.swift): wraps the shared `CaptionsView` with microphone/pause/end controls and persisted background opacity. The complete bilingual transcript, paragraph grouping, speaker labels, translation states, and scrolling match the full window. Languages and meeting preparation remain in the full window.
 - [`MeetingSidebar.swift`](../Sources/App/MeetingSidebar.swift): SwiftData history query, selection, deletion, and per-meeting background AI activity.
 - [`MeetingStage.swift`](../Sources/App/MeetingStage.swift): preparation/live/history stage, header, timer, capture controls; `MeetingPreparationView.swift` edits owned preparation.
 - [`InsightInspector.swift`](../Sources/App/InsightInspector.swift): peer insight cards, live/history generation, independent saved versions, offline reading, and save retry.
-- [`CaptionsView.swift`](../Sources/Meeting/CaptionsView.swift): live Section list.
-- [`HistoryDetailView.swift`](../Sources/History/HistoryDetailView.swift): saved transcript lines.
+- [`CaptionsView.swift`](../Sources/Meeting/CaptionsView.swift): live paragraph list with independently styled caption spans and retained live heights.
+- [`HistoryDetailView.swift`](../Sources/History/HistoryDetailView.swift): observed saved-line snapshot, one Section index, and original-source paragraph grouping. [`HistoryTranscriptView.swift`](../Sources/History/HistoryTranscriptView.swift) presents a single selectable AppKit text document, measuring its complete extent when text or width changes.
 - [`InsightResultCard.swift`](../Sources/Insights/InsightResultCard.swift): concise results with independent reading state, history, and local save retry. [`MeetingSummaryCards.swift`](../Sources/Insights/MeetingSummaryCards.swift) renders the expanded named sections.
 - [`MeetingPreparationView.swift`](../Sources/Meeting/MeetingPreparationView.swift): four preparation cards and retained-result archive. `MeetingContextView.swift` owns attachment controls; `MeetingVocabularyView.swift` hosts the shared vocabulary editor; `InsightDefinitionEditor.swift` owns definition edits.
 - [`SettingsView.swift`](../Sources/App/SettingsView.swift): General, AI Services, Vocabulary, and Insights tabs with native sheet routing over the current main/preparation surface; AI configuration actions select General when AI is off and AI Services when it is on. One shared Done footer dismisses every tab. Preference editing saves automatically, independently of dismissal.
@@ -175,6 +176,7 @@ Both capture components share the conceptual interface `onAudio`, `inputSampleRa
 - [`CaptionStoreTests.swift`](../Tests/CaptionStoreTests.swift): segmentation, overlap ownership, restore, translation progress invariants.
 - [`TranslationBridgeTests.swift`](../Tests/TranslationBridgeTests.swift): coalescing, cross-Section ordering, idle drain.
 - [`MeetingHistoryStoreTests.swift`](../Tests/MeetingHistoryStoreTests.swift): in-memory upsert, pruning, and empty-workspace retention. `MeetingWorkspaceTests.swift` also verifies on-disk reopen and artifact ownership.
+- [`HistoryPerformanceTests.swift`](../Tests/HistoryPerformanceTests.swift): native opening and Original/Refined latency with complete 500-Section content and layout checks. [`HistoryTranscriptTests.swift`](../Tests/HistoryTranscriptTests.swift) verifies observed changes, selection/copy, and record replacement; `CaptionPresentationTests.swift` covers stable history geometry and live caption positions.
 - [`InsightEngineTests.swift`](../Tests/InsightEngineTests.swift): full input, scheduling, priority, cancellation, versioned persistence, failures, and strict result parsing.
 - [`OpenAICompatibleProviderTests.swift`](../Tests/OpenAICompatibleProviderTests.swift): Structured Outputs request contracts and built-in models.
 - [`TranscriptRefinerTests.swift`](../Tests/TranscriptRefinerTests.swift): line/character batch boundaries. [`MeetingRefinementControllerTests.swift`](../Tests/MeetingRefinementControllerTests.swift) verifies retained progress, concurrent owners, background saves/titles, failure/retry, partial success, deletion, and scoped persistence recovery.

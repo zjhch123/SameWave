@@ -151,6 +151,62 @@ final class MeetingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(record.lines[0].targetText, "你好")
     }
 
+    func testCaptionPromotionAndFinalizationUpsertTheSameHistoryRows() throws {
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+        let store = CaptionStore()
+        store.updateSource("We ship Friday.", speaker: .remote, isFinal: false)
+        let generation = try XCTUnwrap(store.beginTranslation(id: 0))
+        store.applyTranslation("我们周五发布。", id: 0, generation: generation)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        let firstRowID = try XCTUnwrap(record.lines.first).persistentModelID
+        store.commitReadyDrafts(at: .now.advanced(by: .seconds(1)))
+        store.updateSource("We ship Friday. Please notify everyone.", speaker: .remote, isFinal: false)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        store.updateSource("We ship Friday. Please notify everyone.", speaker: .remote, isFinal: true)
+        try history.finish(record, sections: store.sections, endedAt: .now)
+
+        let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
+        XCTAssertEqual(lines.map(\.sectionId), [0, 1])
+        XCTAssertEqual(lines.map(\.sourceText), ["We ship Friday.", "Please notify everyone."])
+        XCTAssertEqual(lines[0].persistentModelID, firstRowID)
+        XCTAssertEqual(lines[0].targetText, "我们周五发布。")
+        let restored = CaptionStore()
+        restored.restore(sections: lines.map {
+            (id: $0.sectionId, speaker: $0.isMine ? .mine : .remote,
+             source: $0.sourceText, target: $0.targetText, startedAt: $0.spokenAt)
+        })
+        restored.updateSource("Next topic", speaker: .remote, isFinal: false)
+        XCTAssertEqual(restored.sections.map(\.id), [0, 1, 2])
+        XCTAssertEqual(restored.sections[0].targetText, "我们周五发布。")
+    }
+
+    func testLateBoundarySplitUpdatesSavedSourceAndRemovesOverlappingTranslation() throws {
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+        let store = CaptionStore()
+        let start = ContinuousClock.now
+        store.updateSource("We ship Friday please notify everyone", speaker: .remote, isFinal: false, at: start)
+        let generation = try XCTUnwrap(store.beginTranslation(id: 0))
+        store.applyTranslation("我们周五发货，请通知大家", id: 0, generation: generation)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        let savedID = try XCTUnwrap(record.lines.first).persistentModelID
+        store.updateSource("We ship Friday. Please notify everyone", speaker: .remote, isFinal: false,
+                           at: start.advanced(by: .milliseconds(100)))
+        store.commitReadyDrafts(at: start.advanced(by: .milliseconds(800)))
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        let lines = record.lines.sorted { $0.orderIndex < $1.orderIndex }
+        XCTAssertEqual(lines.map(\.sectionId), [0, 1])
+        XCTAssertEqual(lines.map(\.sourceText), ["We ship Friday.", "Please notify everyone"])
+        XCTAssertEqual(lines.first?.persistentModelID, savedID)
+        XCTAssertTrue(lines.allSatisfy { $0.targetText.isEmpty })
+        store.updateSource("We ship Friday. Please notify everyone.", speaker: .remote, isFinal: true)
+        try history.finish(record, sections: store.sections, endedAt: .now)
+        XCTAssertEqual(record.lines.count, 2)
+        XCTAssertEqual(TranscriptText.join(record.lines.sorted { $0.orderIndex < $1.orderIndex }.map(\.sourceText)),
+                       "We ship Friday. Please notify everyone.")
+    }
+
     func testFinishRetainsEmptyMeeting() throws {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         let history = try MeetingHistoryStore(configuration: configuration)
@@ -163,6 +219,27 @@ final class MeetingHistoryStoreTests: XCTestCase {
         let records = try history.context.fetch(FetchDescriptor<MeetingRecord>())
         XCTAssertEqual(records.map(\.id), [record.id])
         XCTAssertEqual(records.first?.meetingStatus, .ended)
+    }
+
+    func testShortFinalContinuationUpdatesOnePersistentLineAcrossAutosaves() throws {
+        let history = try Phase2Fixture.history()
+        let record = try history.createDraft(languagePair: .englishToSimplifiedChinese)
+        let store = CaptionStore()
+        store.updateSource("I'd now like", speaker: .remote, isFinal: true)
+        try history.sync(record: record, sections: store.sections, endedAt: .now)
+        let firstID = try XCTUnwrap(record.lines.first).persistentModelID
+        for fragment in ["to", "quote from", "a great speaker."] {
+            store.updateSource(fragment, speaker: .remote, isFinal: true)
+            try history.sync(record: record, sections: store.sections, endedAt: .now)
+            XCTAssertEqual(record.lines.count, 1)
+            XCTAssertEqual(record.lines.first?.persistentModelID, firstID)
+        }
+        store.updateSource("The next sentence.", speaker: .remote, isFinal: true)
+        try history.finish(record, sections: store.sections, endedAt: .now)
+        XCTAssertEqual(record.lineCount, 2)
+        XCTAssertEqual(record.lines.sorted { $0.orderIndex < $1.orderIndex }.map(\.sourceText),
+                       ["I'd now like to quote from a great speaker.", "The next sentence."])
+        XCTAssertEqual(HistoryTranscript(record: record).paragraphs.map(\.sectionIDs), [[0, 1]])
     }
 
     func testFinishPersistsTranscriptAndEndedStatusTogether() throws {
