@@ -12,8 +12,7 @@ struct SameWaveApp: App {
         // float over our own 48pt header (TrafficLightConfigurator centers them there).
         Window("SameWave", id: "control") {
             if let history = delegate.history {
-                MainView(coordinator: delegate.coordinator)
-                    .frame(minWidth: 940, minHeight: 480)
+                MainView(coordinator: delegate.coordinator, presentation: delegate.windowPresentation)
                     .ignoresSafeArea(.container, edges: .top)
                     .background(TrafficLightConfigurator(headerHeight: 48))
                     .modelContainer(history.container)
@@ -27,21 +26,21 @@ struct SameWaveApp: App {
         }
         .windowStyle(.hiddenTitleBar)
 
-        .commands { SettingsCommands(navigation: delegate.settingsNavigation) }
+        .commands {
+            SettingsCommands(navigation: delegate.settingsNavigation)
+            WindowModeCommands(presentation: delegate.windowPresentation)
+        }
 
         // Lightweight menu-bar icon for quick access / quit.
         MenuBarExtra("SameWave", systemImage: "captions.bubble") {
-            Button("Show Main Window") {
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            Divider()
-            Button("Quit") { NSApp.terminate(nil) }
+            SameWaveMenu(presentation: delegate.windowPresentation)
         }
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    let windowPresentation: MainWindowPresentation
     let coordinator: CaptureCoordinator
     /// Shared persistent history store; also feeds the sidebar's @Query.
     let history: MeetingHistoryStore?
@@ -63,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator = CaptureCoordinator(
             speechVocabularySettings: speechVocabularySettings
         )
+        windowPresentation = MainWindowPresentation(coordinator: coordinator, frameAutosaveName: "SameWaveSimpleModeWindow")
         settingsNavigation = SettingsNavigation(aiSettings: aiSettings, defaultInsights: coordinator.defaultInsights,
             vocabularyEditor: vocabularyEditor)
         do {

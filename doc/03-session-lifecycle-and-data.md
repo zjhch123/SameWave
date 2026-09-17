@@ -30,6 +30,8 @@ Resume freezes the current combined meeting/personal vocabulary for both English
 
 End stops automatic insight work and follows the same capture/ASR/translation drain. Final text and ended status save together. Empty meetings remain saved. Successful completion selects the same meeting's history; live insight snapshots remain available. End does not request or relabel a full summary. A failed final save leaves the meeting paused with its source in memory and an explicit retry message.
 
+Simple Mode is available only while the coordinator has an active session, including pauses and resource transitions. All entry points and Command–Shift–T are absent during preparation and ended-history viewing. Successful End returns from the panel to the retained full window. A failed final save remains paused and keeps the panel available for retry; startup failure returns to preparation in the full window. Presentation changes do not alter capture or translation ownership.
+
 ### Switching and recovery
 
 - Selecting another draft, paused meeting, or ended meeting suspends and saves the mounted recording first. Ended-history navigation uses the same coordinator boundary.

@@ -13,6 +13,7 @@ struct CaptionsView: View {
     /// (Equality alone can't be relied on: an OPEN section's growing interim briefly
     /// diverges from the last native-caption snapshot, flashing the echo.)
     var hideSourceEcho: Bool = false
+    var backgroundColor: Color = CaptionsView.bg
 
     // Apple design-system palette (mirrors the reference index.html tokens). Only the
     // tokens actually used across the app are kept.
@@ -46,7 +47,7 @@ struct CaptionsView: View {
         if store.sections.isEmpty {
             emptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Self.bg)
+                .background(backgroundColor)
         } else {
             transcriptScroll
         }
@@ -67,7 +68,7 @@ struct CaptionsView: View {
             .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Self.bg)
+        .background(backgroundColor)
         .scrollPosition($scrollPosition)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .onScrollPhaseChange { _, phase in

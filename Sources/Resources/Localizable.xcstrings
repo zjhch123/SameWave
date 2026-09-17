@@ -1,6 +1,48 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Background Opacity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Background Opacity" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "背景不透明度" } }
+      }
+    },
+    "Simple Mode": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Simple Mode" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "简洁模式" } }
+      }
+    },
+    "Show Full Window": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show Full Window" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示完整窗口" } }
+      }
+    },
+    "Turn Microphone Off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turn Microphone Off" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭麦克风" } }
+      }
+    },
+    "Turn Microphone On": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turn Microphone On" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "开启麦克风" } }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pause" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "暂停" } }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续" } }
+      }
+    },
     "": {
       "shouldTranslate": false
     },

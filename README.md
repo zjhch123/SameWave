@@ -8,6 +8,7 @@ The interface supports English and Simplified Chinese. Open **SameWave → Setti
 
 - **Follow the conversation.** Caption system audio and your microphone in speaking order, including overlapping speech.
 - **Translate as you go.** See live draft translations before a sentence finishes. Confirm sentence boundaries separately, combine rapid recognition updates, and translate each unit's own text. Sentences and clauses appear together in readable speaker paragraphs, in both live captions and history. Reading earlier captions pauses automatic scrolling. Choose English or Simplified Chinese as source and target, or use the same language for transcription only.
+- **Keep subtitles in view.** Simple Mode shows the complete bilingual conversation in a movable, resizable window above other apps.
 - **Keep your notes.** Prepare meetings, add vocabulary, pause and resume, and revisit automatically saved transcripts. Export to Markdown when you're done.
 - **Add AI when useful.** Generate custom insights, meeting summaries, and refined transcripts with an optional AI service.
 
@@ -44,6 +45,10 @@ On first use, grant speech recognition, microphone, and screen recording permiss
 1. Click **New Meeting**. Optionally add a title, Markdown documents, or vocabulary.
 2. Choose source and target languages, enable the microphone if needed, and click **Start**.
 3. Pause and resume as needed. Click **End** to review or export your transcript.
+
+During an active or paused meeting, choose **Simple Mode** in the meeting header, the **View** menu, or the menu-bar icon to follow subtitles over another app. **Command–Shift–T** switches between Simple Mode and the full window. These entries and the shortcut are unavailable during preparation and after the meeting ends. The compact window shows the complete conversation with the same translations, original text, speaker labels, paragraph grouping, and scrolling behavior as the full window. Its controls are microphone, Pause/Resume, End, and **Show Full Window**. Choose languages and start meetings in the full window. The panel has no traffic-light buttons; **Background Opacity** adjusts its background from transparent to opaque and saves the preference, while text and controls stay fully visible.
+
+Scroll up to read earlier subtitles; returning to the bottom resumes following new text. Source remains readable while translation is pending or unavailable; click the window's status message for its full details. Same-language meetings display recognized speech once. **Show Full Window** or **Command–W** returns to the full workspace at its previous size and position. Switching modes keeps the current session running and preserves the complete transcript in history. Successfully ending a meeting automatically returns to the full window to review the saved transcript.
 
 For AI features, turn on **Settings → General → Enable AI Services**, then configure your provider, API key, and model context window in **Settings → AI Services**. Preferences save automatically as you edit. Turning AI off stops AI tasks and makes all AI Services controls unavailable while keeping your configuration. Invalid input is shown inline and blocks new generation until corrected. **Done** closes Settings; connection preferences have no separate save or draft state. **Test Connection** checks the current configuration. See the [AI guide](doc/04-ai-insights-and-refinement.md) for provider requirements and insight controls.
 
